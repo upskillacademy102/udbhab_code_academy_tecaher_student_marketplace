@@ -14,6 +14,7 @@ from apps.web.guards import (
     resolve_web_user,
     role_required,
 )
+from apps.web.taxonomy import public_taxonomy
 
 
 # ----------------------------------------------------------------------
@@ -23,7 +24,10 @@ def landing(request):
     user = resolve_web_user(request)
     if user is not None:
         return redirect(home_url_for(user))
-    return render(request, "web/landing.html")
+    # Subject / language options come from the database so a Super Admin
+    # adding one shows up here without a deploy. See apps/web/taxonomy.py
+    # for why this is a model read and not an API call.
+    return render(request, "web/landing.html", public_taxonomy())
 
 
 def _safe_next(request):
@@ -65,6 +69,7 @@ def register_page(request):
         {
             "portal": _portal(request),
             "next_url": _safe_next(request),
+            **public_taxonomy(),
         },
     )
 

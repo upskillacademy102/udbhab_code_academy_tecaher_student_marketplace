@@ -2,29 +2,42 @@
 {% load static web_extras %}
 {% block title %}{{ SITE_NAME }} — {{ SITE_TAGLINE }}{% endblock %}
 {% block font_extra %}<link rel="preload" href="{% static 'fonts/literata-latin-opsz-wght.woff2' %}" as="font" type="font/woff2" crossorigin>{% endblock %}
+{% block head_extra %}<script defer src="{% static 'js/picker.js' %}"></script>{% endblock %}
 
 {% comment %}
 Landing page.
 
-The hero's right side is the schedule picker, not a decorative illustration.
-Rationale (approved plan): schedule-first matching is the one thing this
-platform does that UrbanPro and Superprof don't, and a claim you can *touch*
-beats a claim you read. Whatever the visitor taps here travels into
-/register/ as query params, so the first step of onboarding is already done
-before an account exists.
+The hero is a three-step picker — subject, then language, then time — not a
+decorative illustration. Rationale (approved plan):
 
-Honesty constraints held throughout this file:
-  - No invented volume metrics. /public/stats/ returns real counts and they
-    are rendered only when non-zero.
-  - No "message teachers directly" claim. There is no student->teacher
-    messaging in this product; students post a requirement and teachers
-    reach out after unlocking. "How it works" reflects that.
-  - Marigold appears exactly twice: the primary hero CTA and the closing
-    CTA. Everything else is pine.
+  * Goal before friction. Asking what someone wants before asking them to
+    work is the ordering that both the onboarding research and this site's
+    own sign-up flow use. Subject leads.
+  * Language is a real differentiator. Regional-language instruction is the
+    clearest growth lever in Indian tutoring, and neither UrbanPro nor
+    Superprof asks it up front. "Any language" is pre-selected so it costs
+    the indifferent majority one tap.
+  * Everything tapped here travels into /register/ as query params, so the
+    first three sign-up questions are already answered before an account
+    exists.
+
+Both option lists come from the database via apps/web/taxonomy.py, rendered
+server-side by Django (not x-for), so the taxonomy is in the initial HTML
+for crawlers and a Super Admin's additions appear without a deploy.
+
+Honesty constraints held throughout:
+  - No invented volume metrics; /public/stats/ figures render only when > 0.
+  - No "message teachers directly" claim — there is no student-to-teacher
+    messaging in this product.
+  - Marigold appears exactly twice: the step-3 CTA and the closing CTA.
 {% endcomment %}
 
 {% block body %}
-<div class="u-page flex min-h-full flex-col" x-data="landingPage()">
+<div class="u-page u-ground flex min-h-full flex-col"
+     x-data="landingPage()" x-cloak>
+
+  {{ subjects|json_script:"tax-subjects" }}
+  {{ languages|json_script:"tax-languages" }}
 
   {# ============ Header ============ #}
   <header class="sticky top-0 z-40 border-b border-ink-100/80 bg-paper-canvas/85 backdrop-blur">
@@ -34,7 +47,7 @@ Honesty constraints held throughout this file:
         <span class="font-display text-[1.0625rem] font-semibold tracking-tight text-ink-900">{{ SITE_NAME }}</span>
       </a>
       <nav class="hidden items-center gap-7 md:flex" aria-label="Sections">
-        <a href="#subjects" class="text-[0.875rem] font-medium text-ink-600 hover:text-pine-700">Subjects</a>
+        <a href="#start" class="text-[0.875rem] font-medium text-ink-600 hover:text-pine-700">Get matched</a>
         <a href="#how" class="text-[0.875rem] font-medium text-ink-600 hover:text-pine-700">How it works</a>
         <a href="#teachers" class="text-[0.875rem] font-medium text-ink-600 hover:text-pine-700">For teachers</a>
       </nav>
@@ -48,11 +61,8 @@ Honesty constraints held throughout this file:
   <main id="main" class="flex-1">
 
     {# ============ Hero ============ #}
-    <section class="relative overflow-hidden border-b border-ink-100">
-      <div class="u-grain pointer-events-none absolute inset-0 opacity-70"></div>
-      <div class="pointer-events-none absolute -right-40 -top-40 h-[30rem] w-[30rem] rounded-full bg-pine-100/50 blur-3xl"></div>
-
-      <div class="u-shell relative grid items-center gap-14 py-16 lg:grid-cols-[1.05fr_1fr] lg:gap-16 lg:py-24">
+    <section id="start" class="relative border-b border-ink-100">
+      <div class="u-shell relative grid items-center gap-14 py-14 lg:grid-cols-[1.02fr_1fr] lg:gap-16 lg:py-20">
 
         {# ---- Left: the pitch ---- #}
         <div>
@@ -64,24 +74,20 @@ Honesty constraints held throughout this file:
 
           <p class="u-lede mt-6">
             Most tutor sites match you on subject and leave the hard part to you.
-            We weigh <strong class="font-semibold text-ink-800">when you're actually free</strong> —
+            We weigh <strong class="font-semibold text-ink-800">the language you learn best in</strong>
+            and <strong class="font-semibold text-ink-800">when you're actually free</strong> —
             because the right teacher at the wrong time isn't a match.
           </p>
 
-          <div class="mt-9 flex flex-col gap-4 sm:flex-row sm:items-center">
-            <a :href="registerHref()" class="u-btn-primary u-btn-lg w-full sm:w-auto">
-              <span x-text="ctaLabel()">Get matched — it's free</span>
-              {% icon "chevron-right" %}
-            </a>
-            <p class="u-fine">
-              Free for students, always.
-              <a href="/login/" class="u-link">Log in</a>
-            </p>
-          </div>
+          <ul class="mt-8 flex flex-col gap-3.5">
+            <li class="u-proof"><span class="u-proof-mark">{% icon "shield" %}</span><span>Every teacher's identity and credentials checked by a person</span></li>
+            <li class="u-proof"><span class="u-proof-mark">{% icon "globe" %}</span><span>Taught in your language — English, Hindi and regional languages</span></li>
+            <li class="u-proof"><span class="u-proof-mark">{% icon "check" %}</span><span>Free for students. There is no student side of the bill.</span></li>
+          </ul>
 
           {% comment %}Real numbers only, and only once they exist. An empty
           marketplace says nothing rather than inventing something.{% endcomment %}
-          <div class="mt-9 flex flex-wrap items-center gap-x-7 gap-y-3 border-t border-ink-100 pt-7" x-show="hasStats" x-cloak>
+          <div class="mt-8 flex flex-wrap items-center gap-x-7 gap-y-3 border-t border-ink-100 pt-7" x-show="hasStats">
             <template x-for="s in statLine" :key="s.label">
               <div class="flex items-baseline gap-2">
                 <span class="u-num font-display text-2xl font-bold text-ink-900" x-text="s.value"></span>
@@ -91,124 +97,139 @@ Honesty constraints held throughout this file:
           </div>
         </div>
 
-        {# ---- Right: the schedule mechanic, made touchable ---- #}
+        {# ---- Right: the three-step picker ---- #}
         <div class="relative">
+          <div class="u-glow -inset-10 -z-10"></div>
+
           <div class="u-card overflow-hidden shadow-lift">
-            <div class="border-b border-ink-100 bg-pine-800 px-6 py-5">
-              <p class="font-display text-[1.0625rem] font-semibold text-white">When are you free?</p>
-              <p class="mt-1 text-[0.8125rem] text-pine-100">Tap a few — we'll carry it into your search.</p>
+            {# Progress header #}
+            <div class="bg-pine-800 px-6 py-4">
+              <div class="flex items-baseline justify-between text-[0.8125rem] font-semibold text-pine-100">
+                <span>Get matched — step <span class="u-num" x-text="step"></span> of 3</span>
+                <span class="text-pine-300">about 30 seconds</span>
+              </div>
+              <div class="mt-2.5 flex gap-1.5">
+                <template x-for="i in 3" :key="i">
+                  <span class="h-1 flex-1 rounded-full transition-colors duration-300 ease-enter"
+                        :class="i <= step ? 'bg-marigold-500' : 'bg-white/25'"></span>
+                </template>
+              </div>
             </div>
 
             <div class="p-6">
-              <fieldset>
-                <legend class="u-eyebrow">Days</legend>
-                <div class="mt-3 grid grid-cols-7 gap-1.5">
-                  <template x-for="d in DAYS" :key="d.n">
-                    <button type="button"
-                            class="flex h-11 items-center justify-center rounded-lg border text-[0.8125rem] font-semibold transition duration-150 ease-enter"
-                            :class="days.includes(d.n)
-                              ? 'border-pine-600 bg-pine-600 text-white'
-                              : 'border-ink-200 bg-paper text-ink-600 hover:border-pine-300 hover:bg-pine-50'"
-                            :aria-pressed="days.includes(d.n)"
-                            :aria-label="d.full"
-                            @click="toggleDay(d.n)"
-                            x-text="d.s"></button>
-                  </template>
+              {# ---- Step 1: subject ---- #}
+              <div x-show="step === 1">
+                <h2 class="font-display text-[1.25rem] font-semibold text-ink-900">What do you want to learn?</h2>
+                <p class="u-fine mt-1">Pick one to start. You can add more later.</p>
+                <div class="mt-5">
+                  {% include "web/partials/_taxonomy_picker.html" with items=subjects field="subject" pid="hero-subj" placeholder="Type a subject — e.g. Mathematics" other=1 %}
                 </div>
-              </fieldset>
+                <button type="button" class="u-btn-pine u-btn-lg mt-6 w-full"
+                        :disabled="!resolvedSubject" @click="step = 2">
+                  Continue {% icon "chevron-right" %}
+                </button>
+              </div>
 
-              <fieldset class="mt-6">
-                <legend class="u-eyebrow">Time of day</legend>
-                <div class="mt-3 grid grid-cols-3 gap-2">
-                  <template x-for="b in BANDS" :key="b.id">
-                    <button type="button" class="u-chip flex-col gap-0.5 px-2 py-2"
-                            :aria-pressed="band === b.id"
-                            @click="band = b.id">
-                      <span x-text="b.label" class="text-[0.875rem]"></span>
-                      <span class="u-num text-[0.6875rem] font-normal text-ink-400" x-text="b.hint"></span>
-                    </button>
-                  </template>
+              {# ---- Step 2: language ---- #}
+              <div x-show="step === 2">
+                <button type="button" class="u-btn-ghost u-btn-sm -ml-3 mb-3" @click="step = 1">
+                  {% icon "arrow-left" "h-4 w-4" %} <span x-text="resolvedSubject"></span>
+                </button>
+                <h2 class="font-display text-[1.25rem] font-semibold text-ink-900">Taught in which language?</h2>
+                <p class="u-fine mt-1">Many students learn faster in their first language.</p>
+                <div class="mt-5">
+                  {% include "web/partials/_taxonomy_picker.html" with items=languages field="language" pid="hero-lang" placeholder="Type a language — e.g. Hindi" anylabel="Any language" %}
                 </div>
-              </fieldset>
+                <button type="button" class="u-btn-pine u-btn-lg mt-6 w-full" @click="step = 3">
+                  Continue {% icon "chevron-right" %}
+                </button>
+              </div>
 
-              {% comment %}The payoff line — restates the choice back to the user,
-              which is what makes the interaction feel like it did something.{% endcomment %}
-              <div class="mt-6 flex items-start gap-3 rounded-xl bg-pine-50 p-4">
-                <span class="u-proof-mark mt-0">{% icon "target" %}</span>
-                <p class="text-[0.875rem] leading-snug text-pine-900">
-                  <template x-if="days.length">
-                    <span>We'll look for teachers free <strong class="font-semibold" x-text="scheduleSummary()"></strong>.</span>
-                  </template>
-                  <template x-if="!days.length">
-                    <span>Pick a day or two and we'll show you who's genuinely available then.</span>
-                  </template>
-                </p>
+              {# ---- Step 3: time ---- #}
+              <div x-show="step === 3">
+                <button type="button" class="u-btn-ghost u-btn-sm -ml-3 mb-3" @click="step = 2">
+                  {% icon "arrow-left" "h-4 w-4" %} <span x-text="crumb()"></span>
+                </button>
+                <h2 class="font-display text-[1.25rem] font-semibold text-ink-900">When are you free?</h2>
+                <p class="u-fine mt-1">This is what we score teachers on.</p>
+
+                <fieldset class="mt-5">
+                  <legend class="u-eyebrow">Days</legend>
+                  <div class="mt-2.5 grid grid-cols-7 gap-1.5">
+                    <template x-for="d in DAYS" :key="d.n">
+                      <button type="button"
+                              class="flex h-11 items-center justify-center rounded-lg border text-[0.8125rem] font-semibold transition duration-150 ease-enter"
+                              :class="days.includes(d.n)
+                                ? 'border-pine-600 bg-pine-600 text-white'
+                                : 'border-ink-200 bg-paper text-ink-600 hover:border-pine-300 hover:bg-pine-50'"
+                              :aria-pressed="days.includes(d.n)" :aria-label="d.full"
+                              @click="toggleDay(d.n)" x-text="d.s"></button>
+                    </template>
+                  </div>
+                </fieldset>
+
+                <fieldset class="mt-5">
+                  <legend class="u-eyebrow">Time of day</legend>
+                  <div class="mt-2.5 grid grid-cols-3 gap-2">
+                    <template x-for="b in BANDS" :key="b.id">
+                      <button type="button" class="u-chip flex-col gap-0.5 px-2 py-2"
+                              :aria-pressed="band === b.id" @click="band = b.id">
+                        <span class="text-[0.875rem]" x-text="b.label"></span>
+                        <span class="u-num text-[0.6875rem] font-normal text-ink-400" x-text="b.hint"></span>
+                      </button>
+                    </template>
+                  </div>
+                </fieldset>
+
+                <div class="mt-5 flex items-start gap-3 rounded-xl bg-pine-50 p-4">
+                  <span class="u-proof-mark mt-0">{% icon "target" %}</span>
+                  <p class="text-[0.875rem] leading-snug text-pine-900" x-text="summary()"></p>
+                </div>
+
+                <a :href="registerHref()" class="u-btn-primary u-btn-lg mt-6 w-full">
+                  See my matches {% icon "chevron-right" %}
+                </a>
               </div>
             </div>
           </div>
-        </div>
-      </div>
-    </section>
 
-    {# ============ Subjects ============ #}
-    <section id="subjects" class="border-b border-ink-100 py-16 sm:py-20">
-      <div class="u-shell">
-        <div class="max-w-prose">
-          <span class="u-eyebrow">Step one</span>
-          <h2 class="u-h2 mt-3">What do you want to learn?</h2>
-          <p class="u-lede mt-3">Pick one to get started. You can change it later, and add more than one.</p>
-        </div>
-
-        <div class="mt-9 flex flex-wrap gap-2.5">
-          <template x-for="s in SUBJECTS" :key="s">
-            <button type="button" class="u-chip" :aria-pressed="subject === s" @click="subject = (subject === s ? null : s)">
-              <span x-text="s"></span>
-            </button>
-          </template>
-        </div>
-
-        <div class="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
-          <a :href="registerHref()" class="u-btn-pine u-btn-lg w-full sm:w-auto">
-            <span x-text="subject ? `Find ${subject} teachers` : 'Browse all teachers'"></span>
-            {% icon "chevron-right" %}
-          </a>
-          <p class="u-fine">Something else in mind? You can type any subject after signing up.</p>
+          <p class="u-fine mt-4 text-center">
+            Prefer to skip this? <a href="/register/?as=student" class="u-link">Just create an account</a>
+          </p>
         </div>
       </div>
     </section>
 
     {# ============ Why ============ #}
-    <section class="border-b border-ink-100 bg-paper py-16 sm:py-20">
+    <section class="u-band-tint border-b border-ink-100 py-16 sm:py-20">
       <div class="u-shell">
         <div class="max-w-prose">
           <span class="u-eyebrow">Why {{ SITE_NAME }}</span>
           <h2 class="u-h2 mt-3">Three things we do differently</h2>
         </div>
-
         <div class="mt-10 grid gap-6 md:grid-cols-3">
           <div>
             <span class="grid h-11 w-11 place-items-center rounded-xl bg-pine-100 text-pine-700">{% icon "clock" "h-5 w-5" %}</span>
             <h3 class="u-h3 mt-5">Time is weighed highest</h3>
-            <p class="u-body mt-2 text-ink-500">Every result carries a schedule-fit score against the hours you gave us. A brilliant teacher who can't make your Tuesday isn't a match, and we don't pretend otherwise.</p>
+            <p class="u-body mt-2 text-ink-600">Every result carries a schedule-fit score against the hours you gave us. A brilliant teacher who can't make your Tuesday isn't a match, and we don't pretend otherwise.</p>
+          </div>
+          <div>
+            <span class="grid h-11 w-11 place-items-center rounded-xl bg-pine-100 text-pine-700">{% icon "globe" "h-5 w-5" %}</span>
+            <h3 class="u-h3 mt-5">Taught in your language</h3>
+            <p class="u-body mt-2 text-ink-600">Filter for a teacher who teaches in Hindi, Tamil, Bengali or any language on the platform — not just whoever is nearest.</p>
           </div>
           <div>
             <span class="grid h-11 w-11 place-items-center rounded-xl bg-pine-100 text-pine-700">{% icon "shield" "h-5 w-5" %}</span>
             <h3 class="u-h3 mt-5">Verified by a person</h3>
-            <p class="u-body mt-2 text-ink-500">Identity and credentials are checked before a teacher can appear in search. A badge here means someone looked — it isn't self-declared.</p>
-          </div>
-          <div>
-            <span class="grid h-11 w-11 place-items-center rounded-xl bg-pine-100 text-pine-700">{% icon "check-circle" "h-5 w-5" %}</span>
-            <h3 class="u-h3 mt-5">Students never pay</h3>
-            <p class="u-body mt-2 text-ink-500">Not a trial, not a freemium tier. Searching, posting what you need and being matched are free for students. Teachers pay to reach you.</p>
+            <p class="u-body mt-2 text-ink-600">Identity and credentials are checked before a teacher can appear in search. A badge here means someone looked — it isn't self-declared.</p>
           </div>
         </div>
       </div>
     </section>
 
-    {% comment %}How it works — rewritten to match how the product ACTUALLY
-    works. The previous copy promised direct messaging of teachers, which this
-    platform has never supported: there is no student-to-teacher messaging
-    anywhere in it.{% endcomment %}
+    {% comment %}How it works — describes the real model. There is no
+    student-to-teacher messaging in this product: students post a
+    requirement and matched teachers reach out after unlocking it.{% endcomment %}
     <section id="how" class="border-b border-ink-100 py-16 sm:py-20">
       <div class="u-shell">
         <div class="max-w-prose">
@@ -216,19 +237,18 @@ Honesty constraints held throughout this file:
           <h2 class="u-h2 mt-3">You post once. Teachers come to you.</h2>
           <p class="u-lede mt-3">No bidding wars, no cold-messaging fifty profiles, no inbox to manage.</p>
         </div>
-
-        <ol class="mt-10 grid gap-6 md:grid-cols-3">
-          <li class="u-quiet flex flex-col gap-2.5">
+        <ol class="mt-10 grid gap-5 md:grid-cols-3">
+          <li class="u-block flex flex-col gap-2.5 pl-6">
             <span class="u-num font-display text-[1.75rem] font-bold leading-none text-pine-700">1</span>
             <h3 class="text-[0.9375rem] font-semibold text-ink-900">Say what you need</h3>
-            <p class="u-fine">Subject, level, budget and the hours you're free. Two minutes, and it's the only form you fill in.</p>
+            <p class="u-fine">Subject, language, level and the hours you're free. Two minutes, and it's the only form you fill in.</p>
           </li>
-          <li class="u-quiet flex flex-col gap-2.5">
+          <li class="u-block flex flex-col gap-2.5 pl-6">
             <span class="u-num font-display text-[1.75rem] font-bold leading-none text-pine-700">2</span>
             <h3 class="text-[0.9375rem] font-semibold text-ink-900">We match and rank</h3>
-            <p class="u-fine">Verified teachers who teach your subject and are free when you are, scored on how well the timing actually overlaps.</p>
+            <p class="u-fine">Verified teachers who teach your subject in your language and are free when you are, scored on how well the timing overlaps.</p>
           </li>
-          <li class="u-quiet flex flex-col gap-2.5">
+          <li class="u-block flex flex-col gap-2.5 pl-6">
             <span class="u-num font-display text-[1.75rem] font-bold leading-none text-pine-700">3</span>
             <h3 class="text-[0.9375rem] font-semibold text-ink-900">They reach out</h3>
             <p class="u-fine">Matched teachers see your requirement and get in touch. You choose who to reply to — and you're never charged for any of it.</p>
@@ -244,9 +264,10 @@ Honesty constraints held throughout this file:
           <span class="u-eyebrow text-pine-300">For teachers</span>
           <h2 class="u-h2 mt-3 text-white">Stop chasing. Start teaching.</h2>
           <p class="mt-4 max-w-prose text-[1.0625rem] leading-relaxed text-pine-100">
-            Student requirements matched to the subjects you teach and the hours you've set
-            as available. Your plan includes a set number of contact unlocks every 30 days —
-            the same price for every lead, with no bidding and no surprises.
+            Student requirements matched to the subjects you teach, the languages you
+            teach in, and the hours you've set as available. Your plan includes a set
+            number of contact unlocks every 30 days — the same price for every lead,
+            with no bidding and no surprises.
           </p>
           <a href="/register/?as=teacher" class="u-btn-secondary u-btn-lg mt-8">
             {% icon "academic" %} Create a teacher account
@@ -255,7 +276,7 @@ Honesty constraints held throughout this file:
         <ul class="flex flex-col gap-4">
           <li class="u-proof text-pine-50">
             <span class="u-proof-mark bg-pine-600/60 text-marigold-300">{% icon "target" %}</span>
-            <span><strong class="font-semibold text-white">Matched, not broadcast.</strong> Leads are scored against your subjects and your actual availability.</span>
+            <span><strong class="font-semibold text-white">Matched, not broadcast.</strong> Leads are scored against your subjects, languages and actual availability.</span>
           </li>
           <li class="u-proof text-pine-50">
             <span class="u-proof-mark bg-pine-600/60 text-marigold-300">{% icon "wallet" %}</span>
@@ -270,20 +291,19 @@ Honesty constraints held throughout this file:
     </section>
 
     {# ============ Close ============ #}
-    <section class="py-16 sm:py-20">
+    <section class="u-band-fade py-16 sm:py-20">
       <div class="u-shell flex flex-col items-start gap-6 sm:items-center sm:text-center">
         <h2 class="u-h2 max-w-2xl">Tell us what you need. We'll do the looking.</h2>
         <p class="u-lede sm:mx-auto">Takes under a minute, and it costs students nothing.</p>
         <a :href="registerHref()" class="u-btn-primary u-btn-lg">
-          <span x-text="ctaLabel()">Get matched — it's free</span>
-          {% icon "chevron-right" %}
+          Get matched — it's free {% icon "chevron-right" %}
         </a>
       </div>
     </section>
   </main>
 
   {# ============ Footer ============ #}
-  <footer class="border-t border-ink-100 bg-paper">
+  <footer class="u-band-paper border-t border-ink-100">
     <div class="u-shell py-11">
       <div class="flex flex-col items-start justify-between gap-5 sm:flex-row sm:items-center">
         <a href="/" class="flex items-center gap-2.5">
@@ -306,104 +326,115 @@ Honesty constraints held throughout this file:
   document.getElementById("yr").textContent = new Date().getFullYear();
 
   document.addEventListener("alpine:init", () => {
-    Alpine.data("landingPage", () => ({
-      subject: null,
-      days: [],
-      band: "evening",
-      stats: {},
+    function readJSON(id) {
+      try { return JSON.parse(document.getElementById(id).textContent); }
+      catch (_) { return []; }
+    }
 
-      // Curated list, deliberately NOT fetched from /api/v1/subjects/: that
-      // route is _ANY_AUTHED in apps/accounts/api_permissions.py, so it 401s
-      // for a logged-out visitor. Subject travels as free text anyway —
-      // /search/teachers/?subject= resolves it through
-      // SubjectMatchingService.match_by_text, so text is the right currency.
-      SUBJECTS: [
-        "Mathematics", "Physics", "Chemistry", "Biology", "English",
-        "Hindi", "Computer Science", "Accountancy", "Economics",
-        "Music", "Spoken English", "Test Prep",
-      ],
+    Alpine.data("landingPage", () => Object.assign(
+      // subject / language selection + the adaptive picker & combobox
+      window.taxonomyMixin({
+        subjects: readJSON("tax-subjects"),
+        languages: readJSON("tax-languages"),
+      }),
+      {
+        step: 1,
+        days: [],
+        band: "evening",
+        stats: {},
 
-      DAYS: [
-        { n: 1, s: "M", full: "Monday" },
-        { n: 2, s: "T", full: "Tuesday" },
-        { n: 3, s: "W", full: "Wednesday" },
-        { n: 4, s: "T", full: "Thursday" },
-        { n: 5, s: "F", full: "Friday" },
-        { n: 6, s: "S", full: "Saturday" },
-        { n: 7, s: "S", full: "Sunday" },
-      ],
+        DAYS: [
+          { n: 1, s: "M", full: "Monday" },
+          { n: 2, s: "T", full: "Tuesday" },
+          { n: 3, s: "W", full: "Wednesday" },
+          { n: 4, s: "T", full: "Thursday" },
+          { n: 5, s: "F", full: "Friday" },
+          { n: 6, s: "S", full: "Saturday" },
+          { n: 7, s: "S", full: "Sunday" },
+        ],
 
-      // Bands map straight onto the search API's preferred_start_time /
-      // preferred_end_time params, so what's tapped here is what gets sent.
-      BANDS: [
-        { id: "morning", label: "Morning", hint: "6–12", from: "06:00", to: "12:00" },
-        { id: "afternoon", label: "Afternoon", hint: "12–5", from: "12:00", to: "17:00" },
-        { id: "evening", label: "Evening", hint: "5–10", from: "17:00", to: "22:00" },
-      ],
+        // Bands map straight onto the search API's preferred_start_time /
+        // preferred_end_time, so what's tapped here is what gets sent.
+        BANDS: [
+          { id: "morning", label: "Morning", hint: "6–12", from: "06:00", to: "12:00" },
+          { id: "afternoon", label: "Afternoon", hint: "12–5", from: "12:00", to: "17:00" },
+          { id: "evening", label: "Evening", hint: "5–10", from: "17:00", to: "22:00" },
+        ],
 
-      init() {
-        api.get("/public/stats/", { silent: true })
-          .then((d) => { this.stats = d || {}; })
-          .catch(() => {});
-      },
+        init() {
+          api.get("/public/stats/", { silent: true })
+            .then((d) => { this.stats = d || {}; })
+            .catch(() => {});
+        },
 
-      toggleDay(n) {
-        const i = this.days.indexOf(n);
-        if (i === -1) this.days.push(n); else this.days.splice(i, 1);
-        this.days.sort((a, b) => a - b);
-      },
+        toggleDay(n) {
+          const i = this.days.indexOf(n);
+          if (i === -1) this.days.push(n); else this.days.splice(i, 1);
+          this.days.sort((a, b) => a - b);
+        },
 
-      get hasStats() {
-        return this.statLine.length > 0;
-      },
+        crumb() {
+          const parts = [this.resolvedSubject];
+          if (this.resolvedLanguage) parts.push(this.resolvedLanguage);
+          return parts.filter(Boolean).join(" · ");
+        },
 
-      // Only real, non-zero figures are rendered. A young marketplace shows
-      // nothing here rather than a number it has to invent.
-      get statLine() {
-        const s = this.stats || {};
-        const out = [];
-        const add = (v, one, many) => {
-          const n = Number(v);
-          if (Number.isFinite(n) && n > 0) {
-            out.push({ value: n.toLocaleString("en-IN"), label: n === 1 ? one : many });
+        summary() {
+          const subject = this.resolvedSubject || "Teachers";
+          const lang = this.resolvedLanguage ? ` in ${this.resolvedLanguage}` : "";
+          if (!this.days.length) {
+            return `Pick a day or two and we'll show you which ${subject}${lang} teachers are genuinely free then.`;
           }
-        };
-        add(s.verified_teachers, "verified teacher", "verified teachers");
-        add(s.subjects, "subject", "subjects");
-        add(s.students, "student learning", "students learning");
-        return out;
-      },
+          return `${subject}${lang} teachers free ${this.scheduleText()} — ranked by how well their hours fit yours.`;
+        },
 
-      scheduleSummary() {
-        const names = this.days
-          .map((n) => (this.DAYS.find((d) => d.n === n) || {}).full)
-          .filter(Boolean);
-        const band = (this.BANDS.find((b) => b.id === this.band) || {}).label || "";
-        let dayText;
-        if (names.length === 1) dayText = names[0] + "s";
-        else if (names.length === 2) dayText = names[0] + "s & " + names[1] + "s";
-        else if (names.length <= 4) dayText = names.slice(0, -1).map((d) => d + "s").join(", ") + " & " + names[names.length - 1] + "s";
-        else dayText = names.length + " days a week";
-        return dayText + " " + band.toLowerCase() + "s";
-      },
+        scheduleText() {
+          const names = this.days
+            .map((n) => (this.DAYS.find((d) => d.n === n) || {}).full)
+            .filter(Boolean);
+          const band = (this.BANDS.find((b) => b.id === this.band) || {}).label || "";
+          let dayText;
+          if (names.length === 1) dayText = names[0] + "s";
+          else if (names.length === 2) dayText = names[0] + "s & " + names[1] + "s";
+          else if (names.length <= 4) dayText = names.slice(0, -1).map((d) => d + "s").join(", ") + " & " + names[names.length - 1] + "s";
+          else dayText = names.length + " days a week";
+          return dayText + " " + band.toLowerCase() + "s";
+        },
 
-      ctaLabel() {
-        return this.subject ? `Find ${this.subject} teachers` : "Get matched — it's free";
-      },
+        get hasStats() { return this.statLine.length > 0; },
 
-      // Everything tapped on this page travels into registration, so the
-      // first onboarding step is complete before an account exists.
-      registerHref() {
-        const q = new URLSearchParams({ as: "student" });
-        if (this.subject) q.set("subject", this.subject);
-        if (this.days.length) {
-          q.set("days", this.days.join(","));
-          const b = this.BANDS.find((x) => x.id === this.band);
-          if (b) { q.set("from", b.from); q.set("to", b.to); }
-        }
-        return "/register/?" + q.toString();
-      },
-    }));
+        // Only real, non-zero figures are rendered. A young marketplace
+        // shows nothing here rather than a number it has to invent.
+        get statLine() {
+          const s = this.stats || {};
+          const out = [];
+          const add = (v, one, many) => {
+            const n = Number(v);
+            if (Number.isFinite(n) && n > 0) {
+              out.push({ value: n.toLocaleString("en-IN"), label: n === 1 ? one : many });
+            }
+          };
+          add(s.verified_teachers, "verified teacher", "verified teachers");
+          add(s.subjects, "subject", "subjects");
+          add(s.students, "student learning", "students learning");
+          return out;
+        },
+
+        // Everything answered here travels into registration, so the first
+        // three sign-up questions are done before an account exists.
+        registerHref() {
+          const q = new URLSearchParams({ as: "student" });
+          if (this.resolvedSubject) q.set("subject", this.resolvedSubject);
+          if (this.resolvedLanguage) q.set("language", this.resolvedLanguage);
+          if (this.days.length) {
+            q.set("days", this.days.join(","));
+            const b = this.BANDS.find((x) => x.id === this.band);
+            if (b) { q.set("from", b.from); q.set("to", b.to); }
+          }
+          return "/register/?" + q.toString();
+        },
+      }
+    ));
   });
 </script>
 {% endblock %}

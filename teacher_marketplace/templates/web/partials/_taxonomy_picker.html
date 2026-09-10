@@ -1,0 +1,119 @@
+{% load web_extras %}
+{% comment %}
+Adaptive taxonomy picker. Include with:
+
+  {% include "web/partials/_taxonomy_picker.html" with items=subjects field="subject" pid="subj" placeholder="Type a subject" other=1 %}
+
+  items        the full list of names (from apps/web/taxonomy.py)
+  field        Alpine property to write into: "subject" or "language"
+  pid          unique id prefix on the page
+  placeholder  free-text / filter placeholder
+  other        truthy -> offer a "Something else" free-text escape (subjects only)
+  anylabel     optional -> render a leading "no preference" chip (languages)
+
+Requires the taxonomyMixin from static/js/picker.js in the Alpine scope.
+
+The chips are rendered by Django, not by x-for, so they are in the initial
+HTML: a crawler sees the taxonomy, which it never did while these were a
+JavaScript array. Alpine only owns selection state and the filter.
+{% endcomment %}
+
+{% if anylabel %}
+  {# "Any language" — pre-selected by default, so this whole step is a
+     one-tap pass for the majority who have no preference. #}
+  <button type="button" class="u-chip u-chip-sm mb-2"
+          :aria-pressed="{{ field }} === null"
+          @click="{{ field }} = null; cbClose()">{{ anylabel }}</button>
+{% endif %}
+
+{% if items|length == 0 %}
+  {# ---- 0 rows: free text only. An empty chip row reads as broken, and
+       text resolves through the matching service anyway. ---- #}
+  <div class="u-field">
+    <input type="text" id="{{ pid }}-text" class="u-input"
+           maxlength="60" placeholder="{{ placeholder }}"
+           x-model.trim="{% if field == 'subject' %}subjectCustom{% else %}{{ field }}{% endif %}"
+           @input="{% if field == 'subject' %}subject = subjectCustom ? '__other' : null{% endif %}">
+    <p class="u-hint">We'll match it to a teacher's {{ field }}s.</p>
+  </div>
+
+{% elif items|length <= 12 %}
+  {# ---- 1-12 rows: every option visible. Nothing hidden, no filter. ---- #}
+  <div class="flex flex-wrap gap-2">
+    {% for name in items %}
+      <button type="button" class="u-chip u-chip-sm"
+              :aria-pressed="isPicked('{{ field }}', '{{ name|escapejs }}')"
+              @click="pick('{{ field }}', '{{ name|escapejs }}')">{{ name }}</button>
+    {% endfor %}
+    {% if other %}
+      <button type="button" class="u-chip u-chip-sm u-chip-ghost"
+              :aria-pressed="subject === '__other'"
+              @click="pick('subject', '__other')">Something else</button>
+    {% endif %}
+  </div>
+
+{% else %}
+  {# ---- 13+ rows: the most-taught options stay visible as chips, the
+       long tail lives behind an accessible filter. ---- #}
+  <div class="flex flex-wrap gap-2">
+    {% for name in items|slice:":8" %}
+      <button type="button" class="u-chip u-chip-sm"
+              :aria-pressed="isPicked('{{ field }}', '{{ name|escapejs }}')"
+              @click="pick('{{ field }}', '{{ name|escapejs }}')">{{ name }}</button>
+    {% endfor %}
+    {# A pick made through the filter shows here rather than vanishing. #}
+    <template x-if="pickedOffList('{{ field }}')">
+      <button type="button" class="u-chip u-chip-sm" aria-pressed="true"
+              @click="{{ field }} = null" x-text="{{ field }}"></button>
+    </template>
+    {% if other %}
+      <button type="button" class="u-chip u-chip-sm u-chip-ghost"
+              :aria-pressed="subject === '__other'"
+              @click="pick('subject', '__other')">Something else</button>
+    {% endif %}
+  </div>
+
+  <div class="u-combo mt-3" @click.outside="cbClose()" @keydown.escape.stop="cbEscape()">
+    <input type="text" id="{{ pid }}-combo" class="u-input"
+           role="combobox" aria-autocomplete="list"
+           aria-controls="{{ pid }}-listbox"
+           :aria-expanded="cb.open && cb.field === '{{ field }}' ? 'true' : 'false'"
+           :aria-activedescendant="cb.field === '{{ field }}' ? (cbActiveId() || '') : ''"
+           autocomplete="off" placeholder="{{ placeholder }}"
+           x-model="cb.query"
+           @focus="cbShow('{{ field }}')"
+           @input="cbInput('{{ field }}')"
+           @keydown.arrow-down.prevent="cbShow('{{ field }}'); cbMove(1)"
+           @keydown.arrow-up.prevent="cbShow('{{ field }}'); cbMove(-1)"
+           @keydown.enter.prevent="cbEnter()"
+           @keydown.home="cb.active = -1"
+           @keydown.end="cb.active = -1">
+
+    <ul id="{{ pid }}-listbox" role="listbox" aria-label="{{ placeholder }}"
+        class="u-combo-list" x-cloak
+        x-show="cb.open && cb.field === '{{ field }}' && cbOptions().length">
+      <template x-for="(opt, i) in cbOptions()" :key="opt">
+        <li role="option" class="u-combo-opt"
+            :id="'{{ pid }}-opt-' + i"
+            :aria-selected="cb.active === i ? 'true' : 'false'"
+            :data-active="cb.active === i"
+            @click="cbChoose(opt)"
+            @mousemove="cb.active = i"
+            x-text="opt"></li>
+      </template>
+    </ul>
+
+    <p class="u-hint mt-1.5" x-show="cb.open && cb.field === '{{ field }}' && !cbOptions().length" x-cloak>
+      Nothing matches &ldquo;<span x-text="cb.query"></span>&rdquo;{% if other %} — pick <strong>Something else</strong> to type it in{% endif %}.
+    </p>
+  </div>
+{% endif %}
+
+{% if other %}
+  <div class="u-field mt-3" x-show="subject === '__other'" x-collapse>
+    <label class="u-label" for="{{ pid }}-other">Which subject?</label>
+    <input type="text" id="{{ pid }}-other" class="u-input" maxlength="60"
+           placeholder="e.g. Tabla, French, NEET Biology" x-model.trim="subjectCustom">
+    <p class="u-hint">Type it however you'd say it — we'll match it to the right subject.</p>
+  </div>
+{% endif %}

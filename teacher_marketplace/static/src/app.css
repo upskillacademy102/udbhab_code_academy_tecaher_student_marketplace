@@ -495,6 +495,86 @@
     @apply mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-pine-100 text-pine-700;
   }
   .u-proof-mark svg { @apply h-3.5 w-3.5; }
+
+  /* ============================================================
+     "THE EMPTY TIMETABLE" — the page ground
+     ============================================================
+     This product's job is fitting a teacher into your week, so the page's
+     background IS a week: a faint timetable grid the content sits on, and
+     the hero's schedule picker reads as a lit-up slice of that same grid.
+
+     Three layers, each with a job, and deliberately NOT a gradient wash —
+     a smooth gradient with content on top is the exact look that reads as
+     machine-generated right now.
+
+       1. grid   structure, pine at 3.5%
+       2. grain  warmth, SVG turbulence at 2.5% (screens have no texture
+                 of their own; this is what stops it feeling like a slab)
+       3. glow   focus, ONE marigold radial, behind the picker only
+
+     Both layers are position:fixed rather than background-attachment:fixed,
+     which stutters badly on mid-range Android during scroll. */
+  .u-ground { @apply relative; }
+  .u-ground::before,
+  .u-ground::after {
+    content: "";
+    @apply pointer-events-none fixed inset-0;
+  }
+  .u-ground::before {
+    z-index: -2;
+    --tt-col: clamp(58px, 8vw, 92px);
+    --tt-row: clamp(40px, 5.5vw, 52px);
+    background-image:
+      repeating-linear-gradient(to right, rgb(18 87 79 / 0.035) 0 1px, transparent 1px var(--tt-col)),
+      repeating-linear-gradient(to bottom, rgb(18 87 79 / 0.035) 0 1px, transparent 1px var(--tt-row));
+  }
+  .u-ground::after {
+    z-index: -1;
+    opacity: 0.025;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* The single warm spot on a cool page. Sits behind the hero panel, not
+     washed across the whole section — an accent that points at something. */
+  .u-glow {
+    @apply pointer-events-none absolute;
+    background: radial-gradient(38rem 24rem at 60% 55%, theme(colors.marigold.100), transparent 70%);
+  }
+
+  /* Section grounds — the rhythm. The complaint was flat white on flat
+     white; every band boundary now changes ground. */
+  .u-band-tint { @apply bg-pine-50; }
+  .u-band-paper { @apply bg-paper; }
+  /* Closing band: the timetable runs out rather than being cut off. */
+  .u-band-fade {
+    -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
+  }
+
+  /* A step rendered as an entry dropped onto the timetable. */
+  .u-block {
+    @apply relative rounded-xl border border-ink-100 bg-paper p-5 shadow-soft;
+  }
+  .u-block::before {
+    content: "";
+    @apply absolute inset-y-4 left-0 w-[3px] rounded-full bg-pine-600;
+  }
+
+  /* --- Chip sizes / variants used by the taxonomy picker --- */
+  .u-chip-sm { @apply min-h-[40px] rounded-lg px-3.5 text-[0.875rem]; }
+  .u-chip-ghost { @apply border-dashed text-ink-500; }
+
+  /* --- Combobox (W3C APG: editable combobox, list autocomplete) --- */
+  .u-combo { @apply relative; }
+  .u-combo-list {
+    @apply absolute inset-x-0 top-[calc(100%+0.35rem)] z-30 max-h-60 overflow-y-auto
+           rounded-xl border border-ink-200 bg-paper py-1 shadow-lift;
+  }
+  .u-combo-opt {
+    @apply cursor-pointer px-3.5 py-2.5 text-[0.9375rem] text-ink-700;
+  }
+  .u-combo-opt[data-active="true"] { @apply bg-pine-50 font-semibold text-pine-800; }
 }
 
 /* ------------------------------------------------------------

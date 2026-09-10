@@ -2,17 +2,27 @@
 {% load static web_extras %}
 
 {% block title %}Create your account · {{ SITE_NAME }}{% endblock %}
-{% block head_extra %}<script defer src="{% static 'js/auth.js' %}"></script>{% endblock %}
+{% block head_extra %}
+<script defer src="{% static 'js/picker.js' %}"></script>
+<script defer src="{% static 'js/auth.js' %}"></script>
+{% endblock %}
 {% block panel_width %}max-w-[30rem]{% endblock %}
 
 {% block promo_title %}Tell us what you need before you tell us who you are.{% endblock %}
-{% block promo_body %}Three quick questions first. They're not a formality — they're what
-lets us show you teachers who are genuinely free when you are, the moment you sign in.{% endblock %}
+{% block promo_body %}A few quick questions first. They're not a formality — they're what
+lets us show you teachers who teach in your language and are genuinely free when you
+are, the moment you sign in.{% endblock %}
 
 {% block panel %}
-<div x-data="registerFlow('{{ portal }}', '{{ next_url|escapejs }}')" x-cloak>
+{{ subjects|json_script:"tax-subjects" }}
+{{ languages|json_script:"tax-languages" }}
 
-  {# ============ Progress rail — hidden on the role fork, which isn't progress ============ #}
+<div x-data="registerFlow('{{ portal }}', '{{ next_url|escapejs }}', {
+       subjects: JSON.parse(document.getElementById('tax-subjects').textContent),
+       languages: JSON.parse(document.getElementById('tax-languages').textContent)
+     })" x-cloak>
+
+  {# ============ Progress rail — hidden on the role fork, which is a branch not progress ============ #}
   <div class="mb-8" x-show="step !== 'role'">
     <div class="u-rail" role="presentation">
       <template x-for="(id, i) in progressSteps" :key="id">
@@ -72,25 +82,34 @@ lets us show you teachers who are genuinely free when you are, the moment you si
       <p class="u-lede mt-2 text-[0.9375rem]"
          x-text="step === 'teaches' ? 'Pick your main subject. You can add more once your profile is set up.' : 'Pick one to start. You can add more subjects later.'"></p>
 
-      <div class="mt-7 flex flex-wrap gap-2">
-        <template x-for="s in SUBJECTS" :key="s">
-          <button type="button" class="u-chip u-btn-sm min-h-[40px] px-3.5" :aria-pressed="subject === s" @click="pickSubject(s)">
-            <span x-text="s"></span>
-          </button>
-        </template>
-        <button type="button" class="u-chip u-btn-sm min-h-[40px] px-3.5" :aria-pressed="subject === '__other'" @click="pickSubject('__other')">
-          Something else
-        </button>
-      </div>
-
-      <div class="u-field mt-5" x-show="subject === '__other'" x-collapse>
-        <label class="u-label" for="rg-subject">Which subject?</label>
-        <input id="rg-subject" class="u-input" maxlength="60" placeholder="e.g. Tabla, French, NEET Biology"
-               x-model.trim="customSubject" @keydown.enter.prevent="resolvedSubject && next()">
-        <p class="u-hint">Type it however you'd say it — we'll match it to the right subject.</p>
+      <div class="mt-7">
+        {% include "web/partials/_taxonomy_picker.html" with items=subjects field="subject" pid="rg-subj" placeholder="Type a subject — e.g. Mathematics" other=1 %}
       </div>
 
       <button type="button" class="u-btn-primary u-btn-lg mt-8 w-full" :disabled="!resolvedSubject" @click="next()">
+        Continue {% icon "chevron-right" %}
+      </button>
+    </div>
+  </template>
+
+  {% comment %}STEP: language. Regional-language teaching is the clearest
+  differentiator this marketplace has, and TeacherSearchFilterSet already
+  carries a language text filter. "Any language" is the pre-selected
+  default, so this costs the indifferent majority a single tap.{% endcomment %}
+  <template x-if="step === 'language'">
+    <div>
+      <button type="button" @click="back()" class="u-btn-ghost u-btn-sm -ml-3 mb-5">
+        {% icon "arrow-left" "h-4 w-4" %} <span x-text="resolvedSubject"></span>
+      </button>
+
+      <h1 class="u-h2">Taught in which language?</h1>
+      <p class="u-lede mt-2 text-[0.9375rem]">Many students learn faster in their first language. Leave it on <em>Any</em> if you don't mind.</p>
+
+      <div class="mt-7">
+        {% include "web/partials/_taxonomy_picker.html" with items=languages field="language" pid="rg-lang" placeholder="Type a language — e.g. Hindi" anylabel="Any language" %}
+      </div>
+
+      <button type="button" class="u-btn-primary u-btn-lg mt-8 w-full" @click="next()">
         Continue {% icon "chevron-right" %}
       </button>
     </div>
@@ -110,7 +129,8 @@ lets us show you teachers who are genuinely free when you are, the moment you si
 
       <div class="mt-7 grid grid-cols-2 gap-2">
         <template x-for="l in LEVELS" :key="l">
-          <button type="button" class="u-chip justify-start px-3.5 text-left" :aria-pressed="level === l" @click="level = (level === l ? null : l)">
+          <button type="button" class="u-chip justify-start px-3.5 text-left"
+                  :aria-pressed="level === l" @click="level = (level === l ? null : l)">
             <span x-text="l"></span>
           </button>
         </template>
@@ -193,10 +213,13 @@ lets us show you teachers who are genuinely free when you are, the moment you si
       </p>
 
       {% comment %}Restate what they've already invested. Endowed progress:
-      three things done makes the fourth feel like finishing, not starting.{% endcomment %}
-      <div class="mt-6 flex flex-wrap gap-2" x-show="resolvedSubject || level || days.length">
+      four things done makes the fifth feel like finishing, not starting.{% endcomment %}
+      <div class="mt-6 flex flex-wrap gap-2" x-show="resolvedSubject || resolvedLanguage || level || days.length">
         <template x-if="resolvedSubject">
           <span class="u-badge u-badge-pine">{% icon "book" %}<span x-text="resolvedSubject"></span></span>
+        </template>
+        <template x-if="resolvedLanguage">
+          <span class="u-badge u-badge-pine">{% icon "globe" %}<span x-text="resolvedLanguage"></span></span>
         </template>
         <template x-if="level">
           <span class="u-badge u-badge-pine">{% icon "academic" %}<span x-text="level"></span></span>
