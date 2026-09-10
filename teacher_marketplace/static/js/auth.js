@@ -1,4 +1,6 @@
-/* Login form logic. Routes by the account's real role after auth. */
+/* ============================================================
+   Auth screens: login, registration, staff sign-in.
+   ============================================================ */
 document.addEventListener("alpine:init", () => {
   const ROLE_HOME = {
     student: "/student/",
@@ -7,6 +9,43 @@ document.addEventListener("alpine:init", () => {
     superadmin: "/super-admin/",
   };
 
+  /* Where the pre-signup answers are parked between "create account" and the
+     first authenticated page load. localStorage (not sessionStorage) because
+     registration redirects through /login/, which the user may open in a new
+     tab. Stage B's Discover page reads this key, replays it into
+     PATCH /students/me/ + POST /student-requirements/, then clears it. */
+  const INTENT_KEY = "udbhab:intent";
+  const INTENT_TTL_MS = 24 * 60 * 60 * 1000;
+
+  function saveIntent(intent) {
+    try {
+      localStorage.setItem(INTENT_KEY, JSON.stringify({ ...intent, savedAt: Date.now() }));
+    } catch (_) {
+      /* private mode / storage disabled — the flow still completes, the
+         student just starts on an unfiltered Discover page. */
+    }
+  }
+
+  window.readIntent = function readIntent() {
+    try {
+      const raw = localStorage.getItem(INTENT_KEY);
+      if (!raw) return null;
+      const v = JSON.parse(raw);
+      if (!v || !v.savedAt || Date.now() - v.savedAt > INTENT_TTL_MS) {
+        localStorage.removeItem(INTENT_KEY);
+        return null;
+      }
+      return v;
+    } catch (_) {
+      return null;
+    }
+  };
+
+  window.clearIntent = function clearIntent() {
+    try { localStorage.removeItem(INTENT_KEY); } catch (_) {}
+  };
+
+  /* ---- Login ---- */
   window.Alpine.data("loginForm", (portal, nextUrl, prefillEmail, justRegistered) => ({
     portal: portal || "",
     nextUrl: nextUrl || "",
@@ -16,7 +55,7 @@ document.addEventListener("alpine:init", () => {
     submitting: false,
     error: "",
     conflict: false,
-    notice: justRegistered ? "Your account is ready. Log in to continue." : "",
+    notice: justRegistered ? "Your account is ready. Log in to pick up where you left off." : "",
 
     async doLogin() {
       if (this.submitting) return;
@@ -64,15 +103,67 @@ document.addEventListener("alpine:init", () => {
     },
   }));
 
-  /* ---- Registration (Student / Teacher only) ---- */
+  /* ============================================================
+     Registration — intent first, credentials last.
+
+     The old flow was: pick a role, then fill six fields, then land on an
+     empty dashboard. This one asks what the person actually wants BEFORE
+     asking them to work for it (goal-gradient + endowed progress), and the
+     answers are not decorative: subject, level and free hours are exactly
+     the inputs GET /search/teachers/ needs to return a scored match, so the
+     first screen after signup can show real results instead of an empty
+     state.
+
+     No backend change. Subject travels as free text because
+     /api/v1/subjects/ is _ANY_AUTHED and unreachable while logged out —
+     and text is what SubjectMatchingService.match_by_text wants anyway.
+     ============================================================ */
   const NAME_RE = /^[A-Za-z][A-Za-z\s'-]*$/;
   const MOBILE_RE = /^[0-9]{10,15}$/;
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  window.Alpine.data("registerForm", (portal, nextUrl) => ({
-    step: portal === "student" || portal === "teacher" ? "form" : "role",
+  const SUBJECTS = [
+    "Mathematics", "Physics", "Chemistry", "Biology", "English",
+    "Hindi", "Computer Science", "Accountancy", "Economics",
+    "Music", "Spoken English", "Test Prep",
+  ];
+
+  const LEVELS = [
+    "Class 1–5", "Class 6–8", "Class 9–10", "Class 11–12",
+    "Undergraduate", "Postgraduate", "Competitive exam", "Adult learner",
+  ];
+
+  const DAYS = [
+    { n: 1, s: "M", full: "Monday" },
+    { n: 2, s: "T", full: "Tuesday" },
+    { n: 3, s: "W", full: "Wednesday" },
+    { n: 4, s: "T", full: "Thursday" },
+    { n: 5, s: "F", full: "Friday" },
+    { n: 6, s: "S", full: "Saturday" },
+    { n: 7, s: "S", full: "Sunday" },
+  ];
+
+  const BANDS = [
+    { id: "morning", label: "Morning", hint: "6–12", from: "06:00", to: "12:00" },
+    { id: "afternoon", label: "Afternoon", hint: "12–5", from: "12:00", to: "17:00" },
+    { id: "evening", label: "Evening", hint: "5–10", from: "17:00", to: "22:00" },
+  ];
+
+  window.Alpine.data("registerFlow", (portal, nextUrl) => ({
+    SUBJECTS, LEVELS, DAYS, BANDS,
+
     role: portal === "student" || portal === "teacher" ? portal : "",
     nextUrl: nextUrl || "",
+    stepIndex: 0,
+
+    // captured intent
+    subject: null,
+    customSubject: "",
+    level: null,
+    days: [],
+    band: "evening",
+
+    // account form
     showPw: false,
     submitting: false,
     formError: "",
@@ -81,6 +172,96 @@ document.addEventListener("alpine:init", () => {
     server: {},
     model: { first_name: "", last_name: "", email: "", mobile: "", password: "", password_confirm: "" },
 
+    init() {
+      // Carry over whatever the visitor already chose on the landing page,
+      // so nobody is asked the same question twice.
+      const q = new URLSearchParams(location.search);
+      const subject = q.get("subject");
+      if (subject) {
+        if (SUBJECTS.includes(subject)) this.subject = subject;
+        else { this.subject = "__other"; this.customSubject = subject.slice(0, 60); }
+      }
+      const days = q.get("days");
+      if (days) {
+        this.days = days.split(",").map(Number).filter((n) => n >= 1 && n <= 7);
+      }
+      const from = q.get("from");
+      const match = BANDS.find((b) => b.from === from);
+      if (match) this.band = match.id;
+
+      // Skip any opening step the landing page already answered.
+      while (this.stepIndex < this.steps.length - 1 && this.stepComplete(this.steps[this.stepIndex])) {
+        this.stepIndex++;
+      }
+    },
+
+    /* ---- step machinery ---- */
+    get steps() {
+      if (!this.role) return ["role"];
+      if (this.role === "teacher") return ["role", "teaches", "account"];
+      return ["role", "subject", "level", "when", "account"];
+    },
+    get step() { return this.steps[this.stepIndex] || "role"; },
+    get isLast() { return this.stepIndex >= this.steps.length - 1; },
+    get progressSteps() { return this.steps.slice(1); },  // the role step isn't progress, it's a fork
+
+    stepComplete(id) {
+      switch (id) {
+        case "role": return !!this.role;
+        case "subject":
+        case "teaches": return !!this.resolvedSubject;
+        case "level": return !!this.level;
+        case "when": return this.days.length > 0;
+        default: return false;
+      }
+    },
+
+    get resolvedSubject() {
+      if (this.subject === "__other") return this.customSubject.trim() || null;
+      return this.subject;
+    },
+
+    pickRole(r) {
+      this.role = r;
+      this.stepIndex = 1;
+    },
+
+    next() {
+      if (this.stepIndex < this.steps.length - 1) this.stepIndex++;
+    },
+    back() {
+      if (this.stepIndex > 0) this.stepIndex--;
+      this.formError = "";
+      this.emailTaken = false;
+    },
+    // "when" is genuinely optional — but skipping it costs the match score,
+    // and the copy says so rather than hiding it.
+    skip() { this.next(); },
+
+    toggleDay(n) {
+      const i = this.days.indexOf(n);
+      if (i === -1) this.days.push(n); else this.days.splice(i, 1);
+      this.days.sort((a, b) => a - b);
+    },
+
+    pickSubject(s) {
+      this.subject = this.subject === s ? null : s;
+      if (this.subject && this.subject !== "__other") this.customSubject = "";
+    },
+
+    scheduleSummary() {
+      if (!this.days.length) return "";
+      const names = this.days.map((n) => (DAYS.find((d) => d.n === n) || {}).full).filter(Boolean);
+      const band = (BANDS.find((b) => b.id === this.band) || {}).label || "";
+      let dayText;
+      if (names.length === 1) dayText = names[0] + "s";
+      else if (names.length === 2) dayText = names[0] + "s & " + names[1] + "s";
+      else if (names.length <= 4) dayText = names.slice(0, -1).map((d) => d + "s").join(", ") + " & " + names[names.length - 1] + "s";
+      else dayText = names.length + " days a week";
+      return dayText + " " + band.toLowerCase() + "s";
+    },
+
+    /* ---- account form validation (unchanged rules) ---- */
     get pwRules() {
       const p = this.model.password || "";
       return [
@@ -90,26 +271,6 @@ document.addEventListener("alpine:init", () => {
         { key: "digit", label: "One number", ok: /\d/.test(p) },
         { key: "special", label: "One special character", ok: /[!@#$%^&*()\-_=+[\]{};:'",.<>/?\\|`~]/.test(p) },
       ];
-    },
-
-    pickRole(r) { this.role = r; this.step = "form"; },
-    back() {
-      if (portal === "student" || portal === "teacher") { location.assign("/register/" + this._qs()); return; }
-      this.step = "role"; this.formError = ""; this.emailTaken = false;
-    },
-    _qs() {
-      const q = new URLSearchParams();
-      if (this.nextUrl) q.set("next", this.nextUrl);
-      const s = q.toString();
-      return s ? "?" + s : "";
-    },
-    loginHref(email) {
-      const q = new URLSearchParams();
-      if (this.role) q.set("as", this.role);
-      if (email) q.set("email", email);
-      if (this.nextUrl) q.set("next", this.nextUrl);
-      const s = q.toString();
-      return "/login/" + (s ? "?" + s : "");
     },
 
     touch(f) { this.touched[f] = true; delete this.server[f]; },
@@ -151,6 +312,15 @@ document.addEventListener("alpine:init", () => {
         .every((f) => { this.touched[f] = true; return !this._clientError(f); });
     },
 
+    loginHref(email) {
+      const q = new URLSearchParams();
+      if (this.role) q.set("as", this.role);
+      if (email) q.set("email", email);
+      if (this.nextUrl) q.set("next", this.nextUrl);
+      const s = q.toString();
+      return "/login/" + (s ? "?" + s : "");
+    },
+
     async submit() {
       if (this.submitting) return;
       this.formError = "";
@@ -159,6 +329,17 @@ document.addEventListener("alpine:init", () => {
       this.submitting = true;
       try {
         await api.post("/auth/register/", { ...this.model, role: this.role }, { silent: true });
+
+        const band = BANDS.find((b) => b.id === this.band);
+        saveIntent({
+          role: this.role,
+          subject: this.resolvedSubject,
+          level: this.level,
+          days: this.days,
+          from: this.days.length && band ? band.from : null,
+          to: this.days.length && band ? band.to : null,
+        });
+
         const q = new URLSearchParams({ as: this.role, registered: "1", email: this.model.email });
         if (this.nextUrl) q.set("next", this.nextUrl);
         location.assign("/login/?" + q.toString());
@@ -168,6 +349,8 @@ document.addEventListener("alpine:init", () => {
           this.emailTaken = true;
         } else if (Object.keys(fe).length) {
           this.server = fe;
+          // Server-side field errors always belong to the account step.
+          this.stepIndex = this.steps.length - 1;
         } else {
           this.formError = e.message || "We couldn't create your account. Please try again.";
         }

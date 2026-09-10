@@ -11,6 +11,18 @@
   src: url("/static/fonts/inter-latin-wght-normal.woff2") format("woff2");
 }
 
+/* Literata — display face for the rebuilt surfaces. A reading typeface
+   (commissioned for Google Play Books), which is the point: the product is
+   teaching. Headings only, never below 28px. 84KB, latin subset,
+   `swap` so it never blocks first paint. */
+@font-face {
+  font-family: "Literata";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/static/fonts/literata-latin-opsz-wght.woff2") format("woff2");
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -314,6 +326,177 @@
   }
 }
 
+/* ============================================================
+   REBUILD — the new design language  (stage A)
+   ============================================================
+   Everything above this line is the ORIGINAL system and still dresses the
+   admin / super-admin portal, which is out of scope. Everything below is
+   the new one, namespaced `u-` so the two can coexist without either
+   silently restyling the other.
+
+   Three rules govern this layer:
+     1. marigold is the ONLY accent, and appears at most ONCE per screen
+        (one primary action). Badges, icons, nav and links use pine.
+     2. Literata never renders below 28px.
+     3. Every interactive target clears 24x24px (WCAG 2.5.8); the base
+        button is 40px tall and the small variant 32px.
+   ============================================================ */
+@layer components {
+
+  /* --- Page wrapper: sets the warm ground and re-homes the focus ring ---
+     The global :focus-visible ring is indigo (brand-600) for the admin
+     portal. Inside a rebuilt page it must be pine, or the one piece of
+     indigo left on screen would be the focus state. */
+  .u-page {
+    @apply bg-paper-canvas text-ink-700 antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+  .u-page :focus-visible {
+    @apply outline-none ring-2 ring-pine-600 ring-offset-2 ring-offset-paper-canvas rounded-[6px];
+  }
+  .u-page ::selection { @apply bg-marigold-200 text-ink-900; }
+
+  .u-shell { @apply mx-auto w-full max-w-shell px-5 sm:px-8; }
+
+  /* --- Type ---------------------------------------------------------- */
+  .u-display {
+    @apply font-display font-bold tracking-[-0.02em] text-ink-900;
+    font-size: clamp(2.25rem, 5.4vw, 3.75rem);
+    line-height: 1.06;
+    text-wrap: balance;
+  }
+  .u-h2 {
+    @apply font-display font-semibold tracking-[-0.015em] text-ink-900;
+    font-size: clamp(1.6rem, 3.4vw, 2.25rem);
+    line-height: 1.18;
+    text-wrap: balance;
+  }
+  .u-h3 { @apply font-display text-[1.3rem] font-semibold leading-snug text-ink-900; }
+  .u-eyebrow { @apply text-[11px] font-semibold uppercase tracking-[0.11em] text-ink-500; }
+  .u-lede { @apply max-w-prose text-[1.0625rem] leading-relaxed text-ink-500; }
+  .u-body { @apply text-[0.9375rem] leading-relaxed text-ink-700; }
+  .u-fine { @apply text-[0.8125rem] leading-normal text-ink-500; }
+  .u-num  { @apply tabular-nums; }
+
+  /* --- Buttons ------------------------------------------------------- */
+  .u-btn {
+    @apply inline-flex min-h-[40px] select-none items-center justify-center gap-2 rounded-xl
+           px-4 text-[0.9375rem] font-semibold transition duration-150 ease-enter
+           disabled:pointer-events-none disabled:opacity-45;
+  }
+  .u-btn svg { @apply h-[18px] w-[18px] shrink-0; }
+
+  /* THE accent. Ink text on marigold measures 7.88:1 — white would have
+     been ~2.4:1, which is why warm-accent designs usually abandon the
+     accent for their primary button. */
+  .u-btn-primary {
+    @apply u-btn bg-marigold-500 text-ink-900 shadow-soft
+           hover:bg-marigold-400 active:bg-marigold-600;
+  }
+  .u-btn-secondary {
+    @apply u-btn border border-ink-200 bg-paper text-ink-800 shadow-soft
+           hover:border-ink-300 hover:bg-ink-50 active:bg-ink-100;
+  }
+  .u-btn-pine {
+    @apply u-btn bg-pine-700 text-white shadow-soft hover:bg-pine-600 active:bg-pine-800;
+  }
+  .u-btn-ghost { @apply u-btn text-ink-600 hover:bg-ink-100 hover:text-ink-900; }
+  .u-btn-lg { @apply min-h-[52px] px-7 text-base; }
+  .u-btn-sm { @apply min-h-[32px] rounded-lg px-3 text-[0.8125rem]; }
+
+  .u-btn[data-loading="true"] { @apply pointer-events-none relative text-transparent; }
+  .u-btn[data-loading="true"]::after {
+    content: "";
+    @apply absolute h-[18px] w-[18px] animate-spin rounded-full border-2 border-ink-900/70 border-r-transparent;
+  }
+  .u-btn-pine[data-loading="true"]::after { @apply border-white/80 border-r-transparent; }
+
+  /* Text link that still reads as an action without spending the accent. */
+  .u-link {
+    @apply inline-flex items-center gap-1 font-semibold text-pine-700 underline-offset-2
+           hover:text-pine-600 hover:underline;
+  }
+
+  /* --- Surfaces ------------------------------------------------------ */
+  /* Border, fill and shadow are spent by role here, not stamped on every
+     block — that uniformity is what flattened the original hierarchy. */
+  .u-card { @apply rounded-2xl border border-ink-100 bg-paper shadow-soft; }
+  .u-card-pad { @apply p-6 sm:p-7; }
+  .u-panel { @apply rounded-2xl bg-paper-sunk p-6 sm:p-7; }
+  .u-quiet { @apply rounded-xl border border-ink-100 bg-paper p-5; }
+
+  /* --- Forms --------------------------------------------------------- */
+  .u-field { @apply flex flex-col gap-1.5; }
+  .u-label { @apply text-[0.8125rem] font-semibold text-ink-800; }
+  .u-label .opt { @apply ml-1 font-normal text-ink-400; }
+  .u-input, .u-select, .u-textarea {
+    @apply block min-h-[44px] w-full rounded-xl border border-ink-200 bg-paper px-3.5 py-2.5
+           text-[0.9375rem] text-ink-900 shadow-soft transition placeholder:text-ink-400
+           focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-600/25
+           disabled:cursor-not-allowed disabled:bg-ink-50 disabled:text-ink-400;
+  }
+  .u-textarea { @apply min-h-[104px] resize-y; }
+  .u-select {
+    @apply appearance-none bg-[length:1.1rem] bg-[right_0.75rem_center] bg-no-repeat pr-10;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%235b6b66' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
+  .u-hint { @apply text-[0.8125rem] text-ink-500; }
+  .u-error { @apply text-[0.8125rem] font-medium text-danger; }
+  .u-input[aria-invalid="true"], .u-select[aria-invalid="true"], .u-textarea[aria-invalid="true"] {
+    @apply border-danger/60 focus:border-danger focus:ring-danger/25;
+  }
+
+  /* --- Chips: the subject / level pickers ---------------------------- */
+  /* Deliberately large. These are the first thing a new user touches, on a
+     phone, and Fitts' law is not a style preference. */
+  .u-chip {
+    @apply inline-flex min-h-[44px] select-none items-center justify-center gap-2 rounded-xl
+           border border-ink-200 bg-paper px-4 text-[0.9375rem] font-medium text-ink-700
+           shadow-soft transition duration-150 ease-enter
+           hover:border-pine-300 hover:bg-pine-50 hover:text-pine-800;
+  }
+  .u-chip[aria-pressed="true"] {
+    @apply border-pine-600 bg-pine-50 text-pine-800 shadow-none ring-1 ring-inset ring-pine-600;
+  }
+  .u-chip svg { @apply h-[18px] w-[18px] shrink-0 text-ink-400; }
+  .u-chip[aria-pressed="true"] svg { @apply text-pine-600; }
+
+  /* --- Badges -------------------------------------------------------- */
+  .u-badge {
+    @apply inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1
+           text-[0.75rem] font-semibold ring-1 ring-inset;
+  }
+  .u-badge-pine { @apply bg-pine-50 text-pine-800 ring-pine-200; }
+  .u-badge-ink { @apply bg-ink-50 text-ink-600 ring-ink-200; }
+  .u-badge-marigold { @apply bg-marigold-100 text-marigold-800 ring-marigold-300; }
+  .u-badge svg { @apply h-3.5 w-3.5 shrink-0; }
+
+  /* --- Alerts -------------------------------------------------------- */
+  .u-alert { @apply flex gap-3 rounded-xl border p-4 text-[0.875rem]; }
+  .u-alert svg { @apply h-5 w-5 shrink-0; }
+  .u-alert-info { @apply border-pine-200 bg-pine-50 text-pine-900; }
+  .u-alert-warn { @apply border-marigold-300 bg-marigold-50 text-marigold-900; }
+  .u-alert-error { @apply border-danger/30 bg-danger/5 text-danger; }
+  .u-alert-success { @apply border-success/30 bg-success/5 text-success; }
+
+  /* --- Step rail (the pre-signup intent flow) ------------------------ */
+  .u-rail { @apply flex items-center gap-2; }
+  .u-rail-dot {
+    @apply h-1.5 flex-1 rounded-full bg-ink-200 transition-[background-color,flex-grow] duration-300 ease-enter;
+  }
+  .u-rail-dot[data-state="done"] { @apply bg-pine-600; }
+  .u-rail-dot[data-state="current"] { @apply bg-pine-600; }
+
+  /* --- Trust strip: what we can honestly claim ----------------------- */
+  .u-proof {
+    @apply flex items-start gap-3 text-[0.875rem] leading-snug text-ink-700;
+  }
+  .u-proof-mark {
+    @apply mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-pine-100 text-pine-700;
+  }
+  .u-proof-mark svg { @apply h-3.5 w-3.5; }
+}
+
 /* ------------------------------------------------------------
    UTILITIES
    ------------------------------------------------------------ */
@@ -321,6 +504,21 @@
   .no-scrollbar::-webkit-scrollbar { display: none; }
   .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
   .grid-auto-fill-280 { grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); }
+  .grid-auto-fill-240 { grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); }
+
+  /* Staggered arrival. The template sets --d per item; capped in markup at
+     8 items so a long list never feels like it's loading slowly. */
+  .u-stagger > * { animation: rise-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: var(--d, 0ms); }
+  @media (prefers-reduced-motion: reduce) {
+    .u-stagger > * { animation: none; }
+  }
+
+  /* Warm paper texture — replaces the indigo dot-grid, which was the accent
+     colour doing decorative work. */
+  .u-grain {
+    background-image: radial-gradient(rgb(18 33 29 / 0.045) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
 }
 
 [x-cloak] { display: none !important; }

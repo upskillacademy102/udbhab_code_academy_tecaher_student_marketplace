@@ -1,41 +1,66 @@
 {% extends "web/base.html" %}
-{% load web_extras %}
+{% load static web_extras %}
 
 {% block title %}{{ page_title|default:SITE_NAME }} · {{ SITE_NAME }}{% endblock %}
+{% block font_extra %}<link rel="preload" href="{% static 'fonts/literata-latin-opsz-wght.woff2' %}" as="font" type="font/woff2" crossorigin>{% endblock %}
+
+{% comment %}
+Auth shell (login / register).
+
+The old version was a 50/50 split with a marketing panel repeating three
+bullet points. That panel was doing no work: nobody reads a value
+proposition while typing a password. It has been replaced by a narrower
+brand rail that carries ONE thing — the reason to trust us with an account
+— and gives the form the majority of the screen.
+{% endcomment %}
 
 {% block body %}
-<div class="grid min-h-full lg:grid-cols-2">
+<div class="u-page grid min-h-full lg:grid-cols-[minmax(0,26rem)_1fr]">
 
-  {# ---- Brand / value panel (hidden on small screens) ---- #}
-  <div class="relative hidden overflow-hidden bg-brand-700 p-12 text-white lg:flex lg:flex-col lg:justify-between">
-    <div class="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-brand-500/40 blur-3xl"></div>
-    <div class="pointer-events-none absolute -bottom-32 -left-16 h-96 w-96 rounded-full bg-brand-900/50 blur-3xl"></div>
+  {# ---- Brand rail (hidden on small screens — a phone needs the form, not the pitch) ---- #}
+  <div class="relative hidden overflow-hidden bg-pine-800 p-10 text-pine-50 lg:flex lg:flex-col lg:justify-between">
+    <div class="pointer-events-none absolute -right-28 -top-28 h-80 w-80 rounded-full bg-pine-600/40 blur-3xl"></div>
+    <div class="pointer-events-none absolute -bottom-32 -left-20 h-80 w-80 rounded-full bg-pine-950/60 blur-3xl"></div>
 
-    <a href="/" class="relative flex items-center gap-2.5 rounded-lg">
-      <span class="grid h-9 w-9 place-items-center rounded-lg bg-white/15 text-base font-bold">{{ SITE_NAME|first }}</span>
-      <span class="text-lg font-semibold tracking-tight">{{ SITE_NAME }}</span>
+    <a href="/" class="relative flex items-center gap-3 rounded-lg">
+      <span class="grid h-9 w-9 place-items-center rounded-lg bg-marigold-500 font-display text-lg font-bold text-ink-900">{{ SITE_NAME|first }}</span>
+      <span class="font-display text-lg font-semibold tracking-tight text-white">{{ SITE_NAME }}</span>
     </a>
 
-    <div class="relative max-w-md">
-      <h2 class="text-3xl font-semibold leading-tight tracking-tight">{% block promo_title %}The right teacher, matched to how you learn.{% endblock %}</h2>
-      <p class="mt-4 text-brand-100">{% block promo_body %}Search by subject, language, schedule and location. Students connect with teachers for free — teachers grow their practice with quality leads.{% endblock %}</p>
-      <ul class="mt-8 space-y-3 text-sm text-brand-50">
-        <li class="flex items-center gap-3">{% icon "check" "h-5 w-5 text-brand-200" %} Free teacher search for students</li>
-        <li class="flex items-center gap-3">{% icon "check" "h-5 w-5 text-brand-200" %} Schedule-aware matching</li>
-        <li class="flex items-center gap-3">{% icon "check" "h-5 w-5 text-brand-200" %} Verified teacher profiles</li>
+    <div class="relative">
+      <p class="font-display text-[1.75rem] font-semibold leading-snug tracking-tight text-white">
+        {% block promo_title %}Every teacher here has been checked by a person.{% endblock %}
+      </p>
+      <p class="mt-4 max-w-sm text-[0.9375rem] leading-relaxed text-pine-100">
+        {% block promo_body %}We verify identity and credentials before a teacher can appear
+        in search — and matching weighs whether they're actually free when you are.{% endblock %}
+      </p>
+      <ul class="mt-8 flex flex-col gap-3.5">
+        <li class="u-proof text-pine-50">
+          <span class="u-proof-mark bg-pine-600/60 text-marigold-300">{% icon "shield" %}</span>
+          <span>Identity and credentials verified before listing</span>
+        </li>
+        <li class="u-proof text-pine-50">
+          <span class="u-proof-mark bg-pine-600/60 text-marigold-300">{% icon "clock" %}</span>
+          <span>Matched on when you're free, not just what you study</span>
+        </li>
+        <li class="u-proof text-pine-50">
+          <span class="u-proof-mark bg-pine-600/60 text-marigold-300">{% icon "check" %}</span>
+          <span>Free for students — there is no student side of the bill</span>
+        </li>
       </ul>
     </div>
 
-    <p class="relative text-xs text-brand-200">{{ SITE_TAGLINE }}</p>
+    <p class="relative text-[0.8125rem] text-pine-300">{{ SITE_TAGLINE }}</p>
   </div>
 
-  {# ---- Content panel ---- #}
-  <div class="flex flex-col items-center justify-center px-4 py-10 sm:px-8">
-    <a href="/" class="mb-8 flex items-center gap-2.5 lg:hidden">
-      <span class="grid h-9 w-9 place-items-center rounded-lg bg-brand-600 text-base font-bold text-white">{{ SITE_NAME|first }}</span>
-      <span class="text-lg font-semibold tracking-tight text-slate-900">{{ SITE_NAME }}</span>
+  {# ---- Form panel ---- #}
+  <div class="flex flex-col items-center justify-center px-5 py-12 sm:px-8">
+    <a href="/" class="mb-9 flex items-center gap-2.5 lg:hidden">
+      <span class="grid h-9 w-9 place-items-center rounded-lg bg-pine-700 font-display text-lg font-bold text-marigold-400">{{ SITE_NAME|first }}</span>
+      <span class="font-display text-lg font-semibold tracking-tight text-ink-900">{{ SITE_NAME }}</span>
     </a>
-    <div class="w-full max-w-sm">
+    <div class="w-full {% block panel_width %}max-w-[26rem]{% endblock %}">
       {% block panel %}{% endblock %}
     </div>
   </div>

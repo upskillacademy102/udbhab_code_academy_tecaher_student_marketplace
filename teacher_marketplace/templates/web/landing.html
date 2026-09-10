@@ -1,184 +1,302 @@
 {% extends "web/base.html" %}
-{% load web_extras %}
+{% load static web_extras %}
 {% block title %}{{ SITE_NAME }} — {{ SITE_TAGLINE }}{% endblock %}
+{% block font_extra %}<link rel="preload" href="{% static 'fonts/literata-latin-opsz-wght.woff2' %}" as="font" type="font/woff2" crossorigin>{% endblock %}
+
+{% comment %}
+Landing page.
+
+The hero's right side is the schedule picker, not a decorative illustration.
+Rationale (approved plan): schedule-first matching is the one thing this
+platform does that UrbanPro and Superprof don't, and a claim you can *touch*
+beats a claim you read. Whatever the visitor taps here travels into
+/register/ as query params, so the first step of onboarding is already done
+before an account exists.
+
+Honesty constraints held throughout this file:
+  - No invented volume metrics. /public/stats/ returns real counts and they
+    are rendered only when non-zero.
+  - No "message teachers directly" claim. There is no student->teacher
+    messaging in this product; students post a requirement and teachers
+    reach out after unlocking. "How it works" reflects that.
+  - Marigold appears exactly twice: the primary hero CTA and the closing
+    CTA. Everything else is pine.
+{% endcomment %}
 
 {% block body %}
-<div class="flex min-h-full flex-col bg-stone-50" x-data="landingPage()">
-  <header class="border-b border-slate-200/70 bg-stone-50">
-    <div class="container-app flex h-16 items-center justify-between">
+<div class="u-page flex min-h-full flex-col" x-data="landingPage()">
+
+  {# ============ Header ============ #}
+  <header class="sticky top-0 z-40 border-b border-ink-100/80 bg-paper-canvas/85 backdrop-blur">
+    <div class="u-shell flex h-[68px] items-center justify-between gap-4">
       <a href="/" class="flex items-center gap-2.5">
-        <span class="grid h-8 w-8 place-items-center rounded-lg bg-brand-600 text-sm font-bold text-white">{{ SITE_NAME|first }}</span>
-        <span class="text-[15px] font-semibold tracking-tight text-slate-900">{{ SITE_NAME }}</span>
+        <span class="grid h-9 w-9 place-items-center rounded-lg bg-pine-700 font-display text-lg font-bold text-marigold-400">{{ SITE_NAME|first }}</span>
+        <span class="font-display text-[1.0625rem] font-semibold tracking-tight text-ink-900">{{ SITE_NAME }}</span>
       </a>
+      <nav class="hidden items-center gap-7 md:flex" aria-label="Sections">
+        <a href="#subjects" class="text-[0.875rem] font-medium text-ink-600 hover:text-pine-700">Subjects</a>
+        <a href="#how" class="text-[0.875rem] font-medium text-ink-600 hover:text-pine-700">How it works</a>
+        <a href="#teachers" class="text-[0.875rem] font-medium text-ink-600 hover:text-pine-700">For teachers</a>
+      </nav>
       <div class="flex items-center gap-2">
-        <a href="/login/" class="btn-ghost btn-sm">Log in</a>
-        <a href="/register/" class="btn-primary btn-sm">Create account</a>
+        <a href="/login/" class="u-btn-ghost u-btn-sm sm:min-h-[40px] sm:px-4 sm:text-[0.9375rem]">Log in</a>
+        <a href="/register/?as=student" class="u-btn-pine u-btn-sm sm:min-h-[40px] sm:px-4 sm:text-[0.9375rem]">Create account</a>
       </div>
     </div>
   </header>
 
   <main id="main" class="flex-1">
-    <section class="relative overflow-hidden bg-dot-grid">
-      <div class="pointer-events-none absolute inset-0 bg-gradient-to-b from-stone-50 via-stone-50/70 to-stone-50"></div>
-      <div class="container-app relative grid items-center gap-12 py-16 lg:grid-cols-2 lg:py-20">
-      <div>
-        {# Interactive audience switch — changes the pitch below #}
-        <div class="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-xs">
-          <button type="button" class="rounded-md px-4 py-1.5 text-sm font-semibold transition"
-                  :class="audience === 'student' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'"
-                  @click="audience = 'student'">I'm a Student</button>
-          <button type="button" class="rounded-md px-4 py-1.5 text-sm font-semibold transition"
-                  :class="audience === 'teacher' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'"
-                  @click="audience = 'teacher'">I'm a Teacher</button>
+
+    {# ============ Hero ============ #}
+    <section class="relative overflow-hidden border-b border-ink-100">
+      <div class="u-grain pointer-events-none absolute inset-0 opacity-70"></div>
+      <div class="pointer-events-none absolute -right-40 -top-40 h-[30rem] w-[30rem] rounded-full bg-pine-100/50 blur-3xl"></div>
+
+      <div class="u-shell relative grid items-center gap-14 py-16 lg:grid-cols-[1.05fr_1fr] lg:gap-16 lg:py-24">
+
+        {# ---- Left: the pitch ---- #}
+        <div>
+          <span class="u-eyebrow">Tutors across India</span>
+
+          <h1 class="u-display mt-4">
+            Find a teacher who's <span class="relative whitespace-nowrap text-pine-700">free when you are<span class="absolute inset-x-0 -bottom-1 h-[6px] rounded-full bg-marigold-300/70"></span></span>
+          </h1>
+
+          <p class="u-lede mt-6">
+            Most tutor sites match you on subject and leave the hard part to you.
+            We weigh <strong class="font-semibold text-ink-800">when you're actually free</strong> —
+            because the right teacher at the wrong time isn't a match.
+          </p>
+
+          <div class="mt-9 flex flex-col gap-4 sm:flex-row sm:items-center">
+            <a :href="registerHref()" class="u-btn-primary u-btn-lg w-full sm:w-auto">
+              <span x-text="ctaLabel()">Get matched — it's free</span>
+              {% icon "chevron-right" %}
+            </a>
+            <p class="u-fine">
+              Free for students, always.
+              <a href="/login/" class="u-link">Log in</a>
+            </p>
+          </div>
+
+          {% comment %}Real numbers only, and only once they exist. An empty
+          marketplace says nothing rather than inventing something.{% endcomment %}
+          <div class="mt-9 flex flex-wrap items-center gap-x-7 gap-y-3 border-t border-ink-100 pt-7" x-show="hasStats" x-cloak>
+            <template x-for="s in statLine" :key="s.label">
+              <div class="flex items-baseline gap-2">
+                <span class="u-num font-display text-2xl font-bold text-ink-900" x-text="s.value"></span>
+                <span class="u-fine" x-text="s.label"></span>
+              </div>
+            </template>
+          </div>
         </div>
 
-        <h1 class="mt-5 text-5xl font-bold leading-[1.05] tracking-tight text-slate-900 sm:text-6xl">
-          <span x-show="audience === 'student'">Find your teacher. Learn your way.</span>
-          <span x-show="audience === 'teacher'" x-cloak>Teach more. Chase less.</span>
-        </h1>
-        <p class="mt-5 max-w-md text-lg text-slate-600">
-          <span x-show="audience === 'student'">Verified teachers, matched to your subject and schedule. Free for students — always.</span>
-          <span x-show="audience === 'teacher'" x-cloak>Quality leads matched to your schedule. Pay only to unlock the ones you want.</span>
-        </p>
+        {# ---- Right: the schedule mechanic, made touchable ---- #}
+        <div class="relative">
+          <div class="u-card overflow-hidden shadow-lift">
+            <div class="border-b border-ink-100 bg-pine-800 px-6 py-5">
+              <p class="font-display text-[1.0625rem] font-semibold text-white">When are you free?</p>
+              <p class="mt-1 text-[0.8125rem] text-pine-100">Tap a few — we'll carry it into your search.</p>
+            </div>
 
-        <div class="mt-8 flex flex-col gap-3 sm:flex-row">
-          <a href="/register/?as=student" class="btn-primary btn-lg" x-show="audience === 'student'">{% icon "user" %} Create a student account</a>
-          <a href="/register/?as=teacher" class="btn-secondary btn-lg" x-show="audience === 'student'">{% icon "academic" %} Create a teacher account</a>
-          <a href="/register/?as=teacher" class="btn-primary btn-lg" x-show="audience === 'teacher'" x-cloak>{% icon "academic" %} Create a teacher account</a>
-          <a href="/register/?as=student" class="btn-secondary btn-lg" x-show="audience === 'teacher'" x-cloak>{% icon "user" %} Create a student account</a>
-        </div>
-        <p class="mt-4 text-sm text-slate-500">
-          Takes under a minute. Already have an account? <a href="/login/" class="font-semibold text-brand-700 hover:text-brand-800">Log in</a>.
-        </p>
-      </div>
+            <div class="p-6">
+              <fieldset>
+                <legend class="u-eyebrow">Days</legend>
+                <div class="mt-3 grid grid-cols-7 gap-1.5">
+                  <template x-for="d in DAYS" :key="d.n">
+                    <button type="button"
+                            class="flex h-11 items-center justify-center rounded-lg border text-[0.8125rem] font-semibold transition duration-150 ease-enter"
+                            :class="days.includes(d.n)
+                              ? 'border-pine-600 bg-pine-600 text-white'
+                              : 'border-ink-200 bg-paper text-ink-600 hover:border-pine-300 hover:bg-pine-50'"
+                            :aria-pressed="days.includes(d.n)"
+                            :aria-label="d.full"
+                            @click="toggleDay(d.n)"
+                            x-text="d.s"></button>
+                  </template>
+                </div>
+              </fieldset>
 
-      {# Real numbers, not a mockup — the platform's specialities, quantified #}
-      <div class="relative" x-effect="animateStats()">
-        <div class="pointer-events-none absolute -inset-8 rounded-[2rem] bg-gradient-to-br from-brand-100 to-transparent blur-2xl"></div>
-        <div class="pointer-events-none absolute -bottom-10 -left-10 h-56 w-56 rounded-full bg-emerald-100/70 blur-3xl"></div>
-        <div class="relative grid grid-cols-2 gap-4">
-          <div class="card card-pad relative col-span-2 flex items-center gap-4 overflow-hidden border-none bg-brand-600 text-white">
-            {% icon "shield" "pointer-events-none absolute -right-4 -top-4 h-28 w-28 text-white/10" %}
-            <span class="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-white/15">{% icon "shield" "h-6 w-6" %}</span>
-            <div>
-              <p class="text-4xl font-bold leading-none" x-ref="statTeachers">0</p>
-              <p class="mt-1.5 text-sm text-brand-100">Verified teachers</p>
+              <fieldset class="mt-6">
+                <legend class="u-eyebrow">Time of day</legend>
+                <div class="mt-3 grid grid-cols-3 gap-2">
+                  <template x-for="b in BANDS" :key="b.id">
+                    <button type="button" class="u-chip flex-col gap-0.5 px-2 py-2"
+                            :aria-pressed="band === b.id"
+                            @click="band = b.id">
+                      <span x-text="b.label" class="text-[0.875rem]"></span>
+                      <span class="u-num text-[0.6875rem] font-normal text-ink-400" x-text="b.hint"></span>
+                    </button>
+                  </template>
+                </div>
+              </fieldset>
+
+              {% comment %}The payoff line — restates the choice back to the user,
+              which is what makes the interaction feel like it did something.{% endcomment %}
+              <div class="mt-6 flex items-start gap-3 rounded-xl bg-pine-50 p-4">
+                <span class="u-proof-mark mt-0">{% icon "target" %}</span>
+                <p class="text-[0.875rem] leading-snug text-pine-900">
+                  <template x-if="days.length">
+                    <span>We'll look for teachers free <strong class="font-semibold" x-text="scheduleSummary()"></strong>.</span>
+                  </template>
+                  <template x-if="!days.length">
+                    <span>Pick a day or two and we'll show you who's genuinely available then.</span>
+                  </template>
+                </p>
+              </div>
             </div>
           </div>
-          <div class="card card-pad">
-            <span class="grid h-10 w-10 place-items-center rounded-lg bg-emerald-50 text-emerald-600">{% icon "book" %}</span>
-            <p class="mt-3 text-3xl font-bold text-slate-900" x-ref="statSubjects">0</p>
-            <p class="text-xs font-medium text-slate-500">Subjects to learn</p>
-          </div>
-          <div class="card card-pad">
-            <span class="grid h-10 w-10 place-items-center rounded-lg bg-amber-50 text-amber-600">{% icon "users" %}</span>
-            <p class="mt-3 text-3xl font-bold text-slate-900" x-ref="statStudents">0</p>
-            <p class="text-xs font-medium text-slate-500">Students learning</p>
-          </div>
         </div>
-      </div>
       </div>
     </section>
 
-    {# ---- Browse by subject — interactive picker ---- #}
-    <section class="border-t border-slate-200/70 bg-dot-grid-light bg-stone-50 py-16">
-      <div class="container-app">
-        <div class="text-center">
-          <h2 class="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">What do you want to learn?</h2>
-          <p class="mt-2 text-sm text-slate-500">Tap a subject to see what's next.</p>
+    {# ============ Subjects ============ #}
+    <section id="subjects" class="border-b border-ink-100 py-16 sm:py-20">
+      <div class="u-shell">
+        <div class="max-w-prose">
+          <span class="u-eyebrow">Step one</span>
+          <h2 class="u-h2 mt-3">What do you want to learn?</h2>
+          <p class="u-lede mt-3">Pick one to get started. You can change it later, and add more than one.</p>
         </div>
-        <div class="mx-auto mt-8 grid max-w-3xl grid-cols-2 gap-3 sm:grid-cols-4">
-          <template x-for="s in SUBJECTS" :key="s.name">
-            <button type="button" class="card card-hover flex flex-col items-center justify-center gap-2 rounded-xl p-4 text-center text-sm font-medium transition"
-                    :class="[s.tone, selectedSubject === s.name ? 'ring-2 ring-brand-500' : '']"
-                    @click="selectedSubject = selectedSubject === s.name ? null : s.name">
-              <svg class="h-6 w-6"><use :href="'#i-' + s.icon"></use></svg>
-              <span x-text="s.name"></span>
+
+        <div class="mt-9 flex flex-wrap gap-2.5">
+          <template x-for="s in SUBJECTS" :key="s">
+            <button type="button" class="u-chip" :aria-pressed="subject === s" @click="subject = (subject === s ? null : s)">
+              <span x-text="s"></span>
             </button>
           </template>
         </div>
-        <div class="mx-auto mt-8 flex max-w-md flex-col items-center gap-4 text-center" x-show="selectedSubject" x-cloak>
-          <p class="text-base text-slate-600">Great choice — find <span class="font-semibold text-slate-900" x-text="selectedSubject"></span> teachers free.</p>
-          <a href="/register/?as=student" class="btn-primary px-10 py-4 text-base font-bold shadow-md transition hover:scale-105">Get started</a>
+
+        <div class="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <a :href="registerHref()" class="u-btn-pine u-btn-lg w-full sm:w-auto">
+            <span x-text="subject ? `Find ${subject} teachers` : 'Browse all teachers'"></span>
+            {% icon "chevron-right" %}
+          </a>
+          <p class="u-fine">Something else in mind? You can type any subject after signing up.</p>
         </div>
       </div>
     </section>
 
-    {# ---- Specialities — big, bold, one glance ---- #}
-    <section class="border-t border-slate-200/70 bg-stone-50 py-16">
-      <div class="container-app">
-        <h2 class="text-center text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Why {{ SITE_NAME }}</h2>
-        <div class="mt-10 grid gap-4 sm:grid-cols-3">
-          <div class="card card-pad relative overflow-hidden bg-brand-50/60">
-            {% icon "search" "pointer-events-none absolute -right-3 -top-3 h-24 w-24 text-brand-600/10" %}
-            <div class="relative grid h-12 w-12 place-items-center rounded-xl bg-brand-600 text-white">{% icon "search" "h-6 w-6" %}</div>
-            <h3 class="relative mt-4 text-lg font-bold text-slate-900">Precise search</h3>
-            <p class="relative mt-1.5 text-sm text-slate-600">Subject, language, mode, city, and your exact free hours.</p>
+    {# ============ Why ============ #}
+    <section class="border-b border-ink-100 bg-paper py-16 sm:py-20">
+      <div class="u-shell">
+        <div class="max-w-prose">
+          <span class="u-eyebrow">Why {{ SITE_NAME }}</span>
+          <h2 class="u-h2 mt-3">Three things we do differently</h2>
+        </div>
+
+        <div class="mt-10 grid gap-6 md:grid-cols-3">
+          <div>
+            <span class="grid h-11 w-11 place-items-center rounded-xl bg-pine-100 text-pine-700">{% icon "clock" "h-5 w-5" %}</span>
+            <h3 class="u-h3 mt-5">Time is weighed highest</h3>
+            <p class="u-body mt-2 text-ink-500">Every result carries a schedule-fit score against the hours you gave us. A brilliant teacher who can't make your Tuesday isn't a match, and we don't pretend otherwise.</p>
           </div>
-          <div class="card card-pad relative overflow-hidden bg-emerald-50/60">
-            {% icon "target" "pointer-events-none absolute -right-3 -top-3 h-24 w-24 text-emerald-600/10" %}
-            <div class="relative grid h-12 w-12 place-items-center rounded-xl bg-emerald-600 text-white">{% icon "target" "h-6 w-6" %}</div>
-            <h3 class="relative mt-4 text-lg font-bold text-slate-900">Schedule-first match</h3>
-            <p class="relative mt-1.5 text-sm text-slate-600">The right teacher at the wrong time isn't a match — we weigh timing highest.</p>
+          <div>
+            <span class="grid h-11 w-11 place-items-center rounded-xl bg-pine-100 text-pine-700">{% icon "shield" "h-5 w-5" %}</span>
+            <h3 class="u-h3 mt-5">Verified by a person</h3>
+            <p class="u-body mt-2 text-ink-500">Identity and credentials are checked before a teacher can appear in search. A badge here means someone looked — it isn't self-declared.</p>
           </div>
-          <div class="card card-pad relative overflow-hidden bg-amber-50/60">
-            {% icon "wallet" "pointer-events-none absolute -right-3 -top-3 h-24 w-24 text-amber-600/10" %}
-            <div class="relative grid h-12 w-12 place-items-center rounded-xl bg-amber-500 text-white">{% icon "wallet" "h-6 w-6" %}</div>
-            <h3 class="relative mt-4 text-lg font-bold text-slate-900">Fair for teachers</h3>
-            <p class="relative mt-1.5 text-sm text-slate-600">A set number of contact unlocks every 30 days. Same price for every lead, no surprises.</p>
+          <div>
+            <span class="grid h-11 w-11 place-items-center rounded-xl bg-pine-100 text-pine-700">{% icon "check-circle" "h-5 w-5" %}</span>
+            <h3 class="u-h3 mt-5">Students never pay</h3>
+            <p class="u-body mt-2 text-ink-500">Not a trial, not a freemium tier. Searching, posting what you need and being matched are free for students. Teachers pay to reach you.</p>
           </div>
         </div>
       </div>
     </section>
 
-    {# ---- How it works ---- #}
-    <section class="border-t border-slate-200/70 bg-dot-grid-light bg-stone-50 py-16">
-      <div class="container-app">
-        <div class="text-center">
-          <span class="badge badge-brand">3 steps</span>
-          <h2 class="mt-4 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">From search to your first lesson</h2>
+    {% comment %}How it works — rewritten to match how the product ACTUALLY
+    works. The previous copy promised direct messaging of teachers, which this
+    platform has never supported: there is no student-to-teacher messaging
+    anywhere in it.{% endcomment %}
+    <section id="how" class="border-b border-ink-100 py-16 sm:py-20">
+      <div class="u-shell">
+        <div class="max-w-prose">
+          <span class="u-eyebrow">How it works</span>
+          <h2 class="u-h2 mt-3">You post once. Teachers come to you.</h2>
+          <p class="u-lede mt-3">No bidding wars, no cold-messaging fifty profiles, no inbox to manage.</p>
         </div>
-        <div class="section-banner mt-10 grid gap-8 bg-white p-8 sm:grid-cols-3 sm:p-10">
-          <div class="section-banner-glow"></div>
-          <div class="pointer-events-none absolute left-[19%] right-[19%] top-[52px] hidden border-t-2 border-dashed border-brand-200 sm:block"></div>
-          <div class="relative flex gap-4">
-            <span class="step-badge">1</span>
-            <div>
-              <h3 class="text-sm font-semibold text-slate-900">Search</h3>
-              <p class="mt-1 text-sm text-slate-600">Filter by subject, schedule, and city.</p>
-            </div>
-          </div>
-          <div class="relative flex gap-4">
-            <span class="step-badge">2</span>
-            <div>
-              <h3 class="text-sm font-semibold text-slate-900">Connect</h3>
-              <p class="mt-1 text-sm text-slate-600">Message verified teachers directly — no bidding, no spam.</p>
-            </div>
-          </div>
-          <div class="relative flex gap-4">
-            <span class="step-badge">3</span>
-            <div>
-              <h3 class="text-sm font-semibold text-slate-900">Learn</h3>
-              <p class="mt-1 text-sm text-slate-600">Start lessons on your terms, online or in person.</p>
-            </div>
-          </div>
+
+        <ol class="mt-10 grid gap-6 md:grid-cols-3">
+          <li class="u-quiet flex flex-col gap-2.5">
+            <span class="u-num font-display text-[1.75rem] font-bold leading-none text-pine-700">1</span>
+            <h3 class="text-[0.9375rem] font-semibold text-ink-900">Say what you need</h3>
+            <p class="u-fine">Subject, level, budget and the hours you're free. Two minutes, and it's the only form you fill in.</p>
+          </li>
+          <li class="u-quiet flex flex-col gap-2.5">
+            <span class="u-num font-display text-[1.75rem] font-bold leading-none text-pine-700">2</span>
+            <h3 class="text-[0.9375rem] font-semibold text-ink-900">We match and rank</h3>
+            <p class="u-fine">Verified teachers who teach your subject and are free when you are, scored on how well the timing actually overlaps.</p>
+          </li>
+          <li class="u-quiet flex flex-col gap-2.5">
+            <span class="u-num font-display text-[1.75rem] font-bold leading-none text-pine-700">3</span>
+            <h3 class="text-[0.9375rem] font-semibold text-ink-900">They reach out</h3>
+            <p class="u-fine">Matched teachers see your requirement and get in touch. You choose who to reply to — and you're never charged for any of it.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    {# ============ For teachers ============ #}
+    <section id="teachers" class="border-b border-ink-100 bg-pine-800 py-16 text-pine-50 sm:py-20">
+      <div class="u-shell grid gap-10 lg:grid-cols-[1.1fr_1fr] lg:items-center">
+        <div>
+          <span class="u-eyebrow text-pine-300">For teachers</span>
+          <h2 class="u-h2 mt-3 text-white">Stop chasing. Start teaching.</h2>
+          <p class="mt-4 max-w-prose text-[1.0625rem] leading-relaxed text-pine-100">
+            Student requirements matched to the subjects you teach and the hours you've set
+            as available. Your plan includes a set number of contact unlocks every 30 days —
+            the same price for every lead, with no bidding and no surprises.
+          </p>
+          <a href="/register/?as=teacher" class="u-btn-secondary u-btn-lg mt-8">
+            {% icon "academic" %} Create a teacher account
+          </a>
         </div>
+        <ul class="flex flex-col gap-4">
+          <li class="u-proof text-pine-50">
+            <span class="u-proof-mark bg-pine-600/60 text-marigold-300">{% icon "target" %}</span>
+            <span><strong class="font-semibold text-white">Matched, not broadcast.</strong> Leads are scored against your subjects and your actual availability.</span>
+          </li>
+          <li class="u-proof text-pine-50">
+            <span class="u-proof-mark bg-pine-600/60 text-marigold-300">{% icon "wallet" %}</span>
+            <span><strong class="font-semibold text-white">Flat, predictable cost.</strong> One price per unlock. No auctions, no premium placement fees.</span>
+          </li>
+          <li class="u-proof text-pine-50">
+            <span class="u-proof-mark bg-pine-600/60 text-marigold-300">{% icon "calendar" %}</span>
+            <span><strong class="font-semibold text-white">You set the hours.</strong> Set your weekly availability once; matching respects it.</span>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    {# ============ Close ============ #}
+    <section class="py-16 sm:py-20">
+      <div class="u-shell flex flex-col items-start gap-6 sm:items-center sm:text-center">
+        <h2 class="u-h2 max-w-2xl">Tell us what you need. We'll do the looking.</h2>
+        <p class="u-lede sm:mx-auto">Takes under a minute, and it costs students nothing.</p>
+        <a :href="registerHref()" class="u-btn-primary u-btn-lg">
+          <span x-text="ctaLabel()">Get matched — it's free</span>
+          {% icon "chevron-right" %}
+        </a>
       </div>
     </section>
   </main>
 
-  <footer class="border-t border-slate-200/70 bg-stone-50">
-    <div class="container-app py-10">
-      <div class="flex flex-col items-center gap-3 text-center sm:flex-row sm:justify-between sm:text-left">
+  {# ============ Footer ============ #}
+  <footer class="border-t border-ink-100 bg-paper">
+    <div class="u-shell py-11">
+      <div class="flex flex-col items-start justify-between gap-5 sm:flex-row sm:items-center">
         <a href="/" class="flex items-center gap-2.5">
-          <span class="grid h-8 w-8 place-items-center rounded-lg bg-brand-600 text-sm font-bold text-white">{{ SITE_NAME|first }}</span>
-          <span class="text-[15px] font-semibold tracking-tight text-slate-900">{{ SITE_NAME }}</span>
+          <span class="grid h-8 w-8 place-items-center rounded-lg bg-pine-700 font-display text-base font-bold text-marigold-400">{{ SITE_NAME|first }}</span>
+          <span class="font-display text-[0.9375rem] font-semibold tracking-tight text-ink-900">{{ SITE_NAME }}</span>
         </a>
-        <p class="text-sm text-slate-500">{{ SITE_TAGLINE }}</p>
+        <p class="u-fine">{{ SITE_TAGLINE }}</p>
       </div>
-      <div class="mt-6 flex flex-col items-center justify-between gap-3 border-t border-slate-100 pt-6 text-xs text-slate-400 sm:flex-row">
-        <p>© <span id="yr"></span> {{ SITE_NAME }}. All rights reserved.</p>
-        <p class="flex items-center gap-1.5">{% icon "shield" "h-3.5 w-3.5 text-emerald-500" %} Verified teachers · Secure by design</p>
+      <div class="mt-7 flex flex-col items-start justify-between gap-3 border-t border-ink-100 pt-7 sm:flex-row sm:items-center">
+        <p class="text-[0.75rem] text-ink-400">© <span id="yr"></span> {{ SITE_NAME }}. All rights reserved.</p>
+        <p class="flex items-center gap-1.5 text-[0.75rem] text-ink-500">
+          {% icon "shield" "h-3.5 w-3.5 text-pine-600" %} Verified teachers · Secure by design
+        </p>
       </div>
     </div>
   </footer>
@@ -186,43 +304,104 @@
 
 <script>
   document.getElementById("yr").textContent = new Date().getFullYear();
+
   document.addEventListener("alpine:init", () => {
     Alpine.data("landingPage", () => ({
-      audience: "student",
-      selectedSubject: null,
+      subject: null,
+      days: [],
+      band: "evening",
       stats: {},
+
+      // Curated list, deliberately NOT fetched from /api/v1/subjects/: that
+      // route is _ANY_AUTHED in apps/accounts/api_permissions.py, so it 401s
+      // for a logged-out visitor. Subject travels as free text anyway —
+      // /search/teachers/?subject= resolves it through
+      // SubjectMatchingService.match_by_text, so text is the right currency.
       SUBJECTS: [
-        { name: "Mathematics", tone: "bg-brand-50 text-brand-700", icon: "chart" },
-        { name: "Physics", tone: "bg-emerald-50 text-emerald-700", icon: "activity" },
-        { name: "Chemistry", tone: "bg-amber-50 text-amber-700", icon: "lightbulb" },
-        { name: "English", tone: "bg-sky-50 text-sky-700", icon: "book" },
-        { name: "Coding", tone: "bg-sky-50 text-sky-700", icon: "code" },
-        { name: "Music", tone: "bg-amber-50 text-amber-700", icon: "music" },
-        { name: "Art", tone: "bg-emerald-50 text-emerald-700", icon: "edit" },
-        { name: "Hindi", tone: "bg-brand-50 text-brand-700", icon: "globe" },
-        { name: "Biology", tone: "bg-brand-50 text-brand-700", icon: "heart" },
-        { name: "Test Prep", tone: "bg-sky-50 text-sky-700", icon: "target" },
-        { name: "Languages", tone: "bg-amber-50 text-amber-700", icon: "globe" },
-        { name: "History", tone: "bg-emerald-50 text-emerald-700", icon: "clock" },
+        "Mathematics", "Physics", "Chemistry", "Biology", "English",
+        "Hindi", "Computer Science", "Accountancy", "Economics",
+        "Music", "Spoken English", "Test Prep",
       ],
+
+      DAYS: [
+        { n: 1, s: "M", full: "Monday" },
+        { n: 2, s: "T", full: "Tuesday" },
+        { n: 3, s: "W", full: "Wednesday" },
+        { n: 4, s: "T", full: "Thursday" },
+        { n: 5, s: "F", full: "Friday" },
+        { n: 6, s: "S", full: "Saturday" },
+        { n: 7, s: "S", full: "Sunday" },
+      ],
+
+      // Bands map straight onto the search API's preferred_start_time /
+      // preferred_end_time params, so what's tapped here is what gets sent.
+      BANDS: [
+        { id: "morning", label: "Morning", hint: "6–12", from: "06:00", to: "12:00" },
+        { id: "afternoon", label: "Afternoon", hint: "12–5", from: "12:00", to: "17:00" },
+        { id: "evening", label: "Evening", hint: "5–10", from: "17:00", to: "22:00" },
+      ],
+
       init() {
-        api.get("/public/stats/", { silent: true }).then((d) => { this.stats = d || {}; }).catch(() => {});
+        api.get("/public/stats/", { silent: true })
+          .then((d) => { this.stats = d || {}; })
+          .catch(() => {});
       },
-      animateStats() {
-        this._animate(this.$refs.statTeachers, this.stats.verified_teachers);
-        this._animate(this.$refs.statSubjects, this.stats.subjects);
-        this._animate(this.$refs.statStudents, this.stats.students);
+
+      toggleDay(n) {
+        const i = this.days.indexOf(n);
+        if (i === -1) this.days.push(n); else this.days.splice(i, 1);
+        this.days.sort((a, b) => a - b);
       },
-      _animate(el, target) {
-        if (!el || target == null || el._animatedTo === target) return;
-        el._animatedTo = target;
-        const t0 = performance.now(), dur = 700;
-        const step = (t) => {
-          const p = Math.min(1, (t - t0) / dur);
-          el.textContent = Math.round(p * target).toLocaleString("en-IN");
-          if (p < 1) requestAnimationFrame(step);
+
+      get hasStats() {
+        return this.statLine.length > 0;
+      },
+
+      // Only real, non-zero figures are rendered. A young marketplace shows
+      // nothing here rather than a number it has to invent.
+      get statLine() {
+        const s = this.stats || {};
+        const out = [];
+        const add = (v, one, many) => {
+          const n = Number(v);
+          if (Number.isFinite(n) && n > 0) {
+            out.push({ value: n.toLocaleString("en-IN"), label: n === 1 ? one : many });
+          }
         };
-        requestAnimationFrame(step);
+        add(s.verified_teachers, "verified teacher", "verified teachers");
+        add(s.subjects, "subject", "subjects");
+        add(s.students, "student learning", "students learning");
+        return out;
+      },
+
+      scheduleSummary() {
+        const names = this.days
+          .map((n) => (this.DAYS.find((d) => d.n === n) || {}).full)
+          .filter(Boolean);
+        const band = (this.BANDS.find((b) => b.id === this.band) || {}).label || "";
+        let dayText;
+        if (names.length === 1) dayText = names[0] + "s";
+        else if (names.length === 2) dayText = names[0] + "s & " + names[1] + "s";
+        else if (names.length <= 4) dayText = names.slice(0, -1).map((d) => d + "s").join(", ") + " & " + names[names.length - 1] + "s";
+        else dayText = names.length + " days a week";
+        return dayText + " " + band.toLowerCase() + "s";
+      },
+
+      ctaLabel() {
+        return this.subject ? `Find ${this.subject} teachers` : "Get matched — it's free";
+      },
+
+      // Everything tapped on this page travels into registration, so the
+      // first onboarding step is complete before an account exists.
+      registerHref() {
+        const q = new URLSearchParams({ as: "student" });
+        if (this.subject) q.set("subject", this.subject);
+        if (this.days.length) {
+          q.set("days", this.days.join(","));
+          const b = this.BANDS.find((x) => x.id === this.band);
+          if (b) { q.set("from", b.from); q.set("to", b.to); }
+        }
+        return "/register/?" + q.toString();
       },
     }));
   });

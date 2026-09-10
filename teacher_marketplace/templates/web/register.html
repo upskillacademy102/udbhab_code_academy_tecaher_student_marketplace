@@ -3,147 +3,294 @@
 
 {% block title %}Create your account · {{ SITE_NAME }}{% endblock %}
 {% block head_extra %}<script defer src="{% static 'js/auth.js' %}"></script>{% endblock %}
+{% block panel_width %}max-w-[30rem]{% endblock %}
 
-{% block promo_title %}Join {{ SITE_NAME }} in under a minute.{% endblock %}
-{% block promo_body %}Create a free account to search verified teachers matched to your
-subject, language and schedule — or to start receiving quality student leads.{% endblock %}
+{% block promo_title %}Tell us what you need before you tell us who you are.{% endblock %}
+{% block promo_body %}Three quick questions first. They're not a formality — they're what
+lets us show you teachers who are genuinely free when you are, the moment you sign in.{% endblock %}
 
 {% block panel %}
-<div x-data="registerForm('{{ portal }}', '{{ next_url|escapejs }}')" x-cloak>
+<div x-data="registerFlow('{{ portal }}', '{{ next_url|escapejs }}')" x-cloak>
 
-  {# ---------- STEP 1: choose account type ---------- #}
+  {# ============ Progress rail — hidden on the role fork, which isn't progress ============ #}
+  <div class="mb-8" x-show="step !== 'role'">
+    <div class="u-rail" role="presentation">
+      <template x-for="(id, i) in progressSteps" :key="id">
+        <span class="u-rail-dot"
+              :data-state="i < stepIndex - 1 ? 'done' : (i === stepIndex - 1 ? 'current' : 'todo')"
+              :style="i === stepIndex - 1 ? 'flex-grow:2' : ''"></span>
+      </template>
+    </div>
+    <p class="u-fine mt-2.5">
+      Step <span class="u-num" x-text="stepIndex"></span> of <span class="u-num" x-text="progressSteps.length"></span>
+      <span x-show="step !== 'account'"> · no account needed yet</span>
+    </p>
+  </div>
+
+  {# ============ STEP: role fork ============ #}
   <template x-if="step === 'role'">
     <div>
-      <div class="text-center">
-        <h1 class="text-2xl font-semibold tracking-tight text-slate-900">Create your account</h1>
-        <p class="mt-2 text-sm text-slate-500">Welcome to {{ SITE_NAME }}. What brings you here?</p>
-      </div>
-      <div class="mt-8 space-y-3">
+      <h1 class="u-h2">Create your account</h1>
+      <p class="u-lede mt-2 text-[0.9375rem]">Which side of the classroom are you on?</p>
+
+      <div class="mt-8 flex flex-col gap-3">
         <button type="button" @click="pickRole('student')"
-                class="group flex w-full items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-brand-300 hover:bg-brand-50/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500">
-          <span class="grid h-11 w-11 place-items-center rounded-lg bg-brand-50 text-brand-600">{% icon "user" %}</span>
+                class="group flex items-center gap-4 rounded-2xl border border-ink-200 bg-paper p-5 text-left shadow-soft transition duration-150 ease-enter hover:border-pine-400 hover:bg-pine-50">
+          <span class="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-pine-100 text-pine-700">{% icon "user" %}</span>
           <span class="flex-1">
-            <span class="block text-sm font-semibold text-slate-900">I'm a Student</span>
-            <span class="block text-xs text-slate-500">Find teachers and post what you want to learn</span>
+            <span class="block text-[0.9375rem] font-semibold text-ink-900">I want to learn</span>
+            <span class="u-fine mt-0.5 block">Get matched with verified teachers — free, always</span>
           </span>
-          {% icon "chevron-right" "h-5 w-5 text-slate-300 group-hover:text-brand-500" %}
+          {% icon "chevron-right" "h-5 w-5 text-ink-300 group-hover:text-pine-600" %}
         </button>
+
         <button type="button" @click="pickRole('teacher')"
-                class="group flex w-full items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-brand-300 hover:bg-brand-50/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500">
-          <span class="grid h-11 w-11 place-items-center rounded-lg bg-brand-50 text-brand-600">{% icon "academic" %}</span>
+                class="group flex items-center gap-4 rounded-2xl border border-ink-200 bg-paper p-5 text-left shadow-soft transition duration-150 ease-enter hover:border-pine-400 hover:bg-pine-50">
+          <span class="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-pine-100 text-pine-700">{% icon "academic" %}</span>
           <span class="flex-1">
-            <span class="block text-sm font-semibold text-slate-900">I'm a Teacher</span>
-            <span class="block text-xs text-slate-500">Build a profile and receive matched student leads</span>
+            <span class="block text-[0.9375rem] font-semibold text-ink-900">I want to teach</span>
+            <span class="u-fine mt-0.5 block">Receive student requirements matched to your subjects and hours</span>
           </span>
-          {% icon "chevron-right" "h-5 w-5 text-slate-300 group-hover:text-brand-500" %}
+          {% icon "chevron-right" "h-5 w-5 text-ink-300 group-hover:text-pine-600" %}
         </button>
       </div>
-      <p class="mt-8 text-center text-sm text-slate-500">
-        Already have an account?
-        <a :href="loginHref()" class="font-semibold text-brand-700 hover:text-brand-800">Log in</a>
+
+      <p class="u-fine mt-8 text-center">
+        Already have an account? <a :href="loginHref()" class="u-link">Log in</a>
       </p>
     </div>
   </template>
 
-  {# ---------- STEP 2: details form ---------- #}
-  <template x-if="step === 'form'">
+  {# ============ STEP: subject (student) / teaches (teacher) ============ #}
+  <template x-if="step === 'subject' || step === 'teaches'">
     <div>
-      <button type="button" @click="back()"
-              class="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800">
+      <button type="button" @click="back()" class="u-btn-ghost u-btn-sm -ml-3 mb-5">
         {% icon "arrow-left" "h-4 w-4" %} Back
       </button>
-      <h1 class="text-2xl font-semibold tracking-tight text-slate-900">
-        Create your <span x-text="role"></span> account
-      </h1>
-      <p class="mt-2 text-sm text-slate-500">It's free. You can complete your profile afterwards.</p>
 
-      {# email-already-exists branch #}
-      <div class="alert alert-warn mt-5" x-show="emailTaken" x-cloak>
+      <h1 class="u-h2" x-text="step === 'teaches' ? 'What do you teach?' : 'What do you want to learn?'"></h1>
+      <p class="u-lede mt-2 text-[0.9375rem]"
+         x-text="step === 'teaches' ? 'Pick your main subject. You can add more once your profile is set up.' : 'Pick one to start. You can add more subjects later.'"></p>
+
+      <div class="mt-7 flex flex-wrap gap-2">
+        <template x-for="s in SUBJECTS" :key="s">
+          <button type="button" class="u-chip u-btn-sm min-h-[40px] px-3.5" :aria-pressed="subject === s" @click="pickSubject(s)">
+            <span x-text="s"></span>
+          </button>
+        </template>
+        <button type="button" class="u-chip u-btn-sm min-h-[40px] px-3.5" :aria-pressed="subject === '__other'" @click="pickSubject('__other')">
+          Something else
+        </button>
+      </div>
+
+      <div class="u-field mt-5" x-show="subject === '__other'" x-collapse>
+        <label class="u-label" for="rg-subject">Which subject?</label>
+        <input id="rg-subject" class="u-input" maxlength="60" placeholder="e.g. Tabla, French, NEET Biology"
+               x-model.trim="customSubject" @keydown.enter.prevent="resolvedSubject && next()">
+        <p class="u-hint">Type it however you'd say it — we'll match it to the right subject.</p>
+      </div>
+
+      <button type="button" class="u-btn-primary u-btn-lg mt-8 w-full" :disabled="!resolvedSubject" @click="next()">
+        Continue {% icon "chevron-right" %}
+      </button>
+    </div>
+  </template>
+
+  {# ============ STEP: level ============ #}
+  <template x-if="step === 'level'">
+    <div>
+      <button type="button" @click="back()" class="u-btn-ghost u-btn-sm -ml-3 mb-5">
+        {% icon "arrow-left" "h-4 w-4" %} Back
+      </button>
+
+      <h1 class="u-h2">What level?</h1>
+      <p class="u-lede mt-2 text-[0.9375rem]">
+        Teachers set the levels they take. This keeps the ones who don't teach yours out of your results.
+      </p>
+
+      <div class="mt-7 grid grid-cols-2 gap-2">
+        <template x-for="l in LEVELS" :key="l">
+          <button type="button" class="u-chip justify-start px-3.5 text-left" :aria-pressed="level === l" @click="level = (level === l ? null : l)">
+            <span x-text="l"></span>
+          </button>
+        </template>
+      </div>
+
+      <button type="button" class="u-btn-primary u-btn-lg mt-8 w-full" :disabled="!level" @click="next()">
+        Continue {% icon "chevron-right" %}
+      </button>
+    </div>
+  </template>
+
+  {% comment %}STEP: when — the load-bearing one. GET /search/teachers/ only
+  computes a match_percentage when day + start + end are all supplied.
+  Skippable, but the copy states plainly what skipping costs rather than
+  hiding it.{% endcomment %}
+  <template x-if="step === 'when'">
+    <div>
+      <button type="button" @click="back()" class="u-btn-ghost u-btn-sm -ml-3 mb-5">
+        {% icon "arrow-left" "h-4 w-4" %} Back
+      </button>
+
+      <h1 class="u-h2">When are you free?</h1>
+      <p class="u-lede mt-2 text-[0.9375rem]">This is the one that does the heavy lifting — it's how we score who actually fits.</p>
+
+      <fieldset class="mt-7">
+        <legend class="u-eyebrow">Days</legend>
+        <div class="mt-3 grid grid-cols-7 gap-1.5">
+          <template x-for="d in DAYS" :key="d.n">
+            <button type="button"
+                    class="flex h-12 items-center justify-center rounded-lg border text-[0.875rem] font-semibold transition duration-150 ease-enter"
+                    :class="days.includes(d.n)
+                      ? 'border-pine-600 bg-pine-600 text-white'
+                      : 'border-ink-200 bg-paper text-ink-600 hover:border-pine-300 hover:bg-pine-50'"
+                    :aria-pressed="days.includes(d.n)" :aria-label="d.full"
+                    @click="toggleDay(d.n)" x-text="d.s"></button>
+          </template>
+        </div>
+      </fieldset>
+
+      <fieldset class="mt-6">
+        <legend class="u-eyebrow">Time of day</legend>
+        <div class="mt-3 grid grid-cols-3 gap-2">
+          <template x-for="b in BANDS" :key="b.id">
+            <button type="button" class="u-chip flex-col gap-0.5 px-2 py-2" :aria-pressed="band === b.id" @click="band = b.id">
+              <span class="text-[0.875rem]" x-text="b.label"></span>
+              <span class="u-num text-[0.6875rem] font-normal text-ink-400" x-text="b.hint"></span>
+            </button>
+          </template>
+        </div>
+      </fieldset>
+
+      <div class="mt-6 flex items-start gap-3 rounded-xl bg-pine-50 p-4" x-show="days.length" x-collapse>
+        <span class="u-proof-mark mt-0">{% icon "check" %}</span>
+        <p class="text-[0.875rem] leading-snug text-pine-900">
+          Looking for teachers free <strong class="font-semibold" x-text="scheduleSummary()"></strong>.
+        </p>
+      </div>
+
+      <button type="button" class="u-btn-primary u-btn-lg mt-8 w-full" :disabled="!days.length" @click="next()">
+        Continue {% icon "chevron-right" %}
+      </button>
+      <button type="button" class="u-btn-ghost u-btn-sm mt-2 w-full" @click="skip()">
+        Skip — I'm flexible on timing
+      </button>
+      <p class="u-fine mt-2 text-center">Skipping means results won't carry a schedule-fit score. You can add hours any time.</p>
+    </div>
+  </template>
+
+  {# ============ STEP: account ============ #}
+  <template x-if="step === 'account'">
+    <div>
+      <button type="button" @click="back()" class="u-btn-ghost u-btn-sm -ml-3 mb-5">
+        {% icon "arrow-left" "h-4 w-4" %} Back
+      </button>
+
+      <h1 class="u-h2">Last step — your account</h1>
+      <p class="u-lede mt-2 text-[0.9375rem]">
+        <span x-show="role === 'student'">It's free, and it stays free.</span>
+        <span x-show="role === 'teacher'">Free to create. You only pay to unlock a student's contact details.</span>
+      </p>
+
+      {% comment %}Restate what they've already invested. Endowed progress:
+      three things done makes the fourth feel like finishing, not starting.{% endcomment %}
+      <div class="mt-6 flex flex-wrap gap-2" x-show="resolvedSubject || level || days.length">
+        <template x-if="resolvedSubject">
+          <span class="u-badge u-badge-pine">{% icon "book" %}<span x-text="resolvedSubject"></span></span>
+        </template>
+        <template x-if="level">
+          <span class="u-badge u-badge-pine">{% icon "academic" %}<span x-text="level"></span></span>
+        </template>
+        <template x-if="days.length">
+          <span class="u-badge u-badge-pine">{% icon "clock" %}<span x-text="scheduleSummary()"></span></span>
+        </template>
+      </div>
+
+      <div class="u-alert u-alert-warn mt-6" x-show="emailTaken" x-cloak>
         {% icon "alert-triangle" %}
-        <div class="space-y-2">
+        <div class="flex flex-col gap-2.5">
           <p>An account with this email already exists.</p>
           <div class="flex flex-wrap gap-2">
-            <a :href="loginHref(model.email)" class="btn-primary btn-sm">Log in instead</a>
-            <button type="button" class="btn-secondary btn-sm" @click="useAnotherEmail()">Use another email</button>
+            <a :href="loginHref(model.email)" class="u-btn-pine u-btn-sm">Log in instead</a>
+            <button type="button" class="u-btn-secondary u-btn-sm" @click="useAnotherEmail()">Use another email</button>
           </div>
         </div>
       </div>
 
-      <div class="alert alert-error mt-5" x-show="formError && !emailTaken" x-cloak>
+      <div class="u-alert u-alert-error mt-6" x-show="formError && !emailTaken" x-cloak>
         {% icon "x-circle" %}<span x-text="formError"></span>
       </div>
 
-      <form class="mt-6 space-y-4" @submit.prevent="submit()" novalidate>
+      <form class="mt-6 flex flex-col gap-4" @submit.prevent="submit()" novalidate>
         <div class="grid grid-cols-2 gap-3">
-          <div class="field">
-            <label class="label" for="rg-first">First name</label>
-            <input id="rg-first" class="input" autocomplete="given-name" x-model.trim="model.first_name"
+          <div class="u-field">
+            <label class="u-label" for="rg-first">First name</label>
+            <input id="rg-first" class="u-input" autocomplete="given-name" x-model.trim="model.first_name"
                    @blur="touch('first_name')" :aria-invalid="!!err('first_name')">
-            <p class="field-error" x-show="err('first_name')" x-text="err('first_name')"></p>
+            <p class="u-error" x-show="err('first_name')" x-text="err('first_name')"></p>
           </div>
-          <div class="field">
-            <label class="label" for="rg-last">Last name</label>
-            <input id="rg-last" class="input" autocomplete="family-name" x-model.trim="model.last_name"
+          <div class="u-field">
+            <label class="u-label" for="rg-last">Last name</label>
+            <input id="rg-last" class="u-input" autocomplete="family-name" x-model.trim="model.last_name"
                    @blur="touch('last_name')" :aria-invalid="!!err('last_name')">
-            <p class="field-error" x-show="err('last_name')" x-text="err('last_name')"></p>
+            <p class="u-error" x-show="err('last_name')" x-text="err('last_name')"></p>
           </div>
         </div>
 
-        <div class="field">
-          <label class="label" for="rg-email">Email address</label>
-          <input id="rg-email" type="email" class="input" autocomplete="email" x-model.trim="model.email"
+        <div class="u-field">
+          <label class="u-label" for="rg-email">Email address</label>
+          <input id="rg-email" type="email" class="u-input" autocomplete="email" x-model.trim="model.email"
                  @blur="touch('email')" @input="emailTaken = false" :aria-invalid="!!err('email')"
                  placeholder="you@example.com">
-          <p class="field-error" x-show="err('email')" x-text="err('email')"></p>
+          <p class="u-error" x-show="err('email')" x-text="err('email')"></p>
         </div>
 
-        <div class="field">
-          <label class="label" for="rg-mobile">Mobile number</label>
-          <input id="rg-mobile" inputmode="numeric" class="input" autocomplete="tel" x-model.trim="model.mobile"
+        <div class="u-field">
+          <label class="u-label" for="rg-mobile">Mobile number</label>
+          <input id="rg-mobile" inputmode="numeric" class="u-input" autocomplete="tel" x-model.trim="model.mobile"
                  @blur="touch('mobile')" @input="model.mobile = model.mobile.replace(/[^0-9]/g,'')"
-                 :aria-invalid="!!err('mobile')" placeholder="10–15 digits, no spaces">
-          <p class="field-error" x-show="err('mobile')" x-text="err('mobile')"></p>
+                 :aria-invalid="!!err('mobile')" placeholder="10 digits, no spaces">
+          <p class="u-error" x-show="err('mobile')" x-text="err('mobile')"></p>
         </div>
 
-        <div class="field">
-          <label class="label" for="rg-pw">Password</label>
+        <div class="u-field">
+          <label class="u-label" for="rg-pw">Password</label>
           <div class="relative">
-            <input id="rg-pw" :type="showPw ? 'text' : 'password'" class="input pr-10" autocomplete="new-password"
+            <input id="rg-pw" :type="showPw ? 'text' : 'password'" class="u-input pr-11" autocomplete="new-password"
                    x-model="model.password" @blur="touch('password')" @input="touch('password')"
                    :aria-invalid="!!err('password')" placeholder="••••••••">
-            <button type="button" class="absolute inset-y-0 right-0 grid w-10 place-items-center text-slate-400 hover:text-slate-600"
+            <button type="button" class="absolute inset-y-0 right-0 grid w-11 place-items-center text-ink-400 hover:text-ink-700"
                     @click="showPw = !showPw" :aria-label="showPw ? 'Hide password' : 'Show password'">
               {% icon "eye" "h-4 w-4" %}
             </button>
           </div>
-          <ul class="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+          <ul class="mt-1 grid grid-cols-2 gap-x-3 gap-y-1">
             <template x-for="r in pwRules" :key="r.key">
-              <li class="flex items-center gap-1.5" :class="r.ok ? 'text-emerald-600' : 'text-slate-400'">
+              <li class="flex items-center gap-1.5 text-[0.75rem]" :class="r.ok ? 'text-success' : 'text-ink-400'">
                 <span x-text="r.ok ? '✓' : '○'"></span><span x-text="r.label"></span>
               </li>
             </template>
           </ul>
-          <p class="field-error" x-show="err('password')" x-text="err('password')"></p>
+          <p class="u-error" x-show="err('password')" x-text="err('password')"></p>
         </div>
 
-        <div class="field">
-          <label class="label" for="rg-pw2">Confirm password</label>
-          <input id="rg-pw2" :type="showPw ? 'text' : 'password'" class="input" autocomplete="new-password"
+        <div class="u-field">
+          <label class="u-label" for="rg-pw2">Confirm password</label>
+          <input id="rg-pw2" :type="showPw ? 'text' : 'password'" class="u-input" autocomplete="new-password"
                  x-model="model.password_confirm" @blur="touch('password_confirm')"
                  :aria-invalid="!!err('password_confirm')" placeholder="••••••••">
-          <p class="field-error" x-show="err('password_confirm')" x-text="err('password_confirm')"></p>
+          <p class="u-error" x-show="err('password_confirm')" x-text="err('password_confirm')"></p>
         </div>
 
-        <button type="submit" class="btn-primary btn-lg w-full" :data-loading="submitting" :disabled="submitting">
+        <button type="submit" class="u-btn-primary u-btn-lg mt-2 w-full" :data-loading="submitting" :disabled="submitting">
           Create account
         </button>
       </form>
 
-      <p class="mt-6 text-center text-sm text-slate-500">
-        Already have an account?
-        <a :href="loginHref()" class="font-semibold text-brand-700 hover:text-brand-800">Log in</a>
+      <p class="u-fine mt-6 text-center">
+        Already have an account? <a :href="loginHref()" class="u-link">Log in</a>
       </p>
-      <p class="mt-3 text-center text-xs text-slate-400">
+      <p class="mt-3 text-center text-[0.75rem] text-ink-400">
         Admin access is provisioned separately and is not available here.
       </p>
     </div>

@@ -1,18 +1,37 @@
 {% extends "web/base.html" %}
-{% load web_extras %}
+{% load static web_extras %}
 {% block title %}{% block err_code %}500{% endblock %} · {{ SITE_NAME }}{% endblock %}
+{% block font_extra %}<link rel="preload" href="{% static 'fonts/literata-latin-opsz-wght.woff2' %}" as="font" type="font/woff2" crossorigin>{% endblock %}
+
+{% comment %}
+Error pages are where trust is cheapest to lose, so the copy names what
+happened and what to do next rather than apologising. The code is present
+for anyone reporting the problem, but it is not the headline.
+{% endcomment %}
+
 {% block body %}
-<div class="grid min-h-full place-items-center px-4 py-16">
-  <div class="w-full max-w-md text-center">
-    <div class="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-2xl bg-slate-100 text-slate-500">
-      {% block err_icon %}{% icon "info" "h-7 w-7" %}{% endblock %}
-    </div>
-    <p class="text-sm font-semibold uppercase tracking-wider text-slate-400">Error {% block err_code_txt %}500{% endblock %}</p>
-    <h1 class="mt-2 text-2xl font-semibold text-slate-900">{% block err_heading %}Something went wrong{% endblock %}</h1>
-    <p class="mt-2 text-sm text-slate-500">{% block err_message %}Please try again in a moment.{% endblock %}</p>
-    <div class="mt-7 flex items-center justify-center gap-2">
-      <a href="{{ home_url|default:'/' }}" class="btn-primary">{% block err_cta %}Go home{% endblock %}</a>
-      <button onclick="history.back()" class="btn-secondary">Go back</button>
+<div class="u-page grid min-h-full place-items-center px-5 py-16">
+  <div class="w-full max-w-md">
+    <a href="/" class="mb-10 flex items-center justify-center gap-2.5">
+      <span class="grid h-9 w-9 place-items-center rounded-lg bg-pine-700 font-display text-lg font-bold text-marigold-400">{{ SITE_NAME|first }}</span>
+      <span class="font-display text-lg font-semibold tracking-tight text-ink-900">{{ SITE_NAME }}</span>
+    </a>
+
+    <div class="u-card u-card-pad text-center">
+      <div class="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-pine-100 text-pine-700">
+        {% block err_icon %}{% icon "info" "h-7 w-7" %}{% endblock %}
+      </div>
+      <h1 class="u-h3 mt-5">{% block err_heading %}Something went wrong{% endblock %}</h1>
+      <p class="u-body mt-2 text-ink-500">{% block err_message %}It's not you — something failed on our end. Trying again usually works.{% endblock %}</p>
+
+      <div class="mt-7 flex flex-col gap-2 sm:flex-row sm:justify-center">
+        <a href="{{ home_url|default:'/' }}" class="u-btn-pine">{% block err_cta %}Go home{% endblock %}</a>
+        <button type="button" onclick="history.back()" class="u-btn-secondary">Go back</button>
+      </div>
+
+      <p class="u-fine mt-6 border-t border-ink-100 pt-5 text-ink-400">
+        Error {% block err_code_txt %}500{% endblock %}
+      </p>
     </div>
   </div>
 </div>
