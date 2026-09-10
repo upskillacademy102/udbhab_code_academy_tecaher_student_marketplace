@@ -1,0 +1,61 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{# Not in the teacher nav while the token system is off (see apps/web/nav.py); route kept live for deep links #}
+{% block page_actions %}<a href="/teacher/tokens/" class="btn-primary">{% icon "unlock" %} Buy extra unlocks</a>{% endblock %}
+
+{% block content %}
+<div x-data="walletPage()">
+  <div class="grid gap-6 lg:grid-cols-3">
+    <div class="card card-pad lg:col-span-1">
+      <p class="stat-label">Extra unlocks</p>
+      <div x-show="balState === 'loading'" x-cloak class="skeleton mt-3 h-9 w-24"></div>
+      <p x-show="balState === 'ready'" x-cloak class="mt-2 text-4xl font-semibold text-slate-900" x-text="fmt.number(balance)"></p>
+      <p class="stat-sub">available &middot; never expire</p>
+      <a href="/teacher/tokens/" class="btn-secondary btn-sm mt-5 w-full">Buy more</a>
+    </div>
+
+    <div class="card lg:col-span-2">
+      <div class="card-header"><p class="card-title">Transaction history</p></div>
+      <div class="p-1">
+        {% include "web/partials/_row_skeleton.html" %}
+        {% include "web/partials/_error.html" %}
+        <div x-show="state === 'empty'" x-cloak class="px-4 py-10 text-center text-sm text-slate-500">No transactions yet.</div>
+        <table class="data" x-show="state === 'ready'" x-cloak>
+          <thead><tr><th>Type</th><th>Description</th><th class="text-right">Amount</th><th class="hidden text-right sm:table-cell">Balance</th><th class="hidden sm:table-cell">Date</th></tr></thead>
+          <tbody>
+            <template x-for="tx in items" :key="tx.id">
+              <tr>
+                <td><span class="badge" :class="isCredit(tx) ? 'badge-green' : 'badge-slate'" x-text="fmt.titleCase(tx.transaction_type)"></span></td>
+                <td class="text-slate-600" x-text="tx.description || '—'"></td>
+                <td class="text-right font-medium" :class="isCredit(tx) ? 'text-emerald-600' : 'text-slate-900'"
+                    x-text="(isCredit(tx) ? '+' : '−') + fmt.number(Math.abs(tx.amount))"></td>
+                <td class="hidden text-right text-slate-500 sm:table-cell" x-text="fmt.number(tx.balance_after)"></td>
+                <td class="hidden text-slate-500 sm:table-cell" x-text="fmt.date(tx.created_at)"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+      {% include "web/partials/_pagination.html" %}
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("walletPage", () => ({
+      ...mk.collection({ endpoint: "/wallet/history/" }),
+      balState: "loading", balance: 0,
+      init() {
+        this.initCollection();
+        api.get("/wallet/", { silent: true }).then((w) => { this.balance = w.balance; this.balState = "ready"; }).catch(() => (this.balState = "ready"));
+      },
+      isCredit(tx) {
+        const t = String(tx.transaction_type || "").toLowerCase();
+        return t.includes("credit") || t.includes("purchase") || t.includes("bonus") || Number(tx.amount) > 0;
+      },
+    }));
+  });
+</script>
+{% endblock %}

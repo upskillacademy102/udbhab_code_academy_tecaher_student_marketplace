@@ -1,0 +1,114 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block content %}
+<div x-data="availabilityPage()" class="grid gap-6 lg:grid-cols-3">
+
+  {# Weekly hours #}
+  <div class="lg:col-span-2 space-y-4">
+    <div class="card">
+      <div class="card-header"><p class="card-title">Weekly teaching hours</p></div>
+      <div class="p-2">
+        <div x-show="wkState === 'loading'" x-cloak class="space-y-2 p-3"><div class="skeleton h-10"></div><div class="skeleton h-10"></div></div>
+        <template x-if="wkState === 'empty'">
+          <p class="px-4 py-8 text-center text-sm text-slate-500">No weekly hours set. Add windows below so students can match your schedule.</p>
+        </template>
+        <ul x-show="wkState === 'ready'" class="divide-y divide-slate-100">
+          <template x-for="w in weekly" :key="w.id">
+            <li class="flex items-center gap-3 px-3 py-3">
+              <span class="w-24 text-sm font-medium text-slate-800" x-text="fmt.weekday(w.day_of_week)"></span>
+              <span class="text-sm text-slate-600" x-text="`${fmt.time(w.start_time)} – ${fmt.time(w.end_time)}`"></span>
+              <span class="badge badge-slate ml-auto" x-show="!w.is_active">Paused</span>
+              <button class="btn-ghost btn-sm text-rose-600 hover:bg-rose-50" @click="delWeekly(w)" aria-label="Remove">{% icon "trash" "h-4 w-4" %}</button>
+            </li>
+          </template>
+        </ul>
+      </div>
+      <form class="flex flex-wrap items-end gap-3 border-t border-slate-100 p-4" @submit.prevent="addWeekly()">
+        <div class="field"><label class="label" for="w-day">Day</label>
+          <select id="w-day" class="select" x-model="nw.day_of_week">
+            <template x-for="i in 7" :key="i"><option :value="i" x-text="fmt.weekday(i)"></option></template>
+          </select>
+        </div>
+        <div class="field"><label class="label" for="w-start">From</label><input id="w-start" type="time" class="input" x-model="nw.start_time"></div>
+        <div class="field"><label class="label" for="w-end">To</label><input id="w-end" type="time" class="input" x-model="nw.end_time"></div>
+        <button type="submit" class="btn-primary" :data-loading="addingWk">{% icon "plus" "h-4 w-4" %} Add</button>
+      </form>
+    </div>
+  </div>
+
+  {# Exceptions #}
+  <div class="space-y-4">
+    <div class="card">
+      <div class="card-header"><p class="card-title">Time off &amp; exceptions</p></div>
+      <div class="p-2">
+        <div x-show="exState === 'loading'" x-cloak class="space-y-2 p-3"><div class="skeleton h-10"></div></div>
+        <template x-if="exState === 'empty'"><p class="px-4 py-6 text-center text-sm text-slate-500">No exceptions.</p></template>
+        <ul x-show="exState === 'ready'" class="divide-y divide-slate-100">
+          <template x-for="e in exceptions" :key="e.id">
+            <li class="flex items-center gap-3 px-3 py-2.5">
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-medium text-slate-800" x-text="fmt.date(e.date)"></p>
+                <p class="truncate text-xs text-slate-500" x-text="e.reason || fmt.titleCase(e.exception_type) || 'Unavailable'"></p>
+              </div>
+              <button class="btn-ghost btn-sm text-rose-600 hover:bg-rose-50" @click="delEx(e)" aria-label="Remove">{% icon "trash" "h-4 w-4" %}</button>
+            </li>
+          </template>
+        </ul>
+      </div>
+      <form class="space-y-3 border-t border-slate-100 p-4" @submit.prevent="addEx()">
+        <div class="field"><label class="label" for="e-date">Date</label><input id="e-date" type="date" class="input" x-model="ne.date"></div>
+        <div class="field"><label class="label" for="e-reason">Reason (optional)</label><input id="e-reason" class="input" placeholder="e.g. Travel" x-model="ne.reason"></div>
+        <button type="submit" class="btn-secondary w-full" :data-loading="addingEx">{% icon "plus" "h-4 w-4" %} Add exception</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("availabilityPage", () => ({
+      wkState: "loading", weekly: [], exState: "loading", exceptions: [],
+      nw: { day_of_week: 1, start_time: "", end_time: "" }, addingWk: false,
+      ne: { date: "", reason: "" }, addingEx: false,
+      _tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      init() { this.loadWeekly(); this.loadEx(); },
+      loadWeekly() {
+        api.get("/teachers/profile/weekly-availability/", { silent: true })
+          .then((d) => { this.weekly = (d || []).sort((a, b) => a.day_of_week - b.day_of_week || String(a.start_time).localeCompare(b.start_time)); this.wkState = this.weekly.length ? "ready" : "empty"; })
+          .catch((e) => { this.wkState = "empty"; if (e.status !== 404) window.toast("error", e.message); });
+      },
+      loadEx() {
+        api.get("/teachers/profile/schedule-exceptions/", { silent: true })
+          .then((d) => { this.exceptions = d || []; this.exState = this.exceptions.length ? "ready" : "empty"; })
+          .catch(() => (this.exState = "empty"));
+      },
+      async addWeekly() {
+        if (!this.nw.start_time || !this.nw.end_time) return window.toast("warning", "Pick a start and end time.");
+        this.addingWk = true;
+        try {
+          await api.post("/teachers/profile/weekly-availability/", { ...this.nw, day_of_week: Number(this.nw.day_of_week), timezone: this._tz, is_active: true });
+          window.toast("success", "Availability added."); this.nw.start_time = ""; this.nw.end_time = ""; this.loadWeekly();
+        } catch (e) { window.toast("error", e.fieldErrors ? Object.values(e.fieldErrors)[0] : e.message); }
+        finally { this.addingWk = false; }
+      },
+      async delWeekly(w) {
+        if (!(await window.confirmAction({ title: "Remove this time window?", confirmLabel: "Remove", danger: true }))) return;
+        try { await api.del(`/teachers/profile/weekly-availability/${w.id}/`); this.weekly = this.weekly.filter((x) => x.id !== w.id); if (!this.weekly.length) this.wkState = "empty"; }
+        catch (e) { window.toast("error", e.message); }
+      },
+      async addEx() {
+        if (!this.ne.date) return window.toast("warning", "Pick a date.");
+        this.addingEx = true;
+        try { await api.post("/teachers/profile/schedule-exceptions/", { date: this.ne.date, reason: this.ne.reason, exception_type: "temporary_unavailable", timezone: this._tz }); window.toast("success", "Exception added."); this.ne = { date: "", reason: "" }; this.loadEx(); }
+        catch (e) { window.toast("error", e.fieldErrors ? Object.values(e.fieldErrors)[0] : e.message); }
+        finally { this.addingEx = false; }
+      },
+      async delEx(e) {
+        try { await api.del(`/teachers/profile/schedule-exceptions/${e.id}/`); this.exceptions = this.exceptions.filter((x) => x.id !== e.id); if (!this.exceptions.length) this.exState = "empty"; }
+        catch (err) { window.toast("error", err.message); }
+      },
+    }));
+  });
+</script>
+{% endblock %}

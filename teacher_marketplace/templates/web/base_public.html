@@ -1,0 +1,43 @@
+{% extends "web/base.html" %}
+{% load web_extras %}
+
+{% block title %}{{ page_title|default:SITE_NAME }} · {{ SITE_NAME }}{% endblock %}
+
+{% block body %}
+<div class="grid min-h-full lg:grid-cols-2">
+
+  {# ---- Brand / value panel (hidden on small screens) ---- #}
+  <div class="relative hidden overflow-hidden bg-brand-700 p-12 text-white lg:flex lg:flex-col lg:justify-between">
+    <div class="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-brand-500/40 blur-3xl"></div>
+    <div class="pointer-events-none absolute -bottom-32 -left-16 h-96 w-96 rounded-full bg-brand-900/50 blur-3xl"></div>
+
+    <a href="/" class="relative flex items-center gap-2.5 rounded-lg">
+      <span class="grid h-9 w-9 place-items-center rounded-lg bg-white/15 text-base font-bold">{{ SITE_NAME|first }}</span>
+      <span class="text-lg font-semibold tracking-tight">{{ SITE_NAME }}</span>
+    </a>
+
+    <div class="relative max-w-md">
+      <h2 class="text-3xl font-semibold leading-tight tracking-tight">{% block promo_title %}The right teacher, matched to how you learn.{% endblock %}</h2>
+      <p class="mt-4 text-brand-100">{% block promo_body %}Search by subject, language, schedule and location. Students connect with teachers for free — teachers grow their practice with quality leads.{% endblock %}</p>
+      <ul class="mt-8 space-y-3 text-sm text-brand-50">
+        <li class="flex items-center gap-3">{% icon "check" "h-5 w-5 text-brand-200" %} Free teacher search for students</li>
+        <li class="flex items-center gap-3">{% icon "check" "h-5 w-5 text-brand-200" %} Schedule-aware matching</li>
+        <li class="flex items-center gap-3">{% icon "check" "h-5 w-5 text-brand-200" %} Verified teacher profiles</li>
+      </ul>
+    </div>
+
+    <p class="relative text-xs text-brand-200">{{ SITE_TAGLINE }}</p>
+  </div>
+
+  {# ---- Content panel ---- #}
+  <div class="flex flex-col items-center justify-center px-4 py-10 sm:px-8">
+    <a href="/" class="mb-8 flex items-center gap-2.5 lg:hidden">
+      <span class="grid h-9 w-9 place-items-center rounded-lg bg-brand-600 text-base font-bold text-white">{{ SITE_NAME|first }}</span>
+      <span class="text-lg font-semibold tracking-tight text-slate-900">{{ SITE_NAME }}</span>
+    </a>
+    <div class="w-full max-w-sm">
+      {% block panel %}{% endblock %}
+    </div>
+  </div>
+</div>
+{% endblock %}

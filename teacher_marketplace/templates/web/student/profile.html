@@ -1,0 +1,120 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block content %}
+<div x-data="studentProfile()" class="mx-auto max-w-2xl">
+  <div x-show="loading" x-cloak class="card card-pad space-y-4">
+    <div class="skeleton h-4 w-1/3"></div><div class="skeleton h-10"></div><div class="skeleton h-10"></div>
+  </div>
+
+  <form x-show="!loading" x-cloak class="card" @submit.prevent="save()">
+    <div class="card-header">
+      <p class="card-title" x-text="exists ? 'Edit your profile' : 'Set up your profile'"></p>
+      <span class="badge" :class="exists ? 'badge-green' : 'badge-amber'" x-text="exists ? 'Active' : 'Not set up'"></span>
+    </div>
+    <div class="card-pad space-y-4">
+      <div class="alert alert-error" x-show="nonField" x-cloak>{% icon "x-circle" %}<span x-text="nonField"></span></div>
+      <div class="alert alert-success" x-show="saved" x-cloak>{% icon "check-circle" %}<span>Profile saved.</span></div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="field">
+          <label class="label" for="p-edu">Education level</label>
+          <select id="p-edu" class="select" x-model="model.education_level" @change="clearError('education_level')">
+            <option value="">— Select —</option>
+            <template x-for="e in EDUCATION_LEVELS" :key="e.value"><option :value="e.value" x-text="e.label"></option></template>
+          </select>
+          <p class="field-error" x-show="hasError('education_level')" x-text="fieldError('education_level')"></p>
+        </div>
+        <div class="field">
+          <label class="label" for="p-grade">Grade / year</label>
+          <select id="p-grade" class="select" x-model="model.grade_or_year">
+            <option value="">— Select —</option>
+            <template x-for="g in gradeLevels" :key="g.id"><option :value="g.name" x-text="g.name"></option></template>
+          </select>
+        </div>
+      </div>
+      <div class="grid gap-4 sm:grid-cols-3">
+        <div class="field">
+          <label class="label" for="p-city">City</label>
+          <select id="p-city" class="select" x-model="model.city" @change="onCityChange()">
+            <option value="">— Select —</option>
+            <template x-for="c in cities" :key="c.id"><option :value="c.name" x-text="c.name"></option></template>
+          </select>
+        </div>
+        <div class="field"><label class="label" for="p-state">State</label><input id="p-state" class="input" x-model="model.state" disabled></div>
+        <div class="field"><label class="label" for="p-country">Country</label><input id="p-country" class="input" x-model="model.country" disabled></div>
+      </div>
+      <div class="field">
+        <span class="label">Preferred subjects</span>
+        <div class="mt-1.5 flex flex-wrap gap-1.5">
+          <template x-for="s in subjects" :key="s.id">
+            <button type="button" class="chip" :aria-pressed="selectedSubjects.includes(s.name)" @click="toggleSubject(s.name)" x-text="s.name"></button>
+          </template>
+        </div>
+        <p class="field-hint">Helps us tailor teacher recommendations.</p>
+      </div>
+      <div class="field">
+        <label class="label" for="p-bio">About you</label>
+        <textarea id="p-bio" class="textarea" placeholder="Your learning goals, exams you're preparing for…" x-model="model.bio"></textarea>
+      </div>
+    </div>
+    <div class="card-header border-b-0 border-t border-slate-100">
+      <span></span>
+      <button type="submit" class="btn-primary" :data-loading="submitting" x-text="exists ? 'Save changes' : 'Create profile'"></button>
+    </div>
+  </form>
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("studentProfile", () => ({
+      ...mk.apiForm({ endpoint: "/students/me/", successMessage: "Profile saved." }),
+      loading: true, exists: false,
+      EDUCATION_LEVELS: [
+        { value: "school", label: "School" },
+        { value: "high_school", label: "High School" },
+        { value: "undergraduate", label: "Undergraduate" },
+        { value: "postgraduate", label: "Postgraduate" },
+        { value: "competitive_exam", label: "Competitive Exam Preparation" },
+        { value: "hobby_other", label: "Hobby / Other" },
+      ],
+      gradeLevels: [],
+      cities: [],
+      subjects: [],
+      selectedSubjects: [],
+      init() {
+        api.get("/students/me/", { silent: true })
+          .then((p) => { this.exists = true; this.setModel(p); this.syncSubjectsFromModel(); })
+          .catch((e) => { if (e.status !== 404) window.toast("error", e.message); })
+          .finally(() => (this.loading = false));
+        api.get("/grade-levels/", { params: { page_size: 100 }, silent: true })
+          .then((d) => (this.gradeLevels = Array.isArray(d) ? d : [])).catch(() => {});
+        api.get("/location/cities/", { params: { page_size: 500 }, silent: true })
+          .then((d) => (this.cities = Array.isArray(d) ? d : [])).catch(() => {});
+        api.get("/subjects/", { params: { page_size: 200 }, silent: true })
+          .then((d) => (this.subjects = Array.isArray(d) ? d : [])).catch(() => {});
+      },
+      syncSubjectsFromModel() {
+        this.selectedSubjects = (this.model.preferred_subjects || "")
+          .split(",").map((s) => s.trim()).filter(Boolean);
+      },
+      toggleSubject(name) {
+        const i = this.selectedSubjects.indexOf(name);
+        if (i === -1) this.selectedSubjects.push(name); else this.selectedSubjects.splice(i, 1);
+        this.model.preferred_subjects = this.selectedSubjects.join(", ");
+      },
+      onCityChange() {
+        const c = this.cities.find((x) => x.name === this.model.city);
+        this.model.state = c ? c.state_name || "" : "";
+        this.model.country = c ? c.country_name || "" : "";
+      },
+      async save() {
+        try {
+          await this.submit("/students/me/", this.exists ? "patch" : "post");
+          this.exists = true;
+        } catch (e) {}
+      },
+    }));
+  });
+</script>
+{% endblock %}

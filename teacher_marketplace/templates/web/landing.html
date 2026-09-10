@@ -1,0 +1,230 @@
+{% extends "web/base.html" %}
+{% load web_extras %}
+{% block title %}{{ SITE_NAME }} — {{ SITE_TAGLINE }}{% endblock %}
+
+{% block body %}
+<div class="flex min-h-full flex-col bg-stone-50" x-data="landingPage()">
+  <header class="border-b border-slate-200/70 bg-stone-50">
+    <div class="container-app flex h-16 items-center justify-between">
+      <a href="/" class="flex items-center gap-2.5">
+        <span class="grid h-8 w-8 place-items-center rounded-lg bg-brand-600 text-sm font-bold text-white">{{ SITE_NAME|first }}</span>
+        <span class="text-[15px] font-semibold tracking-tight text-slate-900">{{ SITE_NAME }}</span>
+      </a>
+      <div class="flex items-center gap-2">
+        <a href="/login/" class="btn-ghost btn-sm">Log in</a>
+        <a href="/register/" class="btn-primary btn-sm">Create account</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="flex-1">
+    <section class="relative overflow-hidden bg-dot-grid">
+      <div class="pointer-events-none absolute inset-0 bg-gradient-to-b from-stone-50 via-stone-50/70 to-stone-50"></div>
+      <div class="container-app relative grid items-center gap-12 py-16 lg:grid-cols-2 lg:py-20">
+      <div>
+        {# Interactive audience switch — changes the pitch below #}
+        <div class="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-xs">
+          <button type="button" class="rounded-md px-4 py-1.5 text-sm font-semibold transition"
+                  :class="audience === 'student' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'"
+                  @click="audience = 'student'">I'm a Student</button>
+          <button type="button" class="rounded-md px-4 py-1.5 text-sm font-semibold transition"
+                  :class="audience === 'teacher' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'"
+                  @click="audience = 'teacher'">I'm a Teacher</button>
+        </div>
+
+        <h1 class="mt-5 text-5xl font-bold leading-[1.05] tracking-tight text-slate-900 sm:text-6xl">
+          <span x-show="audience === 'student'">Find your teacher. Learn your way.</span>
+          <span x-show="audience === 'teacher'" x-cloak>Teach more. Chase less.</span>
+        </h1>
+        <p class="mt-5 max-w-md text-lg text-slate-600">
+          <span x-show="audience === 'student'">Verified teachers, matched to your subject and schedule. Free for students — always.</span>
+          <span x-show="audience === 'teacher'" x-cloak>Quality leads matched to your schedule. Pay only to unlock the ones you want.</span>
+        </p>
+
+        <div class="mt-8 flex flex-col gap-3 sm:flex-row">
+          <a href="/register/?as=student" class="btn-primary btn-lg" x-show="audience === 'student'">{% icon "user" %} Create a student account</a>
+          <a href="/register/?as=teacher" class="btn-secondary btn-lg" x-show="audience === 'student'">{% icon "academic" %} Create a teacher account</a>
+          <a href="/register/?as=teacher" class="btn-primary btn-lg" x-show="audience === 'teacher'" x-cloak>{% icon "academic" %} Create a teacher account</a>
+          <a href="/register/?as=student" class="btn-secondary btn-lg" x-show="audience === 'teacher'" x-cloak>{% icon "user" %} Create a student account</a>
+        </div>
+        <p class="mt-4 text-sm text-slate-500">
+          Takes under a minute. Already have an account? <a href="/login/" class="font-semibold text-brand-700 hover:text-brand-800">Log in</a>.
+        </p>
+      </div>
+
+      {# Real numbers, not a mockup — the platform's specialities, quantified #}
+      <div class="relative" x-effect="animateStats()">
+        <div class="pointer-events-none absolute -inset-8 rounded-[2rem] bg-gradient-to-br from-brand-100 to-transparent blur-2xl"></div>
+        <div class="pointer-events-none absolute -bottom-10 -left-10 h-56 w-56 rounded-full bg-emerald-100/70 blur-3xl"></div>
+        <div class="relative grid grid-cols-2 gap-4">
+          <div class="card card-pad relative col-span-2 flex items-center gap-4 overflow-hidden border-none bg-brand-600 text-white">
+            {% icon "shield" "pointer-events-none absolute -right-4 -top-4 h-28 w-28 text-white/10" %}
+            <span class="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-white/15">{% icon "shield" "h-6 w-6" %}</span>
+            <div>
+              <p class="text-4xl font-bold leading-none" x-ref="statTeachers">0</p>
+              <p class="mt-1.5 text-sm text-brand-100">Verified teachers</p>
+            </div>
+          </div>
+          <div class="card card-pad">
+            <span class="grid h-10 w-10 place-items-center rounded-lg bg-emerald-50 text-emerald-600">{% icon "book" %}</span>
+            <p class="mt-3 text-3xl font-bold text-slate-900" x-ref="statSubjects">0</p>
+            <p class="text-xs font-medium text-slate-500">Subjects to learn</p>
+          </div>
+          <div class="card card-pad">
+            <span class="grid h-10 w-10 place-items-center rounded-lg bg-amber-50 text-amber-600">{% icon "users" %}</span>
+            <p class="mt-3 text-3xl font-bold text-slate-900" x-ref="statStudents">0</p>
+            <p class="text-xs font-medium text-slate-500">Students learning</p>
+          </div>
+        </div>
+      </div>
+      </div>
+    </section>
+
+    {# ---- Browse by subject — interactive picker ---- #}
+    <section class="border-t border-slate-200/70 bg-dot-grid-light bg-stone-50 py-16">
+      <div class="container-app">
+        <div class="text-center">
+          <h2 class="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">What do you want to learn?</h2>
+          <p class="mt-2 text-sm text-slate-500">Tap a subject to see what's next.</p>
+        </div>
+        <div class="mx-auto mt-8 grid max-w-3xl grid-cols-2 gap-3 sm:grid-cols-4">
+          <template x-for="s in SUBJECTS" :key="s.name">
+            <button type="button" class="card card-hover flex flex-col items-center justify-center gap-2 rounded-xl p-4 text-center text-sm font-medium transition"
+                    :class="[s.tone, selectedSubject === s.name ? 'ring-2 ring-brand-500' : '']"
+                    @click="selectedSubject = selectedSubject === s.name ? null : s.name">
+              <svg class="h-6 w-6"><use :href="'#i-' + s.icon"></use></svg>
+              <span x-text="s.name"></span>
+            </button>
+          </template>
+        </div>
+        <div class="mx-auto mt-8 flex max-w-md flex-col items-center gap-4 text-center" x-show="selectedSubject" x-cloak>
+          <p class="text-base text-slate-600">Great choice — find <span class="font-semibold text-slate-900" x-text="selectedSubject"></span> teachers free.</p>
+          <a href="/register/?as=student" class="btn-primary px-10 py-4 text-base font-bold shadow-md transition hover:scale-105">Get started</a>
+        </div>
+      </div>
+    </section>
+
+    {# ---- Specialities — big, bold, one glance ---- #}
+    <section class="border-t border-slate-200/70 bg-stone-50 py-16">
+      <div class="container-app">
+        <h2 class="text-center text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Why {{ SITE_NAME }}</h2>
+        <div class="mt-10 grid gap-4 sm:grid-cols-3">
+          <div class="card card-pad relative overflow-hidden bg-brand-50/60">
+            {% icon "search" "pointer-events-none absolute -right-3 -top-3 h-24 w-24 text-brand-600/10" %}
+            <div class="relative grid h-12 w-12 place-items-center rounded-xl bg-brand-600 text-white">{% icon "search" "h-6 w-6" %}</div>
+            <h3 class="relative mt-4 text-lg font-bold text-slate-900">Precise search</h3>
+            <p class="relative mt-1.5 text-sm text-slate-600">Subject, language, mode, city, and your exact free hours.</p>
+          </div>
+          <div class="card card-pad relative overflow-hidden bg-emerald-50/60">
+            {% icon "target" "pointer-events-none absolute -right-3 -top-3 h-24 w-24 text-emerald-600/10" %}
+            <div class="relative grid h-12 w-12 place-items-center rounded-xl bg-emerald-600 text-white">{% icon "target" "h-6 w-6" %}</div>
+            <h3 class="relative mt-4 text-lg font-bold text-slate-900">Schedule-first match</h3>
+            <p class="relative mt-1.5 text-sm text-slate-600">The right teacher at the wrong time isn't a match — we weigh timing highest.</p>
+          </div>
+          <div class="card card-pad relative overflow-hidden bg-amber-50/60">
+            {% icon "wallet" "pointer-events-none absolute -right-3 -top-3 h-24 w-24 text-amber-600/10" %}
+            <div class="relative grid h-12 w-12 place-items-center rounded-xl bg-amber-500 text-white">{% icon "wallet" "h-6 w-6" %}</div>
+            <h3 class="relative mt-4 text-lg font-bold text-slate-900">Fair for teachers</h3>
+            <p class="relative mt-1.5 text-sm text-slate-600">A set number of contact unlocks every 30 days. Same price for every lead, no surprises.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {# ---- How it works ---- #}
+    <section class="border-t border-slate-200/70 bg-dot-grid-light bg-stone-50 py-16">
+      <div class="container-app">
+        <div class="text-center">
+          <span class="badge badge-brand">3 steps</span>
+          <h2 class="mt-4 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">From search to your first lesson</h2>
+        </div>
+        <div class="section-banner mt-10 grid gap-8 bg-white p-8 sm:grid-cols-3 sm:p-10">
+          <div class="section-banner-glow"></div>
+          <div class="pointer-events-none absolute left-[19%] right-[19%] top-[52px] hidden border-t-2 border-dashed border-brand-200 sm:block"></div>
+          <div class="relative flex gap-4">
+            <span class="step-badge">1</span>
+            <div>
+              <h3 class="text-sm font-semibold text-slate-900">Search</h3>
+              <p class="mt-1 text-sm text-slate-600">Filter by subject, schedule, and city.</p>
+            </div>
+          </div>
+          <div class="relative flex gap-4">
+            <span class="step-badge">2</span>
+            <div>
+              <h3 class="text-sm font-semibold text-slate-900">Connect</h3>
+              <p class="mt-1 text-sm text-slate-600">Message verified teachers directly — no bidding, no spam.</p>
+            </div>
+          </div>
+          <div class="relative flex gap-4">
+            <span class="step-badge">3</span>
+            <div>
+              <h3 class="text-sm font-semibold text-slate-900">Learn</h3>
+              <p class="mt-1 text-sm text-slate-600">Start lessons on your terms, online or in person.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="border-t border-slate-200/70 bg-stone-50">
+    <div class="container-app py-10">
+      <div class="flex flex-col items-center gap-3 text-center sm:flex-row sm:justify-between sm:text-left">
+        <a href="/" class="flex items-center gap-2.5">
+          <span class="grid h-8 w-8 place-items-center rounded-lg bg-brand-600 text-sm font-bold text-white">{{ SITE_NAME|first }}</span>
+          <span class="text-[15px] font-semibold tracking-tight text-slate-900">{{ SITE_NAME }}</span>
+        </a>
+        <p class="text-sm text-slate-500">{{ SITE_TAGLINE }}</p>
+      </div>
+      <div class="mt-6 flex flex-col items-center justify-between gap-3 border-t border-slate-100 pt-6 text-xs text-slate-400 sm:flex-row">
+        <p>© <span id="yr"></span> {{ SITE_NAME }}. All rights reserved.</p>
+        <p class="flex items-center gap-1.5">{% icon "shield" "h-3.5 w-3.5 text-emerald-500" %} Verified teachers · Secure by design</p>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<script>
+  document.getElementById("yr").textContent = new Date().getFullYear();
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("landingPage", () => ({
+      audience: "student",
+      selectedSubject: null,
+      stats: {},
+      SUBJECTS: [
+        { name: "Mathematics", tone: "bg-brand-50 text-brand-700", icon: "chart" },
+        { name: "Physics", tone: "bg-emerald-50 text-emerald-700", icon: "activity" },
+        { name: "Chemistry", tone: "bg-amber-50 text-amber-700", icon: "lightbulb" },
+        { name: "English", tone: "bg-sky-50 text-sky-700", icon: "book" },
+        { name: "Coding", tone: "bg-sky-50 text-sky-700", icon: "code" },
+        { name: "Music", tone: "bg-amber-50 text-amber-700", icon: "music" },
+        { name: "Art", tone: "bg-emerald-50 text-emerald-700", icon: "edit" },
+        { name: "Hindi", tone: "bg-brand-50 text-brand-700", icon: "globe" },
+        { name: "Biology", tone: "bg-brand-50 text-brand-700", icon: "heart" },
+        { name: "Test Prep", tone: "bg-sky-50 text-sky-700", icon: "target" },
+        { name: "Languages", tone: "bg-amber-50 text-amber-700", icon: "globe" },
+        { name: "History", tone: "bg-emerald-50 text-emerald-700", icon: "clock" },
+      ],
+      init() {
+        api.get("/public/stats/", { silent: true }).then((d) => { this.stats = d || {}; }).catch(() => {});
+      },
+      animateStats() {
+        this._animate(this.$refs.statTeachers, this.stats.verified_teachers);
+        this._animate(this.$refs.statSubjects, this.stats.subjects);
+        this._animate(this.$refs.statStudents, this.stats.students);
+      },
+      _animate(el, target) {
+        if (!el || target == null || el._animatedTo === target) return;
+        el._animatedTo = target;
+        const t0 = performance.now(), dur = 700;
+        const step = (t) => {
+          const p = Math.min(1, (t - t0) / dur);
+          el.textContent = Math.round(p * target).toLocaleString("en-IN");
+          if (p < 1) requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      },
+    }));
+  });
+</script>
+{% endblock %}

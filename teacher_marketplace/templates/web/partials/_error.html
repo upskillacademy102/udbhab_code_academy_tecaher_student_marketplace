@@ -1,0 +1,12 @@
+{% load web_extras %}
+{# Requires an Alpine scope exposing `errorMsg` and `reload()` (collection/record). #}
+<div x-show="state === 'error'" x-cloak class="card card-pad">
+  <div class="flex flex-col items-center py-8 text-center">
+    <div class="mb-3 grid h-12 w-12 place-items-center rounded-full bg-rose-50 text-rose-500">
+      {% icon "alert-triangle" "h-6 w-6" %}
+    </div>
+    <p class="text-sm font-semibold text-slate-900">We couldn't load this</p>
+    <p class="mt-1 max-w-sm text-sm text-slate-500" x-text="errorMsg || 'Please try again.'"></p>
+    <button class="btn-secondary mt-4" @click="reload()">Try again</button>
+  </div>
+</div>

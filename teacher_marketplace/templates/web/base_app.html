@@ -1,0 +1,187 @@
+{% extends "web/base.html" %}
+{% load web_extras %}
+
+{% block title %}{{ page_title|default:SITE_NAME }} · {{ SITE_NAME }}{% endblock %}
+
+{% block body %}
+<div x-data="{ sidebarOpen: false }" class="min-h-full" style="padding-top: var(--imp-bar, 0px)">
+
+  {# ============ Ambient background — fills the flat canvas behind every page ============ #}
+  <div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+    <div class="absolute -right-32 -top-32 h-96 w-96 rounded-full bg-brand-100/40 blur-3xl"></div>
+    <div class="absolute -bottom-40 -left-24 h-96 w-96 rounded-full bg-emerald-100/30 blur-3xl"></div>
+  </div>
+
+  {# ============ Impersonation banner ============ #}
+  <div x-data="impersonationBar()" x-show="active" x-cloak
+       class="fixed inset-x-0 top-0 z-[70] flex h-10 items-center justify-center gap-3 bg-amber-500 px-4 text-sm font-medium text-amber-950"
+       x-init="$watch('active', v => document.documentElement.style.setProperty('--imp-bar', v ? '2.5rem' : '0px'))">
+    {% icon "switch" "h-4 w-4" %}
+    <span>Viewing as <span class="font-semibold" x-text="targetName"></span></span>
+    <button class="rounded-md bg-amber-950/10 px-2.5 py-1 text-xs font-semibold hover:bg-amber-950/20"
+            @click="stop()" :disabled="busy">Return to your account</button>
+  </div>
+
+  {# ============ Mobile drawer backdrop ============ #}
+  <div x-show="sidebarOpen" x-transition.opacity x-cloak
+       class="fixed inset-0 z-40 bg-slate-900/40 lg:hidden" @click="sidebarOpen = false"></div>
+
+  {# ============ Sidebar ============ #}
+  <aside
+    class="fixed bottom-0 left-0 z-50 flex w-[264px] flex-col border-r border-slate-200 bg-white transition-transform duration-200 lg:translate-x-0"
+    style="top: var(--imp-bar, 0px)"
+    :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full'"
+    aria-label="Primary navigation">
+    <div class="flex h-16 items-center justify-between gap-2 px-5">
+      <a href="{{ web_home }}" class="flex items-center gap-2.5 rounded-lg">
+        <span class="grid h-8 w-8 place-items-center rounded-lg bg-brand-600 text-sm font-bold text-white">{{ SITE_NAME|first }}</span>
+        <span class="text-[15px] font-semibold tracking-tight text-slate-900">{{ SITE_NAME }}</span>
+      </a>
+      <button class="btn-ghost -mr-2 p-2 lg:hidden" @click="sidebarOpen = false" aria-label="Close menu">
+        {% icon "x" "h-5 w-5" %}
+      </button>
+    </div>
+
+    <nav class="flex-1 overflow-y-auto px-3 py-2">
+      {% nav_for web_role as sections %}
+      {% for section in sections %}
+        <div class="{% if not forloop.first %}mt-6{% endif %}">
+          {% if section.label %}
+            <p class="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{{ section.label }}</p>
+          {% endif %}
+          <ul class="space-y-0.5">
+            {% for item in section.items %}
+              <li>
+                {% if item.future %}
+                  <span class="nav-link" aria-disabled="true" title="Coming soon — requires backend support">
+                    {% icon item.icon %}
+                    <span class="flex-1">{{ item.label }}</span>
+                    <span class="badge badge-slate">Soon</span>
+                  </span>
+                {% else %}
+                  <a href="{{ item.url }}" class="nav-link" data-active="{% nav_active item %}"
+                     {% if item.url == request.path %}aria-current="page"{% endif %}>
+                    {% icon item.icon %}
+                    <span class="flex-1">{{ item.label }}</span>
+                    {% if item.badge %}
+                      <span x-show="$store.badges.{{ item.badge }} > 0" x-cloak
+                            class="badge badge-brand" x-text="$store.badges.{{ item.badge }}"></span>
+                    {% endif %}
+                  </a>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endfor %}
+    </nav>
+
+    <div class="border-t border-slate-100 p-3">
+      <div class="flex items-center gap-3 rounded-lg px-2 py-1.5">
+        <span class="avatar h-9 w-9 text-xs">{{ web_user.get_full_name|initials }}</span>
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-sm font-medium text-slate-900">{{ web_user.get_full_name|default:web_user.email }}</p>
+          <p class="text-xs capitalize text-slate-500">{{ web_role }}</p>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  {# ============ Main column ============ #}
+  <div class="lg:pl-[264px]">
+    {# ---- Topbar ---- #}
+    <header class="sticky z-30 flex h-16 items-center gap-3 border-b border-slate-200 bg-white/85 px-4 backdrop-blur sm:px-6"
+            style="top: var(--imp-bar, 0px)">
+      <button class="btn-ghost -ml-2 p-2 lg:hidden" @click="sidebarOpen = true" aria-label="Open menu">
+        {% icon "menu" "h-5 w-5" %}
+      </button>
+
+      <div class="min-w-0 flex-1">
+        <p class="truncate text-[15px] font-semibold text-slate-900">{{ page_title|default:SITE_NAME }}</p>
+      </div>
+
+      <a href="{{ web_home }}notifications/" class="btn-ghost relative p-2" aria-label="Notifications">
+        {% icon "bell" "h-5 w-5" %}
+        <span x-show="$store.badges.notifications > 0" x-cloak
+              :class="$store.badges.notifications > 0 && 'animate-pulse'"
+              class="absolute right-0.5 top-0.5 grid h-4 min-w-[1rem] place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-semibold text-white"
+              x-text="$store.badges.notifications > 9 ? '9+' : $store.badges.notifications"></span>
+      </a>
+
+      <div x-data="{ open: false }" class="relative" @keydown.escape="open = false">
+        <button class="flex items-center gap-2 rounded-lg p-1 pr-2 transition hover:bg-slate-100" @click="open = !open"
+                :aria-expanded="open" aria-haspopup="menu">
+          <span class="avatar h-8 w-8 text-xs">{{ web_user.get_full_name|initials }}</span>
+          <span class="hidden text-sm font-medium text-slate-700 sm:block">{{ web_user.first_name|default:web_user.email }}</span>
+          <svg class="h-4 w-4 text-slate-400 transition" :class="open && 'rotate-180'"><use href="#i-chevron-down"></use></svg>
+        </button>
+        <div x-show="open" x-transition x-cloak @click.outside="open = false"
+             class="menu absolute right-0 mt-2 origin-top-right" role="menu">
+          <div class="px-2.5 py-2">
+            <p class="truncate text-sm font-medium text-slate-900">{{ web_user.get_full_name|default:web_user.email }}</p>
+            <p class="truncate text-xs text-slate-500">{{ web_user.email }}</p>
+          </div>
+          <div class="menu-sep"></div>
+          <a href="{{ web_home }}profile/" class="menu-item" role="menuitem">{% icon "user" %} Profile</a>
+          <a href="{{ web_home }}settings/" class="menu-item" role="menuitem">{% icon "cog" %} Settings</a>
+          <div class="menu-sep"></div>
+          <button class="menu-item w-full text-rose-600 hover:bg-rose-50" role="menuitem"
+                  @click="api.logout()">{% icon "logout" %} Log out</button>
+        </div>
+      </div>
+    </header>
+
+    {# ---- Page ---- #}
+    <main id="main" class="container-app animate-fade-in py-6 sm:py-8">
+      {% if web_role == 'teacher' and request.resolver_match.url_name != 'teacher-profile' %}
+      <div x-data="{ show: false }" x-init="api.get('/teachers/me/', { silent: true }).then(() => {}).catch(e => { if (e.status === 404) show = true; })"
+           x-show="show" x-cloak class="mb-5 flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        {% icon "alert-triangle" "h-5 w-5 shrink-0" %}
+        <p class="flex-1">Set up your teaching profile so students can find you and leads can be matched.</p>
+        <a href="/teacher/profile/" class="btn-secondary btn-sm shrink-0">Set up now</a>
+      </div>
+      {% endif %}
+      {% block breadcrumbs %}{% endblock %}
+      <div class="page-header">
+        <div>
+          <h2 class="page-title">{{ page_title|default:SITE_NAME }}</h2>
+          {% if page_desc %}<p class="page-desc">{{ page_desc }}</p>{% endif %}
+        </div>
+        <div class="flex flex-wrap items-center gap-2">{% block page_actions %}{% endblock %}</div>
+      </div>
+
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.store("badges", {
+      notifications: 0,
+      leads: 0,
+      admin_requests: 0,
+      async refresh() {
+        try {
+          const d = await api.get("/notifications/", { params: { is_read: "false" }, silent: true });
+          this.notifications = (d && d._meta && (d._meta.unread_count ?? d._meta.count)) || (Array.isArray(d) ? d.length : 0);
+        } catch (_) {}
+        {% if web_role == 'teacher' %}
+        try {
+          const l = await api.get("/leads/", { silent: true });
+          this.leads = (l && l._meta && l._meta.count) || (Array.isArray(l) ? l.length : 0);
+        } catch (_) {}
+        {% endif %}
+        {% if web_role == 'superadmin' %}
+        try {
+          const a = await api.get("/auth/admin/login-requests/", { params: { status: "pending" }, silent: true });
+          this.admin_requests = (a && a._meta && a._meta.count) || (Array.isArray(a) ? a.length : 0);
+        } catch (_) {}
+        {% endif %}
+      },
+    });
+    Alpine.nextTick(() => Alpine.store("badges").refresh());
+    setInterval(() => { try { Alpine.store("badges").refresh(); } catch (_) {} }, 60000);
+  });
+</script>
+{% endblock %}

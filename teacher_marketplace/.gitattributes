@@ -1,0 +1,22 @@
+# Normalise line endings so Windows and macOS/Linux clones agree.
+* text=auto eol=lf
+
+# Windows-only helpers keep CRLF.
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary assets - never touched.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
+*.exe binary
+
+# Keep generated/vendored files out of diffs and language stats.
+static/js/vendor/** linguist-vendored
+static/css/app.css linguist-generated
+*.min.js linguist-vendored

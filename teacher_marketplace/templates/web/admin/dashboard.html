@@ -1,0 +1,149 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block content %}
+<div x-data="adminDashboard()">
+  <div x-show="state === 'loading'" x-cloak class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <template x-for="i in 8" :key="i"><div class="skeleton h-28 rounded-xl"></div></template>
+  </div>
+
+  {% include "web/partials/_error.html" %}
+
+  {% if web_role == 'superadmin' %}
+  {# Fake-lead alerts — every student teachers have flagged, newest/worst first #}
+  <div x-show="state === 'ready' && (d.fake_lead_alerts || []).length" x-cloak class="mb-6 card border border-rose-200">
+    <div class="card-header bg-rose-50">
+      <p class="card-title flex items-center gap-2">{% icon "alert-triangle" "h-4 w-4 text-rose-600" %} Fake-lead reports</p>
+      <a href="/super-admin/review-queue/?kind=fake_lead_report" class="text-xs font-medium text-brand-600 hover:underline">Open review queue</a>
+    </div>
+    <div class="divide-y divide-slate-100">
+      <template x-for="a in d.fake_lead_alerts" :key="a.review_item_id">
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-sm font-semibold text-slate-900" x-text="a.student_name || a.student_email"></p>
+            <p class="text-xs text-slate-500">
+              <span x-text="a.student_email"></span>
+              <span class="mx-1 text-slate-300">·</span>
+              <span x-text="`${a.distinct_teachers_7d} teacher(s) this week, ${a.distinct_teachers_30d} this month, ${a.total_reports} report(s) total`"></span>
+            </p>
+            <p class="mt-0.5 text-xs text-slate-400" x-show="a.latest_report"
+               x-text="a.latest_report ? `Latest: ${a.latest_report.teacher_name} — “${a.latest_report.note || 'no note'}”` : ''"></p>
+          </div>
+          <template x-if="a.auto_banned || a.account_active === false">
+            <span class="badge badge-red" x-text="a.auto_banned ? 'Auto-banned' : 'Deactivated'"></span>
+          </template>
+          <div class="flex shrink-0 gap-2">
+            <a :href="`/super-admin/students/${a.student_id}/`" class="btn-ghost text-xs">View</a>
+            <template x-if="a.account_active !== false">
+              <button class="btn-secondary text-xs" :data-loading="busy === a.student_id" @click="sanction(a, 'suspend')">Suspend</button>
+            </template>
+            <template x-if="a.account_active !== false">
+              <button class="btn-danger text-xs" :data-loading="busy === a.student_id" @click="sanction(a, 'ban')">Ban</button>
+            </template>
+            <template x-if="a.account_active === false">
+              <button class="btn-ghost text-xs" :data-loading="busy === a.student_id" @click="reactivate(a)">Reactivate</button>
+            </template>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+  {% endif %}
+
+  <div x-show="state === 'ready'" x-cloak>
+    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div class="stat-tile">
+        <span class="stat-tile-icon tone-brand">{% icon "user" %}</span>
+        <div><p class="stat-tile-value" x-text="fmt.number(d.total_students)"></p><p class="stat-tile-label">Active students</p></div>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-tile-icon tone-brand">{% icon "academic" %}</span>
+        <div><p class="stat-tile-value" x-text="fmt.number(d.total_teachers)"></p><p class="stat-tile-label"><span x-text="fmt.number(d.premium_teachers)"></span> premium teachers</p></div>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-tile-icon tone-green">{% icon "receipt" %}</span>
+        <div><p class="stat-tile-value" x-text="fmt.money(d.revenue)"></p><p class="stat-tile-label">Revenue, all time</p></div>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-tile-icon tone-green">{% icon "coin" %}</span>
+        <div><p class="stat-tile-value" x-text="fmt.number(d.todays_payments)"></p><p class="stat-tile-label">Successful payments today</p></div>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-tile-icon tone-amber">{% icon "inbox" %}</span>
+        <div><p class="stat-tile-value" x-text="fmt.number(d.todays_leads)"></p><p class="stat-tile-label">Leads generated today</p></div>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-tile-icon tone-amber">{% icon "lock" %}</span>
+        <div><p class="stat-tile-value" x-text="fmt.number(d.unlocked_leads)"></p><p class="stat-tile-label">Contacts unlocked</p></div>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-tile-icon tone-sky">{% icon "wallet" %}</span>
+        <div><p class="stat-tile-value" x-text="fmt.number(d.wallet_transactions_today)"></p><p class="stat-tile-label">Wallet transactions today</p></div>
+      </div>
+      <div class="stat-tile bg-brand-600">
+        <span class="stat-tile-icon bg-white/15 text-white">{% icon "check-circle" %}</span>
+        <div><p class="stat-tile-value text-white">Healthy</p><p class="stat-tile-label text-brand-100">All systems nominal</p></div>
+      </div>
+    </div>
+
+    <div class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <a href="/admin-portal/students/" class="card card-hover card-pad">
+        <span class="grid h-10 w-10 place-items-center rounded-lg bg-brand-50 text-brand-600">{% icon "users" %}</span>
+        <p class="mt-3 text-sm font-semibold text-slate-900">Manage students</p>
+        <p class="mt-1 text-xs text-slate-500">Search and review student accounts.</p>
+      </a>
+      <a href="/admin-portal/teachers/" class="card card-hover card-pad">
+        <span class="grid h-10 w-10 place-items-center rounded-lg bg-emerald-50 text-emerald-600">{% icon "academic" %}</span>
+        <p class="mt-3 text-sm font-semibold text-slate-900">Manage teachers</p>
+        <p class="mt-1 text-xs text-slate-500">Search and review teacher profiles.</p>
+      </a>
+      <a href="/admin-portal/subjects/" class="card card-hover card-pad">
+        <span class="grid h-10 w-10 place-items-center rounded-lg bg-amber-50 text-amber-600">{% icon "book" %}</span>
+        <p class="mt-3 text-sm font-semibold text-slate-900">Reference data</p>
+        <p class="mt-1 text-xs text-slate-500">Subjects, languages, locations & pricing.</p>
+      </a>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("adminDashboard", () => ({
+      state: "loading", d: {}, errorMsg: "", busy: null,
+      init() {
+        api.get("/dashboard/").then((data) => { this.d = data || {}; this.state = "ready"; })
+          .catch((e) => { this.errorMsg = e.message; this.state = "error"; });
+      },
+      reload() { this.init(); },
+      async sanction(a, kind) {
+        const label = kind === "ban" ? "Ban" : "Suspend";
+        if (!(await window.confirmAction({
+          title: `${label} ${a.student_email}?`,
+          message: `This deactivates the account immediately and signs the student out everywhere. Only a Super Admin can reactivate it.`,
+          confirmLabel: label,
+        }))) return;
+        this.busy = a.student_id;
+        try {
+          await api.post("/ops/sanctions/", { user_id: a.student_id, kind, reason: `Fake-lead reports (${a.distinct_teachers_all} teachers)`, review_item_id: a.review_item_id });
+          window.toast("success", `${a.student_email} has been ${kind === "ban" ? "banned" : "suspended"}.`);
+          this.reload();
+        } catch (e) { window.toast("error", e.message || "Could not apply the sanction."); }
+        finally { this.busy = null; }
+      },
+      async reactivate(a) {
+        if (!(await window.confirmAction({ title: `Reactivate ${a.student_email}?`, message: "The account will be able to sign in and post requirements again.", confirmLabel: "Reactivate" }))) return;
+        this.busy = a.student_id;
+        try {
+          const list = await api.get("/ops/sanctions/", { params: { active: "true", user: a.student_id } });
+          const rows = Array.isArray(list) ? list : (list.results || []);
+          if (!rows.length) { window.toast("info", "No active sanction on this account."); this.reload(); return; }
+          await api.post(`/ops/sanctions/${rows[0].id}/lift/`, { reason: "Reviewed — reports not upheld." });
+          window.toast("success", `${a.student_email} has been reactivated.`);
+          this.reload();
+        } catch (e) { window.toast("error", e.message || "Could not reactivate."); }
+        finally { this.busy = null; }
+      },
+    }));
+  });
+</script>
+{% endblock %}

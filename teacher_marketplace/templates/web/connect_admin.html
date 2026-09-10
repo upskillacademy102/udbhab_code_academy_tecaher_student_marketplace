@@ -1,0 +1,133 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block content %}
+<div x-data="connectAdmin()" class="mx-auto max-w-3xl space-y-6">
+
+  {# ---- Report an issue ---- #}
+  <form class="card" @submit.prevent="submit()">
+    <div class="card-header">
+      <p class="card-title">Report an Issue</p>
+      <span class="text-xs text-slate-400">Report a bug, glitch, or issue</span>
+    </div>
+    <div class="card-pad space-y-4">
+      <div class="alert alert-error" x-show="error" x-cloak>{% icon "x-circle" %}<span x-text="error"></span></div>
+
+      <div class="field">
+        <label class="label" for="ca-subject">Subject <span class="req">*</span></label>
+        <input id="ca-subject" class="input" placeholder="Short summary of the problem"
+               x-model="model.subject" maxlength="200">
+      </div>
+      <div class="field">
+        <label class="label" for="ca-description">Describe the issue <span class="req">*</span></label>
+        <textarea id="ca-description" class="textarea" rows="5"
+                  placeholder="What happened, what you expected, and the steps to reproduce it…"
+                  x-model="model.description" maxlength="5000"></textarea>
+      </div>
+
+      <div class="field">
+        <span class="label">Need to talk it through?</span>
+        <div class="mt-1 flex gap-1.5">
+          <template x-for="opt in CONTACT_OPTIONS" :key="opt.value">
+            <button type="button" class="chip" :aria-pressed="model.contact_preference === opt.value"
+                    @click="model.contact_preference = opt.value" x-text="opt.label"></button>
+          </template>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="label" for="ca-files">Screenshots (optional, up to 5)</label>
+        <input id="ca-files" type="file" class="input" multiple accept="image/jpeg,image/png,image/webp"
+               @change="pickFiles($event)">
+        <p class="field-hint" x-show="files.length" x-text="files.length + ' file(s) selected: ' + files.map(f => f.name).join(', ')"></p>
+      </div>
+    </div>
+    <div class="card-header border-b-0 border-t border-slate-100"><span></span>
+      <button type="submit" class="btn-primary" :data-loading="submitting">Send report</button>
+    </div>
+  </form>
+
+  {# ---- My reports ---- #}
+  <div class="card">
+    <div class="card-header"><p class="card-title">My reports</p></div>
+    <div x-show="loading" x-cloak class="card-pad"><div class="skeleton h-24"></div></div>
+    <div x-show="!loading && tickets.length === 0" x-cloak class="empty">
+      <div class="empty-icon">{% icon "alert-triangle" "h-6 w-6" %}</div>
+      <p class="empty-title">Nothing reported yet</p>
+    </div>
+    <ul x-show="!loading && tickets.length" x-cloak class="divide-y divide-slate-100">
+      <template x-for="t in tickets" :key="t.id">
+        <li class="card-pad">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-sm font-medium text-slate-900" x-text="t.subject"></span>
+            <span class="badge" :class="t.status === 'resolved' ? 'badge-green' : (t.status === 'closed' ? 'badge-slate' : (t.status === 'assigned' ? 'badge-sky' : 'badge-amber'))"
+                  x-text="fmt.titleCase(t.status)"></span>
+            <template x-if="t.contact_preference !== 'none'">
+              <span class="badge badge-slate" x-text="t.contact_preference === 'video_call' ? 'Video call requested' : 'Phone call requested'"></span>
+            </template>
+            <span class="ml-auto text-xs text-slate-400" x-text="fmt.dateTime(t.created_at)"></span>
+          </div>
+          <p class="mt-1.5 whitespace-pre-line text-sm text-slate-600" x-text="t.description"></p>
+          <div class="mt-2 flex flex-wrap gap-1.5" x-show="t.attachments.length">
+            <template x-for="a in t.attachments" :key="a.id">
+              <a :href="a.file" target="_blank" rel="noopener"><img :src="a.file" class="h-14 w-14 rounded-md border border-slate-200 object-cover"></a>
+            </template>
+          </div>
+          <template x-if="t.resolution">
+            <p class="mt-2 rounded-lg bg-slate-50 p-2.5 text-sm text-slate-600">
+              <span class="font-medium text-slate-800">Response: </span><span x-text="t.resolution"></span>
+            </p>
+          </template>
+        </li>
+      </template>
+    </ul>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    const CONTACT_OPTIONS = [
+      { value: "none", label: "No call needed" },
+      { value: "video_call", label: "Request a video call" },
+      { value: "phone_call", label: "Request a phone call" },
+    ];
+
+    Alpine.data("connectAdmin", () => ({
+      loading: true, submitting: false, error: "",
+      tickets: [], files: [],
+      model: { subject: "", description: "", contact_preference: "none" },
+      CONTACT_OPTIONS,
+
+      init() { this.loadTickets(); },
+      async loadTickets() {
+        try { this.tickets = await api.get("/support/tickets/", { silent: true }) || []; }
+        catch (e) {} finally { this.loading = false; }
+      },
+      pickFiles(ev) { this.files = Array.from(ev.target.files || []).slice(0, 5); },
+      async submit() {
+        this.error = "";
+        if (!this.model.subject.trim()) { this.error = "Enter a subject."; return; }
+        if (!this.model.description.trim()) { this.error = "Describe the issue."; return; }
+        this.submitting = true;
+        try {
+          const fd = new FormData();
+          fd.append("subject", this.model.subject.trim());
+          fd.append("description", this.model.description.trim());
+          fd.append("contact_preference", this.model.contact_preference);
+          this.files.forEach((f) => fd.append("attachments", f));
+          await api.post("/support/tickets/", fd);
+          window.toast("success", "Your report has been sent.");
+          this.model = { subject: "", description: "", contact_preference: "none" };
+          this.files = [];
+          document.getElementById("ca-files").value = "";
+          this.loadTickets();
+        } catch (e) {
+          this.error = e.message || "Couldn't send your report.";
+        } finally {
+          this.submitting = false;
+        }
+      },
+    }));
+  });
+</script>
+{% endblock %}

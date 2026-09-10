@@ -1,0 +1,53 @@
+{% load static %}<!doctype html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#4f46e5">
+  <title>{% block title %}{{ SITE_NAME }}{% endblock %}</title>
+  <meta name="description" content="{% block meta_description %}{{ SITE_NAME }} — {{ SITE_TAGLINE }}{% endblock %}">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Ctext x='16' y='22' font-family='system-ui,sans-serif' font-size='17' font-weight='700' fill='white' text-anchor='middle'%3EU%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  <script>window.API_BASE_URL = "{{ API_BASE_URL }}";</script>
+  <script defer src="{% static 'js/api.js' %}"></script>
+  <script defer src="{% static 'js/app.js' %}"></script>
+  <script defer src="{% static 'js/pages.js' %}"></script>
+  {% if web_role == 'admin' or web_role == 'superadmin' %}<script defer src="{% static 'js/admin.js' %}"></script>{% endif %}
+  {% block head_extra %}{% endblock %}
+  <script defer src="{% static 'js/vendor/alpine-collapse.min.js' %}"></script>
+  <script defer src="{% static 'js/vendor/alpine-focus.min.js' %}"></script>
+  <script defer src="{% static 'js/vendor/alpine.min.js' %}"></script>
+</head>
+<body class="h-full">
+  {% include "web/_icons.html" %}
+
+  <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow-pop">Skip to content</a>
+
+  {% block body %}{% endblock %}
+
+  {# --- Global toast region --- #}
+  <div id="toast-region" aria-live="polite" aria-atomic="false"
+       class="pointer-events-none fixed inset-x-0 top-3 z-[80] flex flex-col items-center gap-2 px-3 sm:inset-x-auto sm:right-4 sm:items-end"></div>
+
+  {# --- Global confirm dialog --- #}
+  <div x-data="confirmDialog" x-cloak>
+    <template x-if="open">
+      <div>
+        <div class="dialog-backdrop animate-fade-in" @click="cancel()"></div>
+        <div class="dialog animate-slide-up" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title"
+             x-trap.noscroll="open" @keydown.escape.window="cancel()">
+          <h2 id="confirm-title" class="text-base font-semibold text-slate-900" x-text="title"></h2>
+          <p class="mt-2 text-sm text-slate-500" x-text="message"></p>
+          <div class="mt-6 flex justify-end gap-2">
+            <button class="btn-secondary" @click="cancel()" x-text="cancelLabel"></button>
+            <button :class="danger ? 'btn-danger' : 'btn-primary'" @click="accept()" x-text="confirmLabel"></button>
+          </div>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  {% block body_extra %}{% endblock %}
+</body>
+</html>

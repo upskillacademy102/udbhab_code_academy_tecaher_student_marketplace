@@ -1,0 +1,70 @@
+{% load web_extras %}
+{# Plan-allowance banner for teacher lead screens. Self-contained Alpine scope; no include contract. #}
+<div x-data="unlockAllowance()" x-show="q" x-cloak class="mb-5">
+  <div class="card card-pad">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div class="min-w-0">
+        <p class="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+          <span x-text="q?.remaining_free_leads"></span> of
+          <span x-text="q?.total_free_leads"></span>
+          <span x-text="q?.total_free_leads === 1 ? 'unlock' : 'unlocks'"></span> left
+          <span class="text-slate-400">·</span>
+          <span x-text="resetLabel"></span>
+        </p>
+        <p class="mt-1 text-sm font-medium text-slate-500">
+          Unused unlocks do not carry over.
+        </p>
+      </div>
+
+      <div class="shrink-0 text-right">
+        <a x-show="q?.remaining_free_leads === 0" href="/teacher/subscription/"
+           class="btn-primary">Get more unlocks</a>
+      </div>
+    </div>
+
+    {# Final-stretch nudge: point at the best leads rather than the clock. #}
+    <div x-show="showNudge" x-cloak
+         class="mt-3 rounded-md bg-brand-50 px-3 py-2 text-sm text-brand-800">
+      <span class="font-semibold"
+            x-text="`${q?.remaining_free_leads} unused unlock${q?.remaining_free_leads === 1 ? '' : 's'} expiring soon`"></span>
+      — spend them on your strongest matches below.
+    </div>
+
+    <div x-show="extra > 0" x-cloak
+         class="mt-3 flex items-center gap-1.5 border-t border-slate-100 pt-3 text-sm font-medium text-emerald-700">
+      {% icon "unlock" "h-4 w-4" %}
+      <span x-text="`+${extra} extra unlock${extra === 1 ? '' : 's'}`"></span>
+      <span class="font-normal text-slate-500">· never expire</span>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("unlockAllowance", () => ({
+      q: null,
+      extra: 0,
+      init() { this.load(); },
+      async load() {
+        try {
+          this.q = await api.get("/subscriptions/quota/", { silent: true });
+        } catch (e) { this.q = null; return; }
+        try {
+          const d = await api.get("/dashboard/", { silent: true });
+          this.extra = Number(d?.extra_unlocks || 0);
+        } catch (e) { this.extra = 0; }
+      },
+      get resetLabel() {
+        const d = Number(this.q?.days_until_reset ?? 0);
+        if (d <= 0) return "resets today";
+        if (d === 1) return "resets tomorrow";
+        return `resets in ${d} days`;
+      },
+      get showNudge() {
+        return this.q
+          && Number(this.q.days_until_reset) <= 2
+          && Number(this.q.remaining_free_leads) > 0;
+      },
+    }));
+  });
+</script>

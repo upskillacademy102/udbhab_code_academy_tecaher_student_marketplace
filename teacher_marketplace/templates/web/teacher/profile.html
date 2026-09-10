@@ -1,0 +1,496 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block content %}
+<div x-data="teacherProfile()" class="mx-auto max-w-3xl space-y-6">
+
+  <div x-show="loading" x-cloak class="space-y-4"><div class="skeleton h-40"></div><div class="skeleton h-64"></div></div>
+
+  <div x-show="!loading" x-cloak>
+    {# Content-moderation hold #}
+    <div x-show="moderation === 'held'" x-cloak
+         class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+      <p class="font-medium">Your profile is hidden from search</p>
+      <p class="mt-1 text-amber-700">We found what looks like off-platform contact or payment details in your
+        profile text. Remove phone numbers, UPI IDs, and payment app names, then save again — your profile
+        will be restored automatically. Our team may also review it.</p>
+    </div>
+
+    {# Verification progress #}
+    <div class="card" x-show="vr">
+      <div class="card-header">
+        <p class="card-title">Verification</p>
+        <span class="badge" :class="vr && vr.is_fully_verified ? 'badge-brand' : (vr && vr.floor_met ? 'badge-green' : 'badge-amber')"
+              x-text="vr && vr.is_fully_verified ? 'Fully verified' : (vr && vr.floor_met ? 'Verified' : 'In progress')"></span>
+      </div>
+      <div class="card-pad space-y-4">
+        <div>
+          <div class="flex items-center justify-between text-xs font-medium text-slate-500">
+            <span>Profile strength</span><span x-text="(vr ? vr.progress_percent : 0) + '%'"></span>
+          </div>
+          <div class="meter mt-1"><span :style="`width:${vr ? vr.progress_percent : 0}%`"></span></div>
+          <p class="mt-1.5 text-xs text-slate-400">More completed checks means more of the leads students post.</p>
+        </div>
+        <ul class="divide-y divide-slate-100">
+          <template x-for="it in (vr ? vr.items : [])" :key="it.key">
+            <li class="py-2.5" x-show="it.weight > 0">
+              <div class="flex items-center gap-3">
+                <span class="grid h-5 w-5 shrink-0 place-items-center rounded-full text-white"
+                      :class="it.status === 'verified' ? 'bg-emerald-500' : (it.status === 'submitted' ? 'bg-amber-400' : (it.status === 'rejected' ? 'bg-rose-500' : 'bg-slate-300'))">
+                  {% icon "check" "h-3 w-3" %}
+                </span>
+                <span class="flex-1 text-sm text-slate-700" x-text="it.label"></span>
+
+                {# Email / mobile: jump to the OTP flow on Settings #}
+                <a href="/teacher/settings/#verify-contacts" class="btn-secondary btn-sm shrink-0"
+                   x-show="['email_verified', 'mobile_verified'].includes(it.key) && it.status !== 'verified'">Verify</a>
+
+                {# Other auto rows, and email/mobile once verified #}
+                <span class="text-xs capitalize text-slate-400"
+                      x-show="it.is_auto && (it.status === 'verified' || !['email_verified', 'mobile_verified'].includes(it.key))"
+                      x-text="it.status === 'verified' ? 'done' : 'auto'"></span>
+
+                {# Government photo ID: front + back photos #}
+                <span class="flex items-center gap-1.5" x-show="it.key === 'gov_id' && it.status !== 'verified'">
+                  <label class="btn-secondary btn-sm shrink-0 cursor-pointer">
+                    <span x-text="docFiles.gov_id.front ? docFiles.gov_id.front.name : 'Front photo'"></span>
+                    <input type="file" class="hidden" accept="image/jpeg,image/png,image/webp" @change="pickFile('gov_id', 'front', $event)">
+                  </label>
+                  <label class="btn-secondary btn-sm shrink-0 cursor-pointer">
+                    <span x-text="docFiles.gov_id.back ? docFiles.gov_id.back.name : 'Back photo'"></span>
+                    <input type="file" class="hidden" accept="image/jpeg,image/png,image/webp" @change="pickFile('gov_id', 'back', $event)">
+                  </label>
+                  <button class="btn-primary btn-sm shrink-0" @click="submitDocs('gov_id', ['front', 'back'])"
+                          :disabled="!docFiles.gov_id.front || !docFiles.gov_id.back" :data-loading="busy.gov_id"
+                          x-text="it.status === 'submitted' ? 'Resubmit' : 'Submit'"></button>
+                </span>
+
+                {# Address proof: one photo #}
+                <span class="flex items-center gap-1.5" x-show="it.key === 'address_proof' && it.status !== 'verified'">
+                  <label class="btn-secondary btn-sm shrink-0 cursor-pointer">
+                    <span x-text="docFiles.address_proof.document ? docFiles.address_proof.document.name : 'Choose photo'"></span>
+                    <input type="file" class="hidden" accept="image/jpeg,image/png,image/webp" @change="pickFile('address_proof', 'document', $event)">
+                  </label>
+                  <button class="btn-primary btn-sm shrink-0" @click="submitDocs('address_proof', ['document'])"
+                          :disabled="!docFiles.address_proof.document" :data-loading="busy.address_proof"
+                          x-text="it.status === 'submitted' ? 'Resubmit' : 'Submit'"></button>
+                </span>
+
+                {# Selfie / liveness and Onboarding video call are either/or - #}
+                {# passing one means the other one isn't needed. #}
+                <button class="btn-secondary btn-sm shrink-0"
+                        x-show="it.key === 'selfie_liveness' && it.status !== 'verified' && !(it.status === 'pending' && identityDone('video_interview'))"
+                        @click="startScan()" x-text="it.status === 'submitted' ? 'Redo face scan' : 'Start face scan'"></button>
+                <span class="text-xs text-slate-400" x-show="it.key === 'selfie_liveness' && it.status === 'pending' && identityDone('video_interview')">
+                  Not needed — you've requested the onboarding video call
+                </span>
+
+                {# Onboarding video call: request a callback #}
+                <button class="btn-secondary btn-sm shrink-0"
+                        x-show="it.key === 'video_interview' && it.status === 'pending' && !identityDone('selfie_liveness')"
+                        @click="requestCall()" :data-loading="busy.video_interview">Request a call</button>
+                <span class="text-xs text-slate-400" x-show="it.key === 'video_interview' && it.status === 'pending' && identityDone('selfie_liveness')">
+                  Not needed — you've completed the face scan
+                </span>
+                <span class="text-xs text-slate-400" x-show="it.key === 'video_interview' && it.status !== 'pending'"
+                      x-text="it.status === 'verified' ? 'done' : (it.status === 'rejected' ? 'declined' : callStatusText(it))"></span>
+              </div>
+              <p class="field-error mt-1.5" x-show="rowError[it.key]" x-text="rowError[it.key]"></p>
+            </li>
+          </template>
+        </ul>
+      </div>
+    </div>
+
+    {# Face-scan modal #}
+    <div x-show="scan.open" x-cloak>
+      <div class="dialog-backdrop animate-fade-in" @click="scan.phase !== 'review' && closeScan()"></div>
+      <div class="dialog animate-slide-up max-w-md" role="dialog" aria-modal="true" aria-labelledby="scan-title"
+           x-trap.noscroll="scan.open" @keydown.escape.window="closeScan()">
+        <h2 id="scan-title" class="text-base font-semibold text-slate-900">Face scan</h2>
+
+        <template x-if="scan.phase === 'camera-error'">
+          <div class="mt-3">
+            <p class="text-sm text-rose-600" x-text="scan.error"></p>
+            <div class="mt-6 flex justify-end gap-2">
+              <button class="btn-secondary" @click="closeScan()">Close</button>
+              <button class="btn-primary" @click="startScan()">Try again</button>
+            </div>
+          </div>
+        </template>
+
+        <template x-if="scan.phase === 'countdown'">
+          <div class="mt-3">
+            <p class="text-sm text-slate-600" x-text="scan.steps[scan.index].label"></p>
+            <div class="relative mt-3 overflow-hidden rounded-lg bg-slate-900">
+              <video x-ref="scanVideo" autoplay playsinline muted class="aspect-[4/3] w-full object-cover"></video>
+              <span class="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-black/60 text-sm font-semibold text-white" x-text="scan.countdown"></span>
+            </div>
+            <div class="mt-3 flex items-center justify-center gap-1.5">
+              <template x-for="(s, i) in scan.steps" :key="s.key">
+                <span class="h-1.5 w-1.5 rounded-full" :class="i <= scan.index ? 'bg-brand-500' : 'bg-slate-200'"></span>
+              </template>
+            </div>
+            <div class="mt-4 flex justify-end">
+              <button class="btn-ghost" @click="closeScan()">Cancel</button>
+            </div>
+          </div>
+        </template>
+
+        <template x-if="scan.phase === 'review'">
+          <div class="mt-3">
+            <p class="text-sm text-slate-500">Looks good? Submit these for review, or retake them.</p>
+            <div class="mt-3 grid grid-cols-5 gap-1.5">
+              <template x-for="s in scan.steps" :key="s.key">
+                <img class="aspect-square w-full rounded-md border border-slate-200 object-cover" :src="scan.frameUrls[s.key] || ''">
+              </template>
+            </div>
+            <div class="mt-6 flex justify-end gap-2">
+              <button class="btn-secondary" @click="retakeScan()">Retake</button>
+              <button class="btn-primary" :data-loading="scan.busy" @click="submitScan()">Submit</button>
+            </div>
+          </div>
+        </template>
+
+        <canvas x-ref="scanCanvas" class="hidden"></canvas>
+      </div>
+    </div>
+
+    {# Marketplace profile #}
+    <form class="card mt-6" @submit.prevent="saveProfile()">
+      <div class="card-header">
+        <p class="card-title">Marketplace profile</p>
+        <span class="badge" :class="verifBadge().cls" x-text="verifBadge().text"></span>
+      </div>
+      <div class="card-pad space-y-4">
+        <div class="alert alert-error" x-show="pf.nonField" x-cloak>{% icon "x-circle" %}<span x-text="pf.nonField"></span></div>
+
+        <div class="field">
+          <label class="label" for="tp-headline">Headline</label>
+          <input id="tp-headline" class="input" placeholder="e.g. IIT-JEE Physics & Maths, 8 yrs"
+                 x-model="pf.model.headline" :aria-invalid="pf.hasError('headline')" @input="pf.clearError('headline')">
+          <p class="field-error" x-show="pf.hasError('headline')" x-text="pf.fieldError('headline')"></p>
+          <p class="field-hint" x-show="!pf.hasError('headline')">A short line students see first in search results.</p>
+        </div>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div class="field">
+            <span class="label">Teaching mode</span>
+            <div class="mt-1 flex gap-1.5">
+              <template x-for="m in ['online','offline','both']" :key="m">
+                <button type="button" class="chip flex-1 justify-center capitalize" :aria-pressed="pf.model.teaching_mode === m" @click="pf.model.teaching_mode = m" x-text="m"></button>
+              </template>
+            </div>
+          </div>
+          <div class="field">
+            <label class="label" for="tp-rate">Hourly rate (₹)</label>
+            <input id="tp-rate" type="number" min="0" class="input" x-model.number="pf.model.hourly_rate" :aria-invalid="pf.hasError('hourly_rate')">
+            <p class="field-error" x-show="pf.hasError('hourly_rate')" x-text="pf.fieldError('hourly_rate')"></p>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="label" :class="pf.hasError('subjects') && 'text-rose-600'">Subjects you teach</span>
+          <div class="mt-1.5 flex flex-wrap gap-1.5">
+            <template x-for="s in subjects" :key="s.id">
+              <button type="button" class="chip" :aria-pressed="pf.model.subjects.includes(s.id)" @click="toggle('subjects', s.id); pf.clearError('subjects')" x-text="s.name"></button>
+            </template>
+          </div>
+          <p class="field-error" x-show="pf.hasError('subjects')" x-text="pf.fieldError('subjects')"></p>
+        </div>
+        <div class="field">
+          <span class="label" :class="pf.hasError('languages') && 'text-rose-600'">Languages</span>
+          <div class="mt-1.5 flex flex-wrap gap-1.5">
+            <template x-for="l in languages" :key="l.id">
+              <button type="button" class="chip" :aria-pressed="pf.model.languages.includes(l.id)" @click="toggle('languages', l.id); pf.clearError('languages')" x-text="l.name"></button>
+            </template>
+          </div>
+          <p class="field-error" x-show="pf.hasError('languages')" x-text="pf.fieldError('languages')"></p>
+        </div>
+        <div class="field" x-show="pf.model.teaching_mode !== 'online'">
+          <span class="label" :class="pf.hasError('cities') && 'text-rose-600'">Cities you teach in</span>
+          <div class="mt-1.5 flex flex-wrap gap-1.5">
+            <template x-for="c in cities" :key="c.id">
+              <button type="button" class="chip" :aria-pressed="pf.model.cities.includes(c.id)" @click="toggle('cities', c.id); pf.clearError('cities')" x-text="c.name"></button>
+            </template>
+          </div>
+          <p class="field-error" x-show="pf.hasError('cities')" x-text="pf.fieldError('cities')"></p>
+        </div>
+      </div>
+      <div class="card-header border-b-0 border-t border-slate-100"><span></span>
+        <button type="submit" class="btn-primary" :data-loading="pf.submitting">Save marketplace profile</button>
+      </div>
+    </form>
+
+    {# Basic info #}
+    <form class="card mt-6" @submit.prevent="saveBasic()">
+      <div class="card-header"><p class="card-title">Basic details</p></div>
+      <div class="card-pad space-y-4">
+        <div class="alert alert-error" x-show="bf.nonField" x-cloak>{% icon "x-circle" %}<span x-text="bf.nonField"></span></div>
+        <div class="field">
+          <label class="label" for="tb-bio" :class="bf.hasError('bio') && 'text-rose-600'">About you</label>
+          <textarea id="tb-bio" class="textarea" placeholder="Your teaching approach, experience, results…"
+                    x-model="bf.model.bio" :aria-invalid="bf.hasError('bio')" @input="bf.clearError('bio')"></textarea>
+          <p class="field-error" x-show="bf.hasError('bio')" x-text="bf.fieldError('bio')"></p>
+        </div>
+        <div class="grid gap-4 sm:grid-cols-3">
+          <div class="field">
+            <label class="label" for="tb-exp" :class="bf.hasError('experience_years') && 'text-rose-600'">Experience (years)</label>
+            <input id="tb-exp" type="number" min="0" max="80" class="input" x-model.number="bf.model.experience_years"
+                   :aria-invalid="bf.hasError('experience_years')" @input="bf.clearError('experience_years')">
+            <p class="field-error" x-show="bf.hasError('experience_years')" x-text="bf.fieldError('experience_years')"></p>
+          </div>
+          <div class="field">
+            <label class="label" for="tb-ql" :class="bf.hasError('qualification_level') && 'text-rose-600'">Qualification level</label>
+            <select id="tb-ql" class="select" x-model="bf.model.qualification_level"
+                    :aria-invalid="bf.hasError('qualification_level')" @change="bf.clearError('qualification_level')">
+              <option value="">— Select —</option>
+              <template x-for="q in QUALIFICATIONS" :key="q.value">
+                <option :value="q.value" x-text="q.label"></option>
+              </template>
+            </select>
+            <p class="field-error" x-show="bf.hasError('qualification_level')" x-text="bf.fieldError('qualification_level')"></p>
+          </div>
+          <div class="field">
+            <label class="label" for="tb-qd" :class="bf.hasError('qualification_detail') && 'text-rose-600'">Qualification detail</label>
+            <input id="tb-qd" class="input" placeholder="e.g. Black belt 2nd dan, M.Sc Physics"
+                   x-model="bf.model.qualification_detail" :aria-invalid="bf.hasError('qualification_detail')" @input="bf.clearError('qualification_detail')">
+            <p class="field-error" x-show="bf.hasError('qualification_detail')" x-text="bf.fieldError('qualification_detail')"></p>
+          </div>
+        </div>
+        <div class="grid gap-4 sm:grid-cols-3">
+          <div class="field">
+            <label class="label" for="tb-city" :class="bf.hasError('city') && 'text-rose-600'">City</label>
+            <select id="tb-city" class="select" x-model="bf.model.city" :aria-invalid="bf.hasError('city')" @change="onBasicCityChange(); bf.clearError('city')">
+              <option value="">— Select —</option>
+              <template x-for="c in cities" :key="c.id"><option :value="c.name" x-text="c.name"></option></template>
+            </select>
+            <p class="field-error" x-show="bf.hasError('city')" x-text="bf.fieldError('city')"></p>
+          </div>
+          <div class="field">
+            <label class="label" for="tb-state" :class="bf.hasError('state') && 'text-rose-600'">State</label>
+            <input id="tb-state" class="input" x-model="bf.model.state" disabled>
+            <p class="field-error" x-show="bf.hasError('state')" x-text="bf.fieldError('state')"></p>
+          </div>
+          <div class="field">
+            <label class="label" for="tb-country" :class="bf.hasError('country') && 'text-rose-600'">Country</label>
+            <input id="tb-country" class="input" x-model="bf.model.country" disabled>
+            <p class="field-error" x-show="bf.hasError('country')" x-text="bf.fieldError('country')"></p>
+          </div>
+        </div>
+      </div>
+      <div class="card-header border-b-0 border-t border-slate-100"><span></span>
+        <button type="submit" class="btn-primary" :data-loading="bf.submitting">Save details</button>
+      </div>
+    </form>
+
+    <a href="/teacher/availability/" class="mt-6 flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 hover:bg-slate-50">
+      <span class="flex items-center gap-3"><span class="grid h-9 w-9 place-items-center rounded-lg bg-brand-50 text-brand-600">{% icon "calendar" %}</span>
+        <span><span class="block text-sm font-medium text-slate-900">Set your availability</span><span class="block text-xs text-slate-500">Weekly teaching hours drive schedule matching</span></span></span>
+      {% icon "chevron-right" "h-5 w-5 text-slate-300" %}
+    </a>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    const QUALIFICATIONS = [
+      { value: "high_school", label: "High School" },
+      { value: "diploma", label: "Diploma" },
+      { value: "bachelors", label: "Bachelor's Degree" },
+      { value: "masters", label: "Master's Degree" },
+      { value: "doctorate", label: "Doctorate (PhD)" },
+      { value: "professional_certification", label: "Professional Certification" },
+      { value: "other", label: "Other" },
+    ];
+    // Empty optional fields go as null (so a cleared field actually clears,
+    // and an untouched select doesn't fail choice validation with "").
+    const nullifyEmpty = (m) => {
+      const out = {};
+      for (const [k, v] of Object.entries(m)) {
+        if (k === "id") continue;
+        out[k] = v === "" ? null : v;
+      }
+      return out;
+    };
+
+    Alpine.data("teacherProfile", () => ({
+      loading: true, verification: "pending", moderation: "clear",
+      vr: null,
+      docFiles: { gov_id: { front: null, back: null }, address_proof: { document: null } },
+      busy: {}, rowError: {},
+      scan: {
+        open: false, phase: "idle", index: 0, countdown: 0, busy: false, error: "",
+        stream: null, frames: {}, frameUrls: {},
+        steps: [
+          { key: "center", label: "Look straight at the camera" },
+          { key: "left", label: "Slowly turn your head to the left" },
+          { key: "right", label: "Slowly turn your head to the right" },
+          { key: "up", label: "Tilt your head up" },
+          { key: "down", label: "Tilt your head down" },
+        ],
+      },
+      QUALIFICATIONS,
+      subjects: [], languages: [], cities: [],
+      pf: mk.apiForm({ endpoint: "/teachers/profile/", initial: { headline: "", teaching_mode: "online", hourly_rate: null, subjects: [], languages: [], cities: [] }, successMessage: "Marketplace profile saved.", transform: nullifyEmpty }),
+      bf: mk.apiForm({ endpoint: "/teachers/me/", initial: { bio: "", experience_years: null, qualification_level: "", qualification_detail: "", city: "", state: "", country: "" }, successMessage: "Details saved.", transform: nullifyEmpty }),
+      _pfExists: false, _bfExists: false,
+
+      init() {
+        Promise.all([
+          api.get("/subjects/", { params: { page_size: 300 }, silent: true }).then((d) => this.subjects = d || []).catch(() => {}),
+          api.get("/languages/", { params: { page_size: 300 }, silent: true }).then((d) => this.languages = d || []).catch(() => {}),
+          api.get("/location/cities/", { params: { page_size: 300 }, silent: true }).then((d) => this.cities = d || []).catch(() => {}),
+          api.get("/teachers/profile/", { silent: true }).then((p) => {
+            this._pfExists = true; this.verification = p.verification_status || "pending";
+            this.moderation = p.moderation_status || "clear";
+            this.pf.setModel({ headline: p.headline || "", teaching_mode: p.teaching_mode || "online", hourly_rate: p.hourly_rate,
+              subjects: (p.subjects || []).map((x) => x.id), languages: (p.languages || []).map((x) => x.id), cities: (p.cities || []).map((x) => x.id) });
+          }).catch((e) => { if (e.status !== 404) window.toast("error", e.message); }),
+          api.get("/teachers/me/", { silent: true }).then((b) => { this._bfExists = true; this.bf.setModel(b); }).catch((e) => { if (e.status !== 404) window.toast("error", e.message); }),
+          api.get("/teachers/profile/verification/", { silent: true }).then((v) => this.vr = v).catch(() => {}),
+        ]).finally(() => (this.loading = false));
+      },
+      async refreshVerification() {
+        try { this.vr = await api.get("/teachers/profile/verification/", { silent: true }); } catch (e) {}
+      },
+      pickFile(itemKey, field, ev) {
+        this.docFiles[itemKey][field] = ev.target.files[0] || null;
+        this.rowError[itemKey] = "";
+      },
+      async submitDocs(itemKey, fields) {
+        if (this.busy[itemKey]) return;
+        this.rowError[itemKey] = "";
+        this.busy[itemKey] = true;
+        try {
+          const fd = new FormData();
+          for (const f of fields) fd.append(f, this.docFiles[itemKey][f]);
+          this.vr = (await api.post(`/teachers/profile/verification/${itemKey}/submit/`, fd)) || this.vr;
+          for (const f of fields) this.docFiles[itemKey][f] = null;
+          window.toast("success", "Submitted for review.");
+        } catch (e) {
+          this.rowError[itemKey] = e.message || "Couldn't submit.";
+        } finally {
+          this.busy[itemKey] = false;
+        }
+      },
+      identityDone(key) {
+        const it = (this.vr && this.vr.items || []).find((x) => x.key === key);
+        return !!it && (it.status === "submitted" || it.status === "verified");
+      },
+      callStatusText(it) {
+        const at = it.call && it.call.scheduled_at;
+        if (!at) return "call requested — we'll reach out";
+        return `call scheduled for ${fmt.dateTime(at)}` + (it.call.assigned_admin ? ` with ${it.call.assigned_admin}` : "");
+      },
+      async requestCall() {
+        if (this.busy.video_interview) return;
+        this.busy.video_interview = true;
+        try {
+          this.vr = (await api.post("/teachers/profile/verification/video_interview/submit/", {})) || this.vr;
+          window.toast("success", "Call requested — we'll reach out soon.");
+        } catch (e) {
+          window.toast("error", e.message || "Couldn't request a call.");
+        } finally {
+          this.busy.video_interview = false;
+        }
+      },
+
+      // ---- Selfie / liveness: guided webcam face scan ----------------
+      async startScan() {
+        this.scan.frames = {}; this.scan.frameUrls = {}; this.scan.index = 0; this.scan.error = "";
+        this.scan.open = true; this.scan.phase = "countdown";
+        try {
+          this.scan.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+        } catch (e) {
+          this.scan.phase = "camera-error";
+          this.scan.error = "Camera access is needed for the face scan. Allow camera access in your browser and try again.";
+          return;
+        }
+        this.$nextTick(() => {
+          if (this.$refs.scanVideo) this.$refs.scanVideo.srcObject = this.scan.stream;
+          this.runScanStep();
+        });
+      },
+      runScanStep() {
+        this.scan.countdown = 3;
+        const tick = () => {
+          if (!this.scan.open || this.scan.phase !== "countdown") return;
+          if (this.scan.countdown <= 0) { this.captureScanStep(); return; }
+          this.scan.countdown -= 1;
+          setTimeout(tick, 1000);
+        };
+        tick();
+      },
+      captureScanStep() {
+        const video = this.$refs.scanVideo, canvas = this.$refs.scanCanvas;
+        if (!video || !canvas) return;
+        canvas.width = video.videoWidth || 480;
+        canvas.height = video.videoHeight || 360;
+        canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob((blob) => {
+          if (!this.scan.open || !blob) return;
+          const step = this.scan.steps[this.scan.index];
+          this.scan.frames[step.key] = blob;
+          this.scan.frameUrls[step.key] = URL.createObjectURL(blob);
+          if (this.scan.index < this.scan.steps.length - 1) {
+            this.scan.index += 1;
+            this.runScanStep();
+          } else {
+            this.scan.phase = "review";
+            this.stopScanCamera();
+          }
+        }, "image/jpeg", 0.9);
+      },
+      retakeScan() {
+        Object.values(this.scan.frameUrls).forEach((u) => URL.revokeObjectURL(u));
+        this.scan.frames = {}; this.scan.frameUrls = {}; this.scan.index = 0;
+        this.startScan();
+      },
+      stopScanCamera() {
+        if (this.scan.stream) { this.scan.stream.getTracks().forEach((t) => t.stop()); this.scan.stream = null; }
+      },
+      closeScan() {
+        this.stopScanCamera();
+        Object.values(this.scan.frameUrls).forEach((u) => URL.revokeObjectURL(u));
+        this.scan.open = false; this.scan.phase = "idle"; this.scan.frames = {}; this.scan.frameUrls = {}; this.scan.index = 0;
+      },
+      async submitScan() {
+        if (this.scan.busy) return;
+        this.scan.busy = true;
+        try {
+          const fd = new FormData();
+          this.scan.steps.forEach((s) => fd.append(s.key, this.scan.frames[s.key], `${s.key}.jpg`));
+          this.vr = (await api.post("/teachers/profile/verification/selfie_liveness/submit/", fd)) || this.vr;
+          window.toast("success", "Face scan submitted for review.");
+          this.closeScan();
+        } catch (e) {
+          window.toast("error", e.message || "Couldn't submit the face scan.");
+        } finally {
+          this.scan.busy = false;
+        }
+      },
+
+      onBasicCityChange() {
+        const c = this.cities.find((x) => x.name === this.bf.model.city);
+        this.bf.model.state = c ? c.state_name || "" : "";
+        this.bf.model.country = c ? c.country_name || "" : "";
+      },
+      toggle(key, id) {
+        const arr = this.pf.model[key];
+        const i = arr.indexOf(id);
+        if (i === -1) arr.push(id); else arr.splice(i, 1);
+      },
+      verifBadge() {
+        const v = String(this.verification).toLowerCase();
+        if (v === "verified") return { cls: "badge-green", text: "Verified" };
+        if (v === "rejected") return { cls: "badge-red", text: "Not verified" };
+        return { cls: "badge-amber", text: "Pending verification" };
+      },
+      // Both endpoints upsert (POST = create-or-update), so the page
+      // doesn't need to track whether a record already exists.
+      async saveProfile() { try { await this.pf.submit("/teachers/profile/", "post"); this._pfExists = true; this.refreshVerification(); } catch (e) {} },
+      async saveBasic() { try { await this.bf.submit("/teachers/me/", "post"); this._bfExists = true; this.refreshVerification(); } catch (e) {} },
+    }));
+  });
+</script>
+{% endblock %}

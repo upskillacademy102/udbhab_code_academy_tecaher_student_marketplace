@@ -1,0 +1,73 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block content %}
+<div x-data="adminRequests()">
+  <div class="mb-4 flex gap-1 rounded-lg bg-slate-100 p-1" role="tablist">
+    <template x-for="t in [['pending','Pending'],['','Recent']]" :key="t[0]">
+      <button class="rounded-md px-3 py-1.5 text-sm font-medium transition"
+              :class="filter === t[0] ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-700'"
+              @click="setFilter(t[0])" role="tab" :aria-selected="filter === t[0]" x-text="t[1]"></button>
+    </template>
+    <button class="ml-auto btn-ghost btn-sm" @click="load()">Refresh</button>
+  </div>
+
+  {% include "web/partials/_row_skeleton.html" %}
+  {% include "web/partials/_error.html" %}
+
+  <div x-show="state === 'empty'" x-cloak class="empty">
+    <div class="empty-icon">{% icon "shield" "h-6 w-6" %}</div>
+    <p class="empty-title" x-text="filter === 'pending' ? 'Nothing waiting' : 'No recent requests'"></p>
+    <p class="empty-desc">Administrator sign-in requests appear here for approval.</p>
+  </div>
+
+  <ul x-show="state === 'ready'" x-cloak class="space-y-3">
+    <template x-for="r in items" :key="r.id">
+      <li class="card card-pad">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <span class="avatar h-10 w-10 text-xs" x-text="fmt.initials(r.user_name || r.user_email)"></span>
+            <div>
+              <p class="text-sm font-semibold text-slate-900" x-text="r.user_name || r.user_email"></p>
+              <p class="text-xs text-slate-500" x-text="r.user_email"></p>
+              <p class="mt-1 text-xs text-slate-400" x-text="`Requested ${fmt.relative(r.created_at)} · ${r.requested_ip || 'unknown IP'}`"></p>
+            </div>
+          </div>
+          <span class="badge" :class="tone(r.status)" x-text="fmt.titleCase(r.status)"></span>
+        </div>
+        <div class="mt-4 flex gap-2" x-show="r.status === 'pending'">
+          <button class="btn-primary btn-sm flex-1" @click="decide(r, 'approve')" :data-loading="busy === r.id">Approve</button>
+          <button class="btn-secondary btn-sm flex-1" @click="decide(r, 'deny')" :data-loading="busy === r.id">Deny</button>
+        </div>
+        <p class="mt-3 text-xs text-slate-400" x-show="r.reviewed_by_email"
+           x-text="`${fmt.titleCase(r.status)} by ${r.reviewed_by_email} · ${fmt.relative(r.reviewed_at)}`"></p>
+      </li>
+    </template>
+  </ul>
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("adminRequests", () => ({
+      ...mk.collection({ endpoint: "/auth/admin/login-requests/", params: { status: "pending" } }),
+      filter: "pending", busy: null,
+      init() {
+        this.initCollection();
+        setInterval(() => { if (this.filter === "pending" && document.visibilityState === "visible") this.load(); }, 15000);
+      },
+      setFilter(f) { this.filter = f; this.params = f ? { status: "pending" } : {}; },
+      tone(s) { return { pending: "badge-amber", approved: "badge-green", denied: "badge-red", expired: "badge-slate", consumed: "badge-slate" }[s] || "badge-slate"; },
+      async decide(r, action) {
+        this.busy = r.id;
+        try {
+          await api.post(`/auth/admin/login-requests/${r.id}/${action}/`, {});
+          window.toast("success", action === "approve" ? "Approved — the admin can now sign in." : "Request denied.");
+          this.load();
+          if (window.Alpine.store("badges")) window.Alpine.store("badges").refresh();
+        } catch (e) { window.toast("error", e.message); this.load(); }
+        finally { this.busy = null; }
+      },
+    }));
+  });
+</script>
+{% endblock %}

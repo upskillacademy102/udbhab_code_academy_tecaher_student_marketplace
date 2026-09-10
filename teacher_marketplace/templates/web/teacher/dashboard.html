@@ -1,0 +1,138 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block page_actions %}
+<a href="/teacher/leads/" class="btn-primary">{% icon "inbox" %} View leads</a>
+{% endblock %}
+
+{% block content %}
+<div x-data="teacherDashboard()">
+  <p class="mb-6 text-sm text-slate-500">Welcome back, {{ web_user.first_name|default:"there" }}.</p>
+
+  {# Profile / verification prompt #}
+  <template x-if="!profileLoading && !hasProfile">
+    <div class="alert alert-warn mb-6">
+      {% icon "alert-triangle" %}
+      <div class="flex-1">
+        <p class="font-medium">Your teaching profile isn't set up yet</p>
+        <p class="mt-0.5 text-sm">Students can't find you in search until your profile is complete.</p>
+      </div>
+      <a href="/teacher/profile/" class="btn-secondary btn-sm shrink-0">Complete profile</a>
+    </div>
+  </template>
+
+  {# Stats #}
+  <div x-show="statState === 'loading'" x-cloak class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <template x-for="i in 4" :key="i"><div class="skeleton h-28 rounded-xl"></div></template>
+  </div>
+  <div x-show="statState === 'ready'" x-cloak class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    {# Plan allowance leads — it's the bucket that expires; extra unlocks sit beside it, never summed #}
+    <div class="stat-tile">
+      <span class="stat-tile-icon tone-green">{% icon "unlock" %}</span>
+      <div>
+        <p class="stat-tile-value" x-text="fmt.number(stats.free_leads_remaining)"></p>
+        <p class="stat-tile-label" x-text="resetLabel"></p>
+      </div>
+    </div>
+    <div class="stat-tile">
+      <span class="stat-tile-icon tone-brand">{% icon "wallet" %}</span>
+      <div><p class="stat-tile-value" x-text="fmt.number(stats.extra_unlocks)"></p><p class="stat-tile-label">Extra unlocks (never expire)</p></div>
+    </div>
+    <div class="stat-tile">
+      <span class="stat-tile-icon tone-amber">{% icon "inbox" %}</span>
+      <div><p class="stat-tile-value" x-text="fmt.number(stats.todays_leads)"></p><p class="stat-tile-label">New enquiries today</p></div>
+    </div>
+    <div class="stat-tile">
+      <span class="stat-tile-icon tone-sky">{% icon "lock" %}</span>
+      <div><p class="stat-tile-value" x-text="fmt.number(stats.unlocked_leads)"></p><p class="stat-tile-label">Unlocked contacts</p></div>
+    </div>
+  </div>
+
+  {# Rate-your-leads nudge #}
+  <div x-show="statState === 'ready' && (stats.pending_rating_count || 0) > 0" x-cloak
+       class="mt-6 alert alert-warn">
+    {% icon "alert-triangle" %}
+    <div class="flex-1">
+      <p class="font-medium">
+        <span x-text="stats.pending_rating_count"></span>
+        <span x-text="stats.pending_rating_count === 1 ? 'unlocked lead needs' : 'unlocked leads need'"></span> your rating
+      </p>
+      <p class="mt-0.5 text-sm">Mark each one genuine or fake. It takes a tap and it keeps fake enquiries off the platform.</p>
+    </div>
+    <a href="/teacher/leads/" class="btn-secondary btn-sm shrink-0">Rate leads</a>
+  </div>
+
+  <div class="mt-6 grid gap-6 lg:grid-cols-3">
+    {# Recent leads #}
+    <div class="card lg:col-span-2">
+      <div class="card-header">
+        <p class="card-title">Recent leads</p>
+        <a href="/teacher/leads/" class="text-xs font-medium text-brand-600 hover:underline">View all</a>
+      </div>
+      <div class="p-2">
+        <template x-if="leadState === 'loading'"><div class="space-y-2 p-3"><div class="skeleton h-12"></div><div class="skeleton h-12"></div></div></template>
+        <template x-if="leadState === 'empty'">
+          <p class="px-4 py-8 text-center text-sm text-slate-500">No leads yet. Complete your profile and availability to start matching.</p>
+        </template>
+        <ul x-show="leadState === 'ready'" class="divide-y divide-slate-100">
+          <template x-for="l in leads.slice(0,5)" :key="l.id">
+            <li>
+              <a :href="`/teacher/leads/${l.id}/`" class="flex items-center gap-3 rounded-lg px-3 py-3 hover:bg-slate-50">
+                <span class="grid h-9 w-9 place-items-center rounded-lg bg-slate-100 text-slate-500">{% icon "inbox" "h-4 w-4" %}</span>
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-sm font-medium text-slate-900" x-text="l.subject_name || 'New lead'"></p>
+                  <p class="truncate text-xs text-slate-500" x-text="[fmt.titleCase(l.teaching_mode), l.city_name, fmt.relative(l.created_at)].filter(Boolean).join(' · ')"></p>
+                </div>
+                <span class="badge" :class="l.is_viewed ? 'badge-slate' : 'badge-brand'" x-text="l.is_viewed ? 'Viewed' : 'New'"></span>
+              </a>
+            </li>
+          </template>
+        </ul>
+      </div>
+    </div>
+
+    {# Subscription #}
+    <div class="card card-pad">
+      <p class="card-title">Subscription</p>
+      <template x-if="statState === 'ready'">
+        <div class="mt-3">
+          <p class="text-lg font-semibold text-slate-900" x-text="(stats.subscription_status && stats.subscription_status.plan_name) || 'Free'"></p>
+          <span class="badge badge-green mt-1 capitalize" x-text="(stats.subscription_status && stats.subscription_status.status) || 'active'"></span>
+          <p class="mt-2 text-xs text-slate-500" x-show="stats.subscription_status && stats.subscription_status.end_date"
+             x-text="'Renews ' + fmt.date(stats.subscription_status.end_date)"></p>
+          <a href="/teacher/subscription/" class="btn-secondary btn-sm mt-4 w-full">Manage plan</a>
+          <a href="/teacher/tokens/" class="btn-ghost btn-sm mt-2 w-full">Buy extra unlocks</a>
+        </div>
+      </template>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("teacherDashboard", () => ({
+      statState: "loading", stats: {},
+      leadState: "loading", leads: [],
+      profileLoading: true, hasProfile: false,
+      get resetLabel() {
+        const d = Number(this.stats.allowance_resets_in_days ?? 0);
+        if (d <= 0) return "Plan unlocks left · resets today";
+        if (d === 1) return "Plan unlocks left · resets tomorrow";
+        return `Plan unlocks left · resets in ${d} days`;
+      },
+      init() {
+        api.get("/dashboard/", { silent: true })
+          .then((d) => { this.stats = d || {}; this.statState = "ready"; })
+          .catch(() => { this.statState = "ready"; });
+        api.get("/leads/", { silent: true })
+          .then((d) => { this.leads = Array.isArray(d) ? d : []; this.leadState = this.leads.length ? "ready" : "empty"; })
+          .catch(() => { this.leadState = "empty"; });
+        api.get("/teachers/me/", { silent: true })
+          .then(() => { this.hasProfile = true; })
+          .catch(() => {})
+          .finally(() => (this.profileLoading = false));
+      },
+    }));
+  });
+</script>
+{% endblock %}

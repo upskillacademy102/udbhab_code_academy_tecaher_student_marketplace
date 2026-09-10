@@ -1,0 +1,103 @@
+{% load web_extras %}
+{# Inner body for a resourceManager() scope. Included by resource.html and locations.html tabs. #}
+<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+  <div class="relative w-full max-w-xs">
+    <span class="pointer-events-none absolute inset-y-0 left-3 grid place-items-center text-slate-400">{% icon "search" "h-4 w-4" %}</span>
+    <input class="input pl-9" placeholder="Search…" x-model="q" aria-label="Search">
+  </div>
+  <button class="btn-primary" @click="openCreate()">{% icon "plus" %} <span x-text="'Add ' + cfg.title.replace(/s$/, '').toLowerCase()"></span></button>
+</div>
+
+<p class="mb-3 text-xs text-slate-500" x-show="cfg.hint" x-text="cfg.hint"></p>
+
+{% include "web/partials/_row_skeleton.html" %}
+{% include "web/partials/_error.html" %}
+
+<div x-show="state === 'empty'" x-cloak class="empty">
+  <div class="empty-icon">{% icon "list" "h-6 w-6" %}</div>
+  <p class="empty-title" x-text="q ? 'No matches' : 'Nothing here yet'"></p>
+  <p class="empty-desc" x-text="q ? 'Try a different search term.' : 'Add the first entry to get started.'"></p>
+  <button class="btn-primary mt-4" @click="openCreate()" x-show="!q">{% icon "plus" %} Add</button>
+</div>
+
+<div x-show="state === 'ready'" x-cloak class="table-wrap">
+  <table class="data">
+    <thead>
+      <tr>
+        <template x-for="col in cfg.columns" :key="col.key"><th x-text="col.label"></th></template>
+        <th class="w-px"></th>
+      </tr>
+    </thead>
+    <tbody>
+      <template x-for="row in items" :key="row.id">
+        <tr>
+          <template x-for="col in cfg.columns" :key="col.key">
+            <td>
+              <template x-if="col.type === 'status'">
+                <span class="badge" :class="isInactive(row, col) ? 'badge-slate' : 'badge-green'" x-text="cell(row, col)"></span>
+              </template>
+              <template x-if="col.type !== 'status'">
+                <span :class="col.muted && 'text-slate-500'" x-text="cell(row, col)"></span>
+              </template>
+            </td>
+          </template>
+          <td class="text-right">
+            <div class="flex justify-end gap-1" x-show="cfg.crud">
+              <button class="btn-ghost btn-sm" @click="openEdit(row)" aria-label="Edit">{% icon "edit" "h-4 w-4" %}</button>
+              <button class="btn-ghost btn-sm text-rose-600 hover:bg-rose-50" @click="remove(row)" aria-label="Delete">{% icon "trash" "h-4 w-4" %}</button>
+            </div>
+          </td>
+        </tr>
+      </template>
+    </tbody>
+  </table>
+</div>
+
+{% include "web/partials/_pagination.html" %}
+
+<div x-show="formOpen" x-cloak @keydown.escape.window="formOpen = false">
+  <div class="dialog-backdrop animate-fade-in" @click="formOpen = false"></div>
+  <div class="fixed inset-y-0 right-0 z-50 w-full max-w-md overflow-y-auto border-l border-slate-200 bg-white shadow-pop animate-slide-up"
+       x-trap.noscroll="formOpen" role="dialog" aria-modal="true">
+    <div class="sticky top-0 flex items-center justify-between border-b border-slate-100 bg-white px-5 py-4">
+      <p class="text-sm font-semibold text-slate-900" x-text="(editing ? 'Edit ' : 'Add ') + cfg.title.replace(/s$/, '').toLowerCase()"></p>
+      <button class="btn-ghost p-1.5" @click="formOpen = false" aria-label="Close">{% icon "x" "h-5 w-5" %}</button>
+    </div>
+    <form class="space-y-4 p-5" @submit.prevent="save()">
+      <div class="alert alert-error" x-show="nonField" x-cloak>{% icon "x-circle" %}<span x-text="nonField"></span></div>
+      <template x-for="f in cfg.fields" :key="f.key">
+        <div class="field">
+          <label class="label" :for="'rf-' + f.key"><span x-text="f.label"></span><template x-if="f.required"><span class="req"> *</span></template></label>
+          <template x-if="f.type === 'textarea'">
+            <textarea :id="'rf-' + f.key" class="textarea" x-model="model[f.key]" :aria-invalid="!!errors[f.key]"></textarea>
+          </template>
+          <template x-if="f.type === 'checkbox'">
+            <label class="mt-1 flex items-center gap-2 text-sm text-slate-600">
+              <input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" x-model="model[f.key]"> Enabled
+            </label>
+          </template>
+          <template x-if="f.type === 'select'">
+            <select :id="'rf-' + f.key" class="select" x-model="model[f.key]">
+              <template x-for="opt in f.options" :key="opt[0]"><option :value="opt[0]" x-text="opt[1]"></option></template>
+            </select>
+          </template>
+          <template x-if="f.type === 'ref'">
+            <select :id="'rf-' + f.key" class="select" x-model="model[f.key]" :aria-invalid="!!errors[f.key]">
+              <option value="">Select…</option>
+              <template x-for="o in (refs[f.key] || [])" :key="o.id"><option :value="o.id" x-text="o.name"></option></template>
+            </select>
+          </template>
+          <template x-if="!f.type || f.type === 'number' || f.type === 'text'">
+            <input :id="'rf-' + f.key" :type="f.type === 'number' ? 'number' : 'text'" class="input" x-model="model[f.key]" :aria-invalid="!!errors[f.key]">
+          </template>
+          <p class="field-hint" x-show="f.hint && !errors[f.key]" x-text="f.hint"></p>
+          <p class="field-error" x-show="errors[f.key]" x-text="errors[f.key]"></p>
+        </div>
+      </template>
+      <div class="flex gap-2 pt-2">
+        <button type="button" class="btn-secondary flex-1" @click="formOpen = false">Cancel</button>
+        <button type="submit" class="btn-primary flex-1" :data-loading="submitting" x-text="editing ? 'Save' : 'Add'"></button>
+      </div>
+    </form>
+  </div>
+</div>

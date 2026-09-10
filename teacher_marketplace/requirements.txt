@@ -1,0 +1,51 @@
+# Core Framework
+Django==5.0.14          # security patch line for 5.0 (CVE fixes through 5.0.14)
+djangorestframework==3.15.2  # CVE-2024-21520 (browsable-API stored XSS)
+setuptools>=68.0.0,<81  # razorpay 1.4.2 imports pkg_resources, removed in setuptools 81
+# Database
+psycopg2-binary==2.9.9
+
+# Authentication
+djangorestframework-simplejwt==5.3.1
+argon2-cffi==23.1.0  # Argon2id password hasher (see PASSWORD_HASHERS)
+
+# API Documentation
+drf-spectacular==0.27.2
+
+# Environment Variables
+python-decouple==3.8
+
+# Filtering
+django-filter==24.2
+
+# Image Handling
+Pillow==10.3.0
+
+# CORS
+django-cors-headers==4.3.1
+
+# Production Server
+gunicorn==23.0.0       # CVE-2024-6827 (request smuggling)
+
+# Static Files (Production)
+whitenoise==6.6.0
+
+# Development / Debugging
+django-extensions==3.2.3
+
+# Code Quality
+flake8==7.0.0
+black==24.4.2
+isort==5.13.2
+ruff==0.16.6
+
+razorpay==1.4.2
+
+python-dateutil==2.9.0
+
+
+django-celery-beat==2.7.0
+celery==5.4.0
+redis==5.0.8
+
+requests==2.34.2      # >= 2.32.4 fixes CVE-2024-47081 (.netrc credential leak)

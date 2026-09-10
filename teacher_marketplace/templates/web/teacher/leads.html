@@ -1,0 +1,77 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block content %}
+{% include "web/partials/_unlock_allowance.html" %}
+
+<div x-data="teacherLeads()">
+  {# Rate-your-leads nudge — honest fake/genuine feedback protects every teacher #}
+  <div x-show="pending.length" x-cloak class="mb-5 alert alert-warn">
+    {% icon "alert-triangle" %}
+    <div class="flex-1">
+      <p class="font-medium">
+        <span x-text="pending.length"></span>
+        <span x-text="pending.length === 1 ? 'lead needs' : 'leads need'"></span> your rating
+      </p>
+      <p class="mt-0.5 text-sm">Tell us whether each unlocked lead was a genuine enquiry or a fake one. It only takes a tap and it keeps fake enquiries off the platform.</p>
+    </div>
+    <a :href="detailBase + pending[0].id + '/'" class="btn-secondary btn-sm shrink-0">Rate the next one</a>
+  </div>
+
+  {% include "web/partials/_row_skeleton.html" %}
+  {% include "web/partials/_error.html" %}
+
+  <div x-show="state === 'empty'" x-cloak class="empty">
+    <div class="empty-icon">{% icon "inbox" "h-6 w-6" %}</div>
+    <p class="empty-title">No leads yet</p>
+    <p class="empty-desc">Leads appear here when a student's requirement matches your subjects, languages and availability. Keep your profile and availability up to date.</p>
+    <a href="/teacher/profile/" class="btn-secondary mt-4">Review profile</a>
+  </div>
+
+  <div x-show="state === 'ready'" x-cloak class="grid gap-4 sm:grid-cols-2">
+    <template x-for="l in items" :key="l.id">
+      <a :href="detailBase + l.id + '/'" class="card p-5 transition hover:-translate-y-0.5 hover:shadow-pop">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <p class="truncate text-sm font-semibold text-slate-900" x-text="l.subject_name || 'Lead'"></p>
+            <p class="mt-0.5 text-xs text-slate-500" x-text="[fmt.titleCase(l.teaching_mode), l.city_name].filter(Boolean).join(' · ')"></p>
+          </div>
+          <span class="badge shrink-0" :class="l.is_viewed ? 'badge-slate' : 'badge-brand'" x-text="l.is_viewed ? 'Viewed' : 'New'"></span>
+        </div>
+        <div class="mt-3 flex items-center gap-4 text-xs text-slate-500">
+          <span x-show="l.budget_min || l.budget_max">Budget <span class="font-medium text-slate-700" x-text="`${fmt.money(l.budget_min)}–${fmt.money(l.budget_max)}`"></span></span>
+          <span x-text="fmt.relative(l.created_at)"></span>
+        </div>
+        <div class="mt-3 flex items-center gap-1.5 border-t border-slate-100 pt-3 text-xs">
+          <template x-if="!l.contact_unlocked">
+            <span class="flex items-center gap-1.5 text-slate-400">{% icon "lock" "h-3.5 w-3.5" %} Student contact hidden — unlock to reveal</span>
+          </template>
+          <template x-if="l.contact_unlocked && !l.my_rating">
+            <span class="flex items-center gap-1.5 font-medium text-amber-600">{% icon "alert-triangle" "h-3.5 w-3.5" %} Unlocked — tap to rate this lead</span>
+          </template>
+          <template x-if="l.contact_unlocked && l.my_rating">
+            <span class="flex items-center gap-1.5 text-slate-400">{% icon "check" "h-3.5 w-3.5" %} Rated <span class="capitalize" x-text="l.my_rating"></span></span>
+          </template>
+        </div>
+      </a>
+    </template>
+  </div>
+  {% include "web/partials/_pagination.html" %}
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("teacherLeads", () => ({
+      ...mk.collection({ endpoint: "/leads/" }),
+      detailBase: "/teacher/leads/",
+      pending: [],
+      init() {
+        this.initCollection();
+        api.get("/leads/pending-ratings/", { silent: true })
+          .then((d) => { this.pending = (d && d.results) || []; })
+          .catch(() => { this.pending = []; });
+      },
+    }));
+  });
+</script>
+{% endblock %}

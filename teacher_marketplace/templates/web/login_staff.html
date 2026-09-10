@@ -1,0 +1,63 @@
+{% extends "web/base_public.html" %}
+{% load static web_extras %}
+
+{% block title %}Staff sign-in · {{ SITE_NAME }}{% endblock %}
+{% block head_extra %}<script defer src="{% static 'js/auth.js' %}"></script>{% endblock %}
+{% block promo_title %}Administrator access{% endblock %}
+{% block promo_body %}Administrator sign-ins are approved by a Super Admin before a session is issued. Super Admins sign in directly.{% endblock %}
+
+{% block panel %}
+<div x-data="staffLogin()">
+  <a href="/login/" class="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800">
+    {% icon "arrow-left" "h-4 w-4" %} Back to sign in
+  </a>
+
+  {# ---- form ---- #}
+  <div x-show="phase === 'form'">
+    <div class="flex items-center gap-2">
+      <span class="grid h-9 w-9 place-items-center rounded-lg bg-brand-50 text-brand-600">{% icon "shield" %}</span>
+      <h1 class="text-2xl font-semibold tracking-tight text-slate-900">Staff sign-in</h1>
+    </div>
+    <p class="mt-2 text-sm text-slate-500">For administrator and super-administrator accounts.</p>
+
+    <div class="alert alert-error mt-5" x-show="error" x-cloak>{% icon "x-circle" %}<span x-text="error"></span></div>
+
+    <form class="mt-6 space-y-4" @submit.prevent="submit()">
+      <div class="field">
+        <label class="label" for="s-email">Email address</label>
+        <input id="s-email" type="email" autocomplete="email" required class="input" x-model="email">
+      </div>
+      <div class="field">
+        <label class="label" for="s-password">Password</label>
+        <div class="relative">
+          <input id="s-password" required autocomplete="current-password" class="input pr-10"
+                 :type="showPw ? 'text' : 'password'" x-model="password">
+          <button type="button" class="absolute inset-y-0 right-0 grid w-10 place-items-center text-slate-400 hover:text-slate-600"
+                  @click="showPw = !showPw" :aria-label="showPw ? 'Hide password' : 'Show password'">{% icon "eye" "h-4 w-4" %}</button>
+        </div>
+      </div>
+      <button type="submit" class="btn-primary btn-lg w-full" :data-loading="submitting">Continue</button>
+    </form>
+  </div>
+
+  {# ---- waiting for approval ---- #}
+  <div x-show="phase === 'waiting'" x-cloak class="text-center">
+    <div class="mx-auto mb-4 grid h-14 w-14 animate-pulse place-items-center rounded-2xl bg-brand-50 text-brand-600">{% icon "clock" "h-7 w-7" %}</div>
+    <h1 class="text-xl font-semibold tracking-tight text-slate-900">Waiting for approval</h1>
+    <p class="mt-2 text-sm text-slate-500">A Super Admin needs to approve this sign-in. This page will continue automatically once it's approved.</p>
+    <div class="mt-6 flex items-center justify-center gap-2 text-xs text-slate-400">
+      <span class="h-2 w-2 animate-ping rounded-full bg-brand-500"></span>
+      <span x-text="`Checking… (${elapsed}s)`"></span>
+    </div>
+    <button class="btn-secondary mt-6" @click="cancel()">Cancel</button>
+  </div>
+
+  {# ---- denied ---- #}
+  <div x-show="phase === 'denied'" x-cloak class="text-center">
+    <div class="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-rose-50 text-rose-500">{% icon "x-circle" "h-7 w-7" %}</div>
+    <h1 class="text-xl font-semibold tracking-tight text-slate-900">Request denied</h1>
+    <p class="mt-2 text-sm text-slate-500">A Super Admin declined this sign-in request. Contact them if you believe this is a mistake.</p>
+    <button class="btn-secondary mt-6" @click="cancel()">Try again</button>
+  </div>
+</div>
+{% endblock %}

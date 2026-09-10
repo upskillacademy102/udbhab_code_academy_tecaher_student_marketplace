@@ -1,0 +1,17 @@
+# Ruff - fast Python linter. Kept in step with black (line length 88)
+# and the flake8 settings in setup.cfg.
+line-length = 88
+target-version = "py312"
+extend-exclude = ["migrations", ".venv", "staticfiles", "logs"]
+
+[lint]
+# pyflakes (F) + syntax errors (E9) + blank-line-after-decorator (W6).
+# Deliberately narrow for now - not the full default set - so this
+# reports real problems, not a wall of restyle noise. Widen later.
+select = ["F", "E9", "W6"]
+
+[lint.per-file-ignores]
+# Package markers re-export names on purpose.
+"__init__.py" = ["F401"]
+# Django settings modules build on `from .base import *`.
+"config/settings/*.py" = ["F403", "F405"]

@@ -1,0 +1,154 @@
+# ==========================================================
+# Environment Variables
+# ==========================================================
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+# .env.example IS committed - it is the redacted template.
+!.env.example
+
+# ==========================================================
+# Python
+# ==========================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ==========================================================
+# Virtual Environments
+# ==========================================================
+venv/
+env/
+ENV/
+.venv/
+env.bak/
+venv.bak/
+
+# ==========================================================
+# Django
+# ==========================================================
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
+# collectstatic OUTPUT only. The source assets in /static/ (js, css,
+# fonts) are hand-written and MUST be committed - do not ignore them.
+staticfiles/
+/staticfiles/
+
+# ==========================================================
+# Django Migrations (optional - team decision)
+# ==========================================================
+# Uncomment if your team regenerates migrations instead of tracking them
+# */migrations/*.py
+# !*/migrations/__init__.py
+
+# ==========================================================
+# IDE / Editor
+# ==========================================================
+.vscode/*
+# ...but share the project's interpreter / formatter setup.
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ==========================================================
+# Testing / Coverage
+# ==========================================================
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# ==========================================================
+# Jupyter Notebook (if used for data exploration)
+# ==========================================================
+.ipynb_checkpoints
+
+# ==========================================================
+# mypy / type checking
+# ==========================================================
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# ==========================================================
+# Celery (future phases)
+# ==========================================================
+celerybeat-schedule
+celerybeat.pid
+
+# ==========================================================
+# Docker (if added later)
+# ==========================================================
+*.pid
+
+# ==========================================================
+# Logs
+# ==========================================================
+logs/
+
+# ==========================================================
+# Frontend build tooling
+# ==========================================================
+# The 38 MB Tailwind standalone binary is downloaded, not committed.
+# Grab it from https://github.com/tailwindlabs/tailwindcss/releases
+# (tailwindcss-windows-x64.exe) into tools/. The BUILT stylesheet
+# (static/css/app.css) IS committed so the app runs without the binary.
+tools/tailwindcss.exe
+tools/tailwindcss
+schema.yml
+
+# ==========================================================
+# Node (only if a JS toolchain is added later)
+# ==========================================================
+node_modules/
+
+# ==========================================================
+# Tooling caches
+# ==========================================================
+.ruff_cache/
+
+# ==========================================================
+# Claude Code - personal/local only; shared config may be committed
+# ==========================================================
+.claude/settings.local.json
+
+# ==========================================================
+# OS junk
+# ==========================================================
+desktop.ini
+$RECYCLE.BIN/

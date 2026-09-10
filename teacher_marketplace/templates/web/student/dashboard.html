@@ -1,0 +1,140 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block page_actions %}
+<a href="/student/teachers/" class="btn-primary">{% icon "search" %} Find a Teacher</a>
+{% endblock %}
+
+{% block content %}
+<div x-data="studentDashboard()">
+  <p class="mb-6 text-sm text-slate-500"><span x-text="greeting()"></span>, {{ web_user.first_name|default:"there" }}.</p>
+
+  <div class="grid gap-6 lg:grid-cols-3">
+    {# --- Left: profile + requirements --- #}
+    <div class="space-y-6 lg:col-span-2">
+
+      {# Profile completion / prompt #}
+      <template x-if="state !== 'loading' && !profile">
+        <div class="card card-pad border-brand-100 bg-brand-50/40">
+          <div class="flex items-start gap-4">
+            <span class="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-white text-brand-600 shadow-xs">{% icon "user" %}</span>
+            <div class="flex-1">
+              <p class="text-sm font-semibold text-slate-900">Complete your profile</p>
+              <p class="mt-1 text-sm text-slate-500">Add your education level and preferences so we can recommend the right teachers.</p>
+              <a href="/student/profile/" class="btn-primary btn-sm mt-3">Set up profile</a>
+            </div>
+          </div>
+        </div>
+      </template>
+      <template x-if="profile">
+        <div class="card card-pad">
+          <div class="flex items-center justify-between">
+            <p class="card-title">Profile completeness</p>
+            <span class="text-sm font-semibold text-slate-900" x-text="completion + '%'"></span>
+          </div>
+          <div class="meter mt-3"><span :style="`width:${completion}%`"></span></div>
+          <p class="mt-2 text-xs text-slate-500" x-show="completion < 100">A complete profile gets better matches. <a href="/student/profile/" class="font-medium text-brand-600 hover:underline">Update</a></p>
+        </div>
+      </template>
+
+      {# Requirements #}
+      <div class="card">
+        <div class="card-header">
+          <p class="card-title">Your requirements</p>
+          <a href="/student/requirements/" class="text-xs font-medium text-brand-600 hover:underline">View all</a>
+        </div>
+        <div class="p-2">
+          <template x-if="reqState === 'loading'">
+            <div class="space-y-2 p-3"><div class="skeleton h-12"></div><div class="skeleton h-12"></div></div>
+          </template>
+          <template x-if="reqState === 'empty'">
+            <div class="px-4 py-8 text-center">
+              <p class="text-sm font-medium text-slate-900">No requirements yet</p>
+              <p class="mt-1 text-sm text-slate-500">Tell us what you're looking for to start getting matched.</p>
+              <a href="/student/requirements/" class="btn-secondary btn-sm mt-3">{% icon "plus" "h-4 w-4" %} New requirement</a>
+            </div>
+          </template>
+          <ul x-show="reqState === 'ready'" class="divide-y divide-slate-100">
+            <template x-for="r in requirements.slice(0,4)" :key="r.id">
+              <li>
+                <a :href="`/student/requirements/${r.id}/`" class="card-hover flex items-center gap-3 rounded-lg px-3 py-3 hover:bg-slate-50">
+                  <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-500">{% icon "book" "h-4 w-4" %}</span>
+                  <div class="min-w-0 flex-1">
+                    <p class="truncate text-sm font-medium text-slate-900" x-text="(r.subject && r.subject.name) || 'Subject'"></p>
+                    <p class="truncate text-xs text-slate-500" x-text="[fmt.titleCase(r.teaching_mode), r.city && r.city.name, r.preferred_timing].filter(Boolean).join(' · ')"></p>
+                  </div>
+                  <span class="badge" :class="r.status === 'open' ? 'badge-green' : 'badge-slate'" x-text="fmt.titleCase(r.status)"></span>
+                </a>
+              </li>
+            </template>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    {# --- Right: recommendations --- #}
+    <div class="space-y-6">
+      <div class="card">
+        <div class="card-header"><p class="card-title">Recommended for you</p></div>
+        <div class="p-3">
+          <template x-if="recoState === 'loading'">
+            <div class="space-y-3"><div class="skeleton h-16"></div><div class="skeleton h-16"></div><div class="skeleton h-16"></div></div>
+          </template>
+          <template x-if="recoState === 'empty'">
+            <p class="px-2 py-6 text-center text-sm text-slate-500">No teacher recommendations yet. <a href="/student/teachers/" class="font-medium text-brand-600 hover:underline">Browse all</a></p>
+          </template>
+          <ul x-show="recoState === 'ready'" class="space-y-1">
+            <template x-for="t in recommendations.slice(0,4)" :key="t.id">
+              <li>
+                <a :href="`/student/teachers/${t.id}/`" class="card-hover flex items-center gap-3 rounded-lg p-2 hover:bg-slate-50">
+                  <span class="avatar h-9 w-9 text-xs" x-text="fmt.initials((t.teacher && t.teacher.user && t.teacher.user.full_name) || '')"></span>
+                  <div class="min-w-0 flex-1">
+                    <p class="truncate text-sm font-medium text-slate-900" x-text="(t.teacher && t.teacher.user && t.teacher.user.full_name) || 'Teacher'"></p>
+                    <p class="truncate text-xs text-slate-500" x-text="fmt.list(t.subjects, 'name', 2)"></p>
+                  </div>
+                  <template x-if="t.is_verified"><span class="badge badge-green shrink-0">Verified</span></template>
+                </a>
+              </li>
+            </template>
+          </ul>
+        </div>
+        <div class="border-t border-slate-100 p-3">
+          <a href="/student/teachers/" class="btn-secondary btn-sm w-full">See all teachers</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("studentDashboard", () => ({
+      state: "loading", profile: null, completion: 0,
+      reqState: "loading", requirements: [],
+      recoState: "loading", recommendations: [],
+      init() {
+        api.get("/students/me/", { silent: true })
+          .then((p) => { this.profile = p; this.completion = this._completion(p); })
+          .catch((e) => { if (e.status !== 404) window.toast("error", e.message); })
+          .finally(() => { this.state = "ready"; });
+        api.get("/student-requirements/", { silent: true })
+          .then((d) => { this.requirements = Array.isArray(d) ? d : []; this.reqState = this.requirements.length ? "ready" : "empty"; })
+          .catch(() => { this.reqState = "empty"; });
+        api.get("/search/teachers/", { params: { verified_only: "true" }, silent: true })
+          .then((d) => { this.recommendations = Array.isArray(d) ? d : []; this.recoState = this.recommendations.length ? "ready" : "empty"; })
+          .catch(() => { this.recoState = "empty"; });
+      },
+      greeting() {
+        const h = new Date().getHours();
+        return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+      },
+      _completion(p) {
+        if (!p) return 0;
+        const fields = ["education_level", "grade_or_year", "city", "preferred_subjects", "bio"];
+        const done = fields.filter((f) => p[f]).length + 1; // +1 for account existing
+        return Math.round((done / (fields.length + 1)) * 100);
+      },
+    }));
+  });
+</script>
+{% endblock %}

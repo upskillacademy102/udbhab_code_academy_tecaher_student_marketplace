@@ -1,0 +1,93 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block breadcrumbs %}
+<a href="/student/requirements/" class="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800">
+  {% icon "arrow-left" "h-4 w-4" %} All requirements
+</a>
+{% endblock %}
+
+{% block content %}
+<div x-data="requirementDetail('{{ id }}')" class="grid gap-6 lg:grid-cols-3">
+
+  <div class="lg:col-span-2 space-y-6">
+    <div x-show="state === 'loading'" x-cloak class="skeleton h-52"></div>
+    {% include "web/partials/_error.html" %}
+    <div x-show="state === 'missing'" x-cloak class="empty">
+      <div class="empty-icon">{% icon "clipboard" "h-6 w-6" %}</div>
+      <p class="empty-title">Requirement not found</p>
+      <a href="/student/requirements/" class="btn-secondary mt-4">Back</a>
+    </div>
+
+    <template x-if="state === 'ready'">
+      <div class="card card-pad">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <h3 class="text-lg font-semibold text-slate-900" x-text="(obj.subject && obj.subject.name) || 'Requirement'"></h3>
+            <p class="mt-1 text-sm text-slate-500" x-text="[fmt.titleCase(obj.teaching_mode), obj.student_class].filter(Boolean).join(' · ')"></p>
+          </div>
+          <span class="badge" :class="obj.status === 'open' ? 'badge-green' : 'badge-slate'" x-text="fmt.titleCase(obj.status)"></span>
+        </div>
+        <dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-3">
+          <div><dt class="text-xs uppercase tracking-wide text-slate-400">Budget</dt><dd class="mt-0.5 font-medium text-slate-800" x-text="obj.budget_min || obj.budget_max ? `${fmt.money(obj.budget_min)} – ${fmt.money(obj.budget_max)}` : 'Any'"></dd></div>
+          <div><dt class="text-xs uppercase tracking-wide text-slate-400">Language</dt><dd class="mt-0.5 font-medium text-slate-800" x-text="(obj.preferred_language && obj.preferred_language.name) || 'Any'"></dd></div>
+          <div><dt class="text-xs uppercase tracking-wide text-slate-400">Location</dt><dd class="mt-0.5 font-medium text-slate-800" x-text="(obj.city && obj.city.name) || '—'"></dd></div>
+          <div><dt class="text-xs uppercase tracking-wide text-slate-400">Class length</dt><dd class="mt-0.5 font-medium text-slate-800" x-text="obj.class_duration_minutes ? `${obj.class_duration_minutes} min` : '—'"></dd></div>
+          <div><dt class="text-xs uppercase tracking-wide text-slate-400">Posted</dt><dd class="mt-0.5 font-medium text-slate-800" x-text="fmt.date(obj.created_at)"></dd></div>
+        </dl>
+
+        <div class="mt-4 border-t border-slate-100 pt-4">
+          <p class="text-xs uppercase tracking-wide text-slate-400">Preferred times</p>
+          <template x-if="obj.schedule_preferences && obj.schedule_preferences.length">
+            <ul class="mt-2 flex flex-wrap gap-1.5">
+              <template x-for="p in obj.schedule_preferences" :key="p.id">
+                <li class="chip text-xs">
+                  <span x-text="p.day_of_week_label"></span>
+                  <span class="mx-1 text-slate-400" x-text="`${p.start_time.slice(0,5)}–${p.end_time.slice(0,5)}`"></span>
+                  <span class="text-slate-400" x-text="p.flexibility === 'fixed' ? '· exact' : '· flexible'"></span>
+                </li>
+              </template>
+            </ul>
+          </template>
+          <p class="mt-2 text-sm text-slate-600" x-show="!obj.schedule_preferences || !obj.schedule_preferences.length"
+             x-text="obj.preferred_timing || 'No specific times set — teachers can’t be matched on schedule.'"></p>
+          <p class="mt-1.5 text-xs text-slate-400" x-show="obj.preferred_timing && obj.schedule_preferences && obj.schedule_preferences.length"
+             x-text="`Note: ${obj.preferred_timing}`"></p>
+        </div>
+
+        <template x-if="obj.description">
+          <p class="mt-4 whitespace-pre-line border-t border-slate-100 pt-4 text-sm text-slate-600" x-text="obj.description"></p>
+        </template>
+      </div>
+    </template>
+  </div>
+
+  <div class="space-y-6">
+    <template x-if="state === 'ready'">
+      <div class="card card-pad">
+        <p class="card-title">Actions</p>
+        <div class="mt-3 space-y-2">
+          <button class="btn-secondary w-full" x-show="obj.status === 'open'" @click="close()" :data-loading="closing">Close this requirement</button>
+          <a href="/student/teachers/" class="btn-primary w-full">{% icon "search" %} Find matching teachers</a>
+        </div>
+      </div>
+    </template>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("requirementDetail", (id) => ({
+      ...mk.record({ endpoint: `/student-requirements/${id}/` }),
+      _id: id, closing: false,
+      async close() {
+        if (!(await window.confirmAction({ title: "Close this requirement?", message: "You won't be matched to new teachers for it.", confirmLabel: "Close it" }))) return;
+        this.closing = true;
+        try { await api.patch(`/student-requirements/${this._id}/`, { status: "closed" }); window.toast("success", "Requirement closed."); this.load(); }
+        catch (e) { window.toast("error", e.message); }
+        finally { this.closing = false; }
+      },
+    }));
+  });
+</script>
+{% endblock %}

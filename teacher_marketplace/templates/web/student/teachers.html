@@ -1,0 +1,219 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block content %}
+<div x-data="teacherSearch()" class="grid gap-6 lg:grid-cols-[280px_1fr]">
+
+  {# ================= Filters ================= #}
+  <aside class="lg:sticky lg:top-20 lg:self-start">
+    {# Mobile: collapsible #}
+    <button class="btn-secondary mb-3 w-full justify-between lg:hidden" @click="filtersOpen = !filtersOpen"
+            :aria-expanded="filtersOpen">
+      <span class="flex items-center gap-2">{% icon "filter" "h-4 w-4" %} Filters
+        <span x-show="activeFilterCount() > 0" class="badge badge-brand" x-text="activeFilterCount()"></span>
+      </span>
+      <svg class="h-4 w-4 transition" :class="filtersOpen && 'rotate-180'"><use href="#i-chevron-down"></use></svg>
+    </button>
+
+    <div x-show="filtersOpen || isDesktop" x-cloak class="card card-pad space-y-5">
+      <div class="flex items-center justify-between">
+        <p class="card-title">Filters</p>
+        <button class="text-xs font-medium text-brand-600 hover:underline" x-show="activeFilterCount() > 0" @click="clearParams()">Clear all</button>
+      </div>
+
+      <div class="field">
+        <label class="label" for="f-subject">Subject</label>
+        <select id="f-subject" class="select" @change="setParam('subject', $event.target.value)">
+          <option value="">Any subject</option>
+          <template x-for="s in subjects" :key="s.id"><option :value="s.name" x-text="s.name" :selected="params.subject === s.name"></option></template>
+        </select>
+      </div>
+
+      <div class="field">
+        <label class="label" for="f-language">Language</label>
+        <select id="f-language" class="select" @change="setParam('language', $event.target.value)">
+          <option value="">Any language</option>
+          <template x-for="l in languages" :key="l.id"><option :value="l.name" x-text="l.name" :selected="params.language === l.name"></option></template>
+        </select>
+      </div>
+
+      <div class="field">
+        <label class="label" for="f-city">City</label>
+        <input id="f-city" class="input" placeholder="e.g. Kolkata" :value="params.city || ''"
+               @input.debounce.400ms="setParam('city', $event.target.value)">
+      </div>
+
+      <div class="field">
+        <span class="label">Teaching mode</span>
+        <div class="mt-1 flex flex-wrap gap-1.5">
+          <template x-for="m in ['online','offline','both']" :key="m">
+            <button type="button" class="chip capitalize" :aria-pressed="params.teaching_mode === m"
+                    @click="setParam('teaching_mode', params.teaching_mode === m ? '' : m)" x-text="m"></button>
+          </template>
+        </div>
+      </div>
+
+      <label class="flex cursor-pointer items-center justify-between">
+        <span class="label mb-0">Verified teachers only</span>
+        <input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+               @change="setParam('verified_only', $event.target.checked ? 'true' : '')">
+      </label>
+
+      <div class="border-t border-slate-100 pt-4" x-data="{ open: false }">
+        <button type="button" class="flex w-full items-center justify-between text-sm font-medium text-slate-700" @click="open = !open">
+          Rating &amp; price
+          <svg class="h-4 w-4 transition" :class="open && 'rotate-180'"><use href="#i-chevron-down"></use></svg>
+        </button>
+        <div x-show="open" x-collapse class="mt-3 space-y-4">
+          <div class="field">
+            <label class="label" for="f-rating">Minimum rating</label>
+            <select id="f-rating" class="select" @change="setParam('min_rating', $event.target.value)">
+              <option value="">Any</option><option value="3">3+</option><option value="4">4+</option><option value="4.5">4.5+</option>
+            </select>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="field">
+              <label class="label" for="f-minprice">Min ₹/hr</label>
+              <input id="f-minprice" type="number" min="0" class="input" @input.debounce.400ms="setParam('min_price', $event.target.value)">
+            </div>
+            <div class="field">
+              <label class="label" for="f-maxprice">Max ₹/hr</label>
+              <input id="f-maxprice" type="number" min="0" class="input" @input.debounce.400ms="setParam('max_price', $event.target.value)">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="border-t border-slate-100 pt-4" x-data="{ open: false }">
+        <button type="button" class="flex w-full items-center justify-between text-sm font-medium text-slate-700" @click="open = !open">
+          Schedule match
+          <svg class="h-4 w-4 transition" :class="open && 'rotate-180'"><use href="#i-chevron-down"></use></svg>
+        </button>
+        <div x-show="open" x-collapse class="mt-3 space-y-3">
+          <p class="field-hint">Set all three to rank results by how well teachers fit your preferred time.</p>
+          <div class="field">
+            <label class="label" for="f-day">Preferred day</label>
+            <select id="f-day" class="select" @change="setSchedule('preferred_day', $event.target.value)">
+              <option value="">Any day</option>
+              <template x-for="(d,i) in ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']" :key="i">
+                <option :value="i+1" x-text="d"></option>
+              </template>
+            </select>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="field">
+              <label class="label" for="f-start">From</label>
+              <input id="f-start" type="time" class="input" @change="setSchedule('preferred_start_time', $event.target.value)">
+            </div>
+            <div class="field">
+              <label class="label" for="f-end">To</label>
+              <input id="f-end" type="time" class="input" @change="setSchedule('preferred_end_time', $event.target.value)">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  {# ================= Results ================= #}
+  <div>
+    {# Quick-filter subject row — fast, familiar category picking above the detailed sidebar #}
+    <div class="no-scrollbar mb-4 flex gap-2 overflow-x-auto pb-1" x-show="subjects.length">
+      <template x-for="s in subjects.slice(0, 12)" :key="s.id">
+        <button type="button" class="chip shrink-0" :aria-pressed="params.subject === s.name"
+                @click="setParam('subject', params.subject === s.name ? '' : s.name)" x-text="s.name"></button>
+      </template>
+    </div>
+
+    {# active filter chips #}
+    <div x-show="activeChips().length" x-cloak class="mb-4 flex flex-wrap items-center gap-2">
+      <template x-for="c in activeChips()" :key="c.key">
+        <button class="chip" @click="setParam(c.key, '')">
+          <span x-text="c.label"></span> {% icon "x" "h-3 w-3" %}
+        </button>
+      </template>
+    </div>
+
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <p class="text-sm text-slate-500" x-show="state === 'ready'" x-text="rangeLabel() || `${items.length} teacher${items.length === 1 ? '' : 's'}`"></p>
+      <p class="text-sm text-slate-400" x-show="state === 'loading'">Searching…</p>
+      <label class="flex items-center gap-2 text-sm text-slate-500">
+        <span class="whitespace-nowrap">Sort by</span>
+        <select class="select !w-auto !py-1.5 text-sm"
+                @change="setParam('ordering', $event.target.value)"
+                aria-label="Sort teachers by">
+          <option value="">Top rated</option>
+          <option value="-experience">Most experienced</option>
+          <option value="price">Price: low to high</option>
+          <option value="-price">Price: high to low</option>
+          <option value="-newest">Newest</option>
+        </select>
+      </label>
+    </div>
+
+    {% include "web/partials/_card_skeleton.html" %}
+    {% include "web/partials/_error.html" %}
+
+    <div x-show="state === 'empty'" x-cloak class="empty">
+      <div class="empty-icon">{% icon "search" "h-6 w-6" %}</div>
+      <p class="empty-title">No teachers found</p>
+      <p class="empty-desc">Try widening your filters — a different subject, city, or removing the schedule match.</p>
+      <button class="btn-secondary mt-4" @click="clearParams()" x-show="activeFilterCount() > 0">Clear filters</button>
+    </div>
+
+    <div x-show="state === 'ready'" x-cloak class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <template x-for="t in items" :key="t.id">
+        {% include "web/partials/_teacher_card.html" %}
+      </template>
+    </div>
+
+    {% include "web/partials/_pagination.html" %}
+  </div>
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("teacherSearch", () => ({
+      ...mk.collection({ endpoint: "/search/teachers/", pageSize: 20 }),
+      detailBase: "/student/teachers/",
+      subjects: [],
+      languages: [],
+      filtersOpen: false,
+      isDesktop: window.matchMedia("(min-width: 1024px)").matches,
+      _sched: {},
+
+      init() {
+        this.initCollection();
+        window.matchMedia("(min-width: 1024px)").addEventListener("change", (e) => (this.isDesktop = e.matches));
+        api.get("/subjects/", { params: { page_size: 200 }, silent: true }).then((d) => (this.subjects = Array.isArray(d) ? d : [])).catch(() => {});
+        api.get("/languages/", { params: { page_size: 200 }, silent: true }).then((d) => (this.languages = Array.isArray(d) ? d : [])).catch(() => {});
+      },
+
+      setSchedule(key, val) {
+        this._sched[key] = val || undefined;
+        const s = this._sched;
+        const complete = s.preferred_day && s.preferred_start_time && s.preferred_end_time;
+        this.params = {
+          ...this.params,
+          preferred_day: complete ? s.preferred_day : undefined,
+          preferred_start_time: complete ? s.preferred_start_time : undefined,
+          preferred_end_time: complete ? s.preferred_end_time : undefined,
+          timezone: complete ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined,
+        };
+      },
+
+      activeChips() {
+        const labels = {
+          subject: (v) => `Subject: ${v}`, language: (v) => `Language: ${v}`, city: (v) => `City: ${v}`,
+          teaching_mode: (v) => `${v[0].toUpperCase() + v.slice(1)}`, verified_only: () => "Verified only",
+          min_rating: (v) => `${v}★ and up`, min_price: (v) => `≥ ₹${v}`, max_price: (v) => `≤ ₹${v}`,
+          preferred_day: () => "Schedule match",
+        };
+        return Object.keys(this.params)
+          .filter((k) => this.params[k] && labels[k])
+          .map((k) => ({ key: k, label: labels[k](this.params[k]) }));
+      },
+    }));
+  });
+</script>
+{% endblock %}

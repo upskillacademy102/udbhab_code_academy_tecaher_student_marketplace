@@ -1,0 +1,6 @@
+{% extends "web/base_app.html" %}
+{% block content %}
+<div x-data="resourceManager('{{ resource }}')">
+  {% include "web/admin/_resource_body.html" %}
+</div>
+{% endblock %}

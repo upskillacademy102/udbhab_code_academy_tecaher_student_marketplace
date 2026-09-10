@@ -1,0 +1,42 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block content %}
+<div x-data="{ ...mk.collection({ endpoint: '/payments/' }) }">
+  {% include "web/partials/_row_skeleton.html" %}
+  {% include "web/partials/_error.html" %}
+  <div x-show="state === 'empty'" x-cloak class="empty">
+    <div class="empty-icon">{% icon "receipt" "h-6 w-6" %}</div>
+    <p class="empty-title">No payments yet</p>
+    <p class="empty-desc">Your subscription and extra-unlock purchases will appear here.</p>
+  </div>
+  <div x-show="state === 'ready'" x-cloak class="table-wrap">
+    <table class="data">
+      <thead><tr><th>Item</th><th>Order</th><th class="text-right">Amount</th><th>Status</th><th class="hidden sm:table-cell">Date</th></tr></thead>
+      <tbody>
+        <template x-for="p in items" :key="p.id">
+          <tr>
+            <td class="font-medium text-slate-800" x-text="p.token_package_name || fmt.titleCase(p.payment_type) || 'Purchase'"></td>
+            <td class="text-xs text-slate-400" x-text="p.razorpay_order_id || '—'"></td>
+            <td class="text-right font-medium" x-text="fmt.money(p.amount)"></td>
+            <td><span class="badge" :class="tone(p.status)" x-text="fmt.titleCase(p.status)"></span></td>
+            <td class="hidden text-slate-500 sm:table-cell" x-text="fmt.date(p.created_at)"></td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+  {% include "web/partials/_pagination.html" %}
+</div>
+<script>
+  document.addEventListener("alpine:init", () => {
+    window.tone = (s) => {
+      s = String(s || "").toLowerCase();
+      if (s === "success") return "badge-green";
+      if (s === "failed") return "badge-red";
+      if (s === "refunded") return "badge-sky";
+      return "badge-amber";
+    };
+  });
+</script>
+{% endblock %}

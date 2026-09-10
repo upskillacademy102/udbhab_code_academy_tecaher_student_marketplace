@@ -1,0 +1,187 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block page_actions %}
+{% if web_role == 'superadmin' %}<button class="btn-primary" @click="$dispatch('user-new')">{% icon "plus" %} New user</button>{% endif %}
+{% endblock %}
+
+{% block content %}
+<div x-data="usersPage()">
+  <div class="mb-4 flex flex-wrap items-center gap-3">
+    <div class="relative w-full max-w-xs">
+      <span class="pointer-events-none absolute inset-y-0 left-3 grid place-items-center text-slate-400">{% icon "search" "h-4 w-4" %}</span>
+      <input class="input pl-9" placeholder="Name, email or mobile…" x-model="q" aria-label="Search users">
+    </div>
+    <select class="select w-auto" @change="setParam('role', $event.target.value)" aria-label="Filter by role">
+      <option value="">All roles</option>
+      <option value="student">Students</option><option value="teacher">Teachers</option>
+      <option value="admin">Admins</option><option value="superadmin">Super Admins</option>
+    </select>
+    <select class="select w-auto" @change="setParam('is_active', $event.target.value)" aria-label="Filter by status">
+      <option value="">Any status</option><option value="true">Active</option><option value="false">Inactive</option>
+    </select>
+    <p class="ml-auto text-sm text-slate-500" x-show="state === 'ready'" x-text="rangeLabel()"></p>
+  </div>
+
+  {% include "web/partials/_row_skeleton.html" %}
+  {% include "web/partials/_error.html" %}
+
+  <div x-show="state === 'empty'" x-cloak class="empty">
+    <div class="empty-icon">{% icon "users" "h-6 w-6" %}</div>
+    <p class="empty-title">No users match</p>
+    <p class="empty-desc">Try a different search or filter.</p>
+  </div>
+
+  <div x-show="state === 'ready'" x-cloak class="table-wrap">
+    <table class="data">
+      <thead><tr><th>Name</th><th>Role</th><th class="hidden sm:table-cell">Status</th><th class="hidden md:table-cell">Session</th><th class="hidden lg:table-cell">Joined</th><th class="w-px"></th></tr></thead>
+      <tbody>
+        <template x-for="u in items" :key="u.id">
+          <tr class="cursor-pointer" @click="open(u)">
+            <td>
+              <div class="flex items-center gap-3">
+                <span class="avatar h-8 w-8 text-[11px]" x-text="fmt.initials(u.full_name)"></span>
+                <div class="min-w-0"><p class="truncate font-medium text-slate-900" x-text="u.full_name || u.email"></p><p class="truncate text-xs text-slate-400" x-text="u.email"></p></div>
+              </div>
+            </td>
+            <td><span class="badge" :class="roleTone(u.role)" x-text="fmt.titleCase(u.role)"></span></td>
+            <td class="hidden sm:table-cell"><span class="badge" :class="u.is_active ? 'badge-green' : 'badge-slate'" x-text="u.is_active ? 'Active' : 'Inactive'"></span></td>
+            <td class="hidden text-slate-500 md:table-cell" x-text="u.has_active_session ? 'Signed in' : '—'"></td>
+            <td class="hidden text-slate-500 lg:table-cell" x-text="fmt.date(u.created_at)"></td>
+            <td>{% icon "chevron-right" "h-4 w-4 text-slate-300" %}</td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+  {% include "web/partials/_pagination.html" %}
+
+  {# ---- Detail / edit drawer ---- #}
+  <div x-show="drawer" x-cloak @keydown.escape.window="drawer = false">
+    <div class="dialog-backdrop animate-fade-in" @click="drawer = false"></div>
+    <div class="fixed inset-y-0 right-0 z-50 w-full max-w-md overflow-y-auto border-l border-slate-200 bg-white shadow-pop animate-slide-up"
+         x-trap.noscroll="drawer" role="dialog" aria-modal="true">
+      <div class="sticky top-0 flex items-center justify-between border-b border-slate-100 bg-white px-5 py-4">
+        <p class="text-sm font-semibold text-slate-900" x-text="creating ? 'New user' : (sel.full_name || sel.email)"></p>
+        <button class="btn-ghost p-1.5" @click="drawer = false" aria-label="Close">{% icon "x" "h-5 w-5" %}</button>
+      </div>
+
+      {# create form #}
+      <template x-if="creating">
+        <form class="space-y-4 p-5" @submit.prevent="createUser()">
+          <div class="alert alert-error" x-show="formErr" x-cloak>{% icon "x-circle" %}<span x-text="formErr"></span></div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="field"><label class="label">First name <span class="req">*</span></label><input class="input" x-model="nu.first_name"></div>
+            <div class="field"><label class="label">Last name <span class="req">*</span></label><input class="input" x-model="nu.last_name"></div>
+          </div>
+          <div class="field"><label class="label">Email <span class="req">*</span></label><input type="email" class="input" x-model="nu.email"></div>
+          <div class="field"><label class="label">Mobile <span class="req">*</span></label><input class="input" placeholder="919876543210" x-model="nu.mobile"></div>
+          <div class="field"><label class="label">Role <span class="req">*</span></label>
+            <select class="select" x-model="nu.role">
+              <option value="student">Student</option><option value="teacher">Teacher</option>
+              <option value="admin">Admin</option><option value="superadmin">Super Admin</option>
+            </select>
+          </div>
+          <div class="field"><label class="label">Temporary password <span class="req">*</span></label><input type="text" class="input" x-model="nu.password"></div>
+          <div class="flex gap-2 pt-2">
+            <button type="button" class="btn-secondary flex-1" @click="drawer = false">Cancel</button>
+            <button type="submit" class="btn-primary flex-1" :data-loading="busy">Create user</button>
+          </div>
+        </form>
+      </template>
+
+      {# detail #}
+      <template x-if="!creating && sel.id">
+        <div class="space-y-5 p-5">
+          <div class="flex items-center gap-3">
+            <span class="avatar h-12 w-12" x-text="fmt.initials(sel.full_name)"></span>
+            <div>
+              <p class="text-sm font-semibold text-slate-900" x-text="sel.full_name || '—'"></p>
+              <p class="text-xs text-slate-500" x-text="sel.email"></p>
+            </div>
+          </div>
+          <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+            <div><dt class="text-xs text-slate-400">Mobile</dt><dd class="font-medium text-slate-800" x-text="sel.mobile || '—'"></dd></div>
+            <div><dt class="text-xs text-slate-400">Profile</dt><dd class="font-medium text-slate-800" x-text="sel.profile_type ? fmt.titleCase(sel.profile_type) : '—'"></dd></div>
+            <div><dt class="text-xs text-slate-400">Email verified</dt><dd class="font-medium text-slate-800" x-text="sel.is_email_verified ? 'Yes' : 'No'"></dd></div>
+            <div><dt class="text-xs text-slate-400">Last login</dt><dd class="font-medium text-slate-800" x-text="fmt.date(sel.last_login)"></dd></div>
+          </dl>
+
+          {% if web_role == 'superadmin' %}
+          <div class="space-y-3 border-t border-slate-100 pt-4">
+            <div class="field">
+              <label class="label">Role</label>
+              <select class="select" x-model="sel.role" @change="changeRole($event.target.value)">
+                <option value="student">Student</option><option value="teacher">Teacher</option>
+                <option value="admin">Admin</option><option value="superadmin">Super Admin</option>
+              </select>
+            </div>
+            <div class="flex gap-2">
+              <button class="btn-secondary flex-1" @click="toggleActive()" :data-loading="busy"
+                      x-text="sel.is_active ? 'Deactivate account' : 'Reactivate account'"></button>
+            </div>
+            <button class="btn-primary w-full" @click="impersonate()" :data-loading="busy"
+                    x-show="sel.role !== 'superadmin'">
+              {% icon "switch" %} Act as this user
+            </button>
+            <p class="text-center text-xs text-slate-400">A time-boxed, audited session as this user.</p>
+          </div>
+          {% endif %}
+        </div>
+      </template>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("usersPage", () => ({
+      ...mk.collection({ endpoint: "/admin/users/" }),
+      q: "",
+      drawer: false, creating: false, busy: false, formErr: "",
+      sel: {}, nu: { first_name: "", last_name: "", email: "", mobile: "", role: "student", password: "" },
+      init() {
+        this.initCollection();
+        this.$watch("q", window.debounce(() => this.setParam("search", this.q), 350));
+        window.addEventListener("user-new", () => { this.creating = true; this.sel = {}; this.formErr = ""; this.drawer = true; });
+      },
+      roleTone(r) { return { superadmin: "badge-brand", admin: "badge-sky", teacher: "badge-amber", student: "badge-slate" }[r] || "badge-slate"; },
+      open(u) { this.creating = false; this.sel = { ...u }; this.drawer = true; },
+      async createUser() {
+        this.busy = true; this.formErr = "";
+        try {
+          await api.post("/admin/users/", this.nu);
+          window.toast("success", "User created.");
+          this.drawer = false; this.nu = { first_name: "", last_name: "", email: "", mobile: "", role: "student", password: "" };
+          this.load();
+        } catch (e) { this.formErr = e.fieldErrors ? Object.values(e.fieldErrors)[0] : e.message; }
+        finally { this.busy = false; }
+      },
+      async changeRole(role) {
+        if (!(await window.confirmAction({ title: `Change role to ${role}?`, message: "This immediately changes what this account can access.", confirmLabel: "Change role" }))) { this.load(); return; }
+        this.busy = true;
+        try { const u = await api.patch(`/admin/users/${this.sel.id}/`, { role }); this.sel = { ...u }; window.toast("success", "Role updated."); this.load(); }
+        catch (e) { window.toast("error", e.message); this.load(); }
+        finally { this.busy = false; }
+      },
+      async toggleActive() {
+        const action = this.sel.is_active ? "deactivate" : "activate";
+        if (this.sel.is_active && !(await window.confirmAction({ title: "Deactivate this account?", message: "They'll be signed out immediately and can't log back in.", confirmLabel: "Deactivate", danger: true }))) return;
+        this.busy = true;
+        try { const u = await api.post(`/admin/users/${this.sel.id}/${action}/`, {}); this.sel = { ...u }; window.toast("success", `Account ${action}d.`); this.load(); }
+        catch (e) { window.toast("error", e.message); }
+        finally { this.busy = false; }
+      },
+      async impersonate() {
+        if (!(await window.confirmAction({ title: `Act as ${this.sel.full_name || this.sel.email}?`, message: "You'll see the app exactly as they do. This is recorded in the audit log. Use 'Return to your account' to end it.", confirmLabel: "Act as user" }))) return;
+        this.busy = true;
+        try {
+          const r = await api.post(`/admin/users/${this.sel.id}/impersonate/`, {});
+          const home = { student: "/student/", teacher: "/teacher/", admin: "/admin-portal/" }[r.user.role] || "/";
+          location.assign(home);
+        } catch (e) { window.toast("error", e.message); this.busy = false; }
+      },
+    }));
+  });
+</script>
+{% endblock %}

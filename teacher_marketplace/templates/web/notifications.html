@@ -1,0 +1,94 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block content %}
+<div x-data="notificationsPage()">
+  <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <div class="flex gap-1 rounded-lg bg-slate-100 p-1" role="tablist" aria-label="Filter notifications">
+      <button class="rounded-md px-3 py-1.5 text-sm font-medium transition"
+              :class="tab === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-700'"
+              @click="setTab('all')" role="tab" :aria-selected="tab === 'all'">All</button>
+      <button class="rounded-md px-3 py-1.5 text-sm font-medium transition"
+              :class="tab === 'unread' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-700'"
+              @click="setTab('unread')" role="tab" :aria-selected="tab === 'unread'">
+        Unread <span x-show="unread > 0" class="ml-1 text-brand-600" x-text="`(${unread})`"></span>
+      </button>
+    </div>
+    <button class="btn-secondary btn-sm" @click="markAllRead()" :disabled="!unread || marking" :data-loading="marking">
+      {% icon "check" "h-4 w-4" %} Mark all read
+    </button>
+  </div>
+
+  {% include "web/partials/_row_skeleton.html" %}
+  {% include "web/partials/_error.html" %}
+
+  <div x-show="state === 'empty'" x-cloak class="empty">
+    <div class="empty-icon">{% icon "bell" "h-6 w-6" %}</div>
+    <p class="empty-title" x-text="tab === 'unread' ? 'You\'re all caught up' : 'No notifications yet'"></p>
+    <p class="empty-desc">When something needs your attention, it'll show up here.</p>
+  </div>
+
+  <ul x-show="state === 'ready'" x-cloak class="table-wrap divide-y divide-slate-100">
+    <template x-for="n in items" :key="n.id">
+      <li class="flex items-start gap-3.5 px-4 py-3.5 transition" :class="!n.is_read && 'bg-brand-50/40'">
+        <span class="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500">
+          <svg class="h-4 w-4" aria-hidden="true"><use :href="'#' + iconFor(n.event)"></use></svg>
+        </span>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium text-slate-900" x-text="n.title || fmt.titleCase(n.event)"></p>
+          <p class="mt-0.5 text-sm text-slate-500" x-text="n.message"></p>
+          <p class="mt-1 text-xs text-slate-400" x-text="fmt.relative(n.created_at)"></p>
+        </div>
+        <button x-show="!n.is_read" class="btn-ghost btn-sm shrink-0" @click="markRead(n)" title="Mark as read"
+                aria-label="Mark as read">{% icon "check" "h-4 w-4" %}</button>
+      </li>
+    </template>
+  </ul>
+
+  {% include "web/partials/_pagination.html" %}
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("notificationsPage", () => ({
+      ...mk.collection({ endpoint: "/notifications/", onLoad(_, self) { self.unread = self.meta.unread_count ?? self.unread; } }),
+      tab: "all",
+      unread: 0,
+      marking: false,
+      init() { this.initCollection(); },
+      setTab(t) {
+        this.tab = t;
+        this.setParam("is_read", t === "unread" ? "false" : undefined);
+      },
+      iconFor(event) {
+        const e = String(event || "").toLowerCase();
+        if (e.includes("lead")) return "i-inbox";
+        if (e.includes("payment") || e.includes("wallet") || e.includes("token")) return "i-wallet";
+        if (e.includes("subscription")) return "i-star";
+        if (e.includes("match") || e.includes("assign")) return "i-target";
+        return "i-bell";
+      },
+      async markRead(n) {
+        try {
+          await api.post("/notifications/mark-read/", { notification_ids: [n.id] }, { silent: true });
+          n.is_read = true;
+          this.unread = Math.max(0, this.unread - 1);
+          if (window.Alpine.store("badges")) window.Alpine.store("badges").notifications = this.unread;
+          if (this.tab === "unread") this.removeFromList((x) => x.id === n.id);
+        } catch (e) { window.toast("error", e.message); }
+      },
+      async markAllRead() {
+        const ids = this.items.filter((x) => !x.is_read).map((x) => x.id);
+        if (!ids.length) return;
+        this.marking = true;
+        try {
+          await api.post("/notifications/mark-read/", { notification_ids: ids });
+          this.load();
+          this.unread = 0;
+          if (window.Alpine.store("badges")) window.Alpine.store("badges").notifications = 0;
+        } catch (e) { window.toast("error", e.message); } finally { this.marking = false; }
+      },
+    }));
+  });
+</script>
+{% endblock %}

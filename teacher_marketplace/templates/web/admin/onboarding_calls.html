@@ -1,0 +1,93 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block content %}
+<div x-data="onboardingCalls()">
+  <div class="mb-4 flex flex-wrap items-center gap-3">
+    <select class="select w-auto" @change="setParam('status', $event.target.value)" aria-label="Status">
+      <option value="">Awaiting a call</option>
+      <option value="all">All requests</option>
+    </select>
+    <label class="inline-flex items-center gap-2 text-sm text-slate-600">
+      <input type="checkbox" @change="setParam('mine', $event.target.checked ? '1' : '')"> Assigned to me
+    </label>
+  </div>
+
+  {% include "web/partials/_row_skeleton.html" %}
+  {% include "web/partials/_error.html" %}
+
+  <div x-show="state === 'empty'" x-cloak class="empty">
+    <div class="empty-icon">{% icon "video" "h-6 w-6" %}</div>
+    <p class="empty-title">No calls waiting</p>
+    <p class="empty-desc">No teacher is currently asking for an onboarding video call.</p>
+  </div>
+
+  <div x-show="state === 'ready'" x-cloak class="space-y-3">
+    <template x-for="it in items" :key="it.id">
+      <div class="card card-pad">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-sm font-medium text-slate-900" x-text="it.teacher_name || it.teacher_email"></span>
+          <span class="badge" :class="it.item_status === 'verified' ? 'badge-green' : (it.item_status === 'rejected' ? 'badge-red' : 'badge-amber')"
+                x-text="fmt.titleCase(it.item_status)"></span>
+          <span class="ml-auto text-xs text-slate-400" x-text="'requested ' + fmt.dateTime(it.created_at)"></span>
+        </div>
+        <p class="mt-0.5 text-xs text-slate-500" x-text="it.teacher_email"></p>
+
+        <template x-if="it.scheduled_at">
+          <p class="mt-2 text-sm text-slate-700">
+            Scheduled for <span class="font-medium" x-text="fmt.dateTime(it.scheduled_at)"></span>
+            with <span class="font-medium" x-text="it.assigned_admin_name || it.assigned_admin_email"></span>
+          </p>
+        </template>
+
+        <template x-if="!it.scheduled_at && isSuper">
+          <div class="mt-3 flex flex-wrap items-center gap-2">
+            <select class="select w-auto text-sm" x-model="it._assignee">
+              <option value="">Assign to…</option>
+              <template x-for="a in admins" :key="a.id">
+                <option :value="a.id" x-text="a.full_name || a.email"></option>
+              </template>
+            </select>
+            <button class="btn-primary btn-sm" :disabled="!it._assignee" :data-loading="it._busy"
+                    @click="schedule(it)">Assign &amp; schedule</button>
+            <p class="text-xs text-slate-400">Auto-scheduled 24 hours from approval.</p>
+          </div>
+        </template>
+
+        <template x-if="!it.scheduled_at && !isSuper">
+          <p class="mt-2 text-xs text-slate-400">Awaiting Super Admin review.</p>
+        </template>
+      </div>
+    </template>
+  </div>
+
+  {% include "web/partials/_pagination.html" %}
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("onboardingCalls", () => ({
+      ...mk.collection({ endpoint: "/admin/onboarding-calls/" }),
+      isSuper: "{{ web_role }}" === "superadmin",
+      admins: [],
+      init() {
+        this.initCollection();
+        if (this.isSuper) {
+          api.get("/admin/users/", { params: { role: "admin", page_size: 200 }, silent: true })
+            .then((d) => (this.admins = d || [])).catch(() => {});
+        }
+      },
+      async schedule(it) {
+        if (!it._assignee) return;
+        it._busy = true;
+        try {
+          await api.post(`/admin/onboarding-calls/${it.teacher_id}/schedule/`, { assigned_admin_id: it._assignee });
+          window.toast("success", "Call scheduled.");
+          this.reload();
+        } catch (e) { window.toast("error", e.message || "Couldn't schedule the call."); }
+        finally { it._busy = false; }
+      },
+    }));
+  });
+</script>
+{% endblock %}

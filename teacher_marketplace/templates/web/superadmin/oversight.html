@@ -1,0 +1,122 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block content %}
+<div x-data="opsPage()" class="space-y-6">
+
+  {# ---- Health ---- #}
+  <div class="card card-pad">
+    <div class="flex items-center justify-between">
+      <p class="card-title">System health</p>
+      <button class="btn-ghost btn-sm" @click="loadHealth()" :data-loading="healthState === 'loading'">Recheck</button>
+    </div>
+    <div x-show="healthState === 'loading'" x-cloak class="mt-4 grid gap-3 sm:grid-cols-4">
+      <template x-for="i in 4" :key="i"><div class="skeleton h-16"></div></template>
+    </div>
+    <template x-if="healthState === 'ready'">
+      <div class="mt-4">
+        <div class="flex items-center gap-2">
+          <span class="h-2.5 w-2.5 rounded-full" :class="overallTone()"></span>
+          <span class="text-sm font-medium capitalize text-slate-800" x-text="health.overall === 'ok' ? 'All systems operational' : health.overall"></span>
+        </div>
+        <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <template x-for="(v, k) in health.checks" :key="k">
+            <div class="rounded-lg border border-slate-200 p-3">
+              <p class="text-xs font-medium uppercase tracking-wide text-slate-400" x-text="k"></p>
+              <p class="mt-1 flex items-center gap-1.5 text-sm font-semibold" :class="checkTone(v.status)">
+                <span class="h-1.5 w-1.5 rounded-full bg-current"></span><span x-text="fmt.titleCase(v.status)"></span>
+              </p>
+              <p class="mt-0.5 text-xs text-slate-400" x-show="v.detail || v.workers != null || v.unapplied"
+                 x-text="v.detail || (v.workers != null ? v.workers + ' worker(s)' : (v.unapplied ? v.unapplied + ' unapplied' : ''))"></p>
+            </div>
+          </template>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  {# ---- KPIs ---- #}
+  <div x-show="ovState === 'loading'" x-cloak class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <template x-for="i in 4" :key="i"><div class="skeleton h-28 rounded-xl"></div></template>
+  </div>
+  <template x-if="ovState === 'ready'">
+    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div class="stat"><p class="stat-label">Users</p><p class="stat-value" x-text="fmt.number(ov.users.total)"></p>
+        <p class="stat-sub"><span x-text="fmt.number(ov.users.active)"></span> active · <span x-text="fmt.number(ov.users.new_7d)"></span> new this week</p></div>
+      <div class="stat"><p class="stat-label">Roles</p><p class="stat-value text-base leading-tight">
+        <span x-text="fmt.number(ov.users.by_role.student)"></span> S ·
+        <span x-text="fmt.number(ov.users.by_role.teacher)"></span> T ·
+        <span x-text="fmt.number(ov.users.by_role.admin)"></span> A ·
+        <span x-text="fmt.number(ov.users.by_role.superadmin)"></span> SA</p><p class="stat-sub">by account type</p></div>
+      <div class="stat"><p class="stat-label">Revenue</p><p class="stat-value" x-text="ov.revenue ? fmt.money(ov.revenue.total) : '—'"></p>
+        <p class="stat-sub" x-show="ov.revenue" x-text="fmt.money(ov.revenue.last_30d) + ' last 30d'"></p></div>
+      <div class="stat"><p class="stat-label">Security events</p><p class="stat-value" x-text="fmt.number(ov.security_events_7d)"></p>
+        <p class="stat-sub"><span x-text="fmt.number(ov.pending_admin_logins)"></span> admin logins pending</p></div>
+    </div>
+  </template>
+
+  {# ---- Leads sparkline ---- #}
+  <template x-if="ovState === 'ready' && ov.leads && ov.leads.series_7d">
+    <div class="card card-pad">
+      <div class="flex items-center justify-between"><p class="card-title">Leads · last 7 days</p>
+        <span class="text-sm font-semibold text-slate-900" x-text="fmt.number(ov.leads.new_7d)"></span></div>
+      <div class="mt-4 flex h-24 items-end gap-1.5">
+        <template x-for="(d, i) in ov.leads.series_7d" :key="i">
+          <div class="group relative flex-1">
+            <div class="w-full rounded-t bg-brand-500/80 transition group-hover:bg-brand-600"
+                 :style="`height:${barHeight(d.count)}px`" :title="`${d.date}: ${d.count}`"></div>
+          </div>
+        </template>
+      </div>
+      <div class="mt-1.5 flex justify-between text-[10px] text-slate-400">
+        <span x-text="ov.leads.series_7d[0] && fmt.date(ov.leads.series_7d[0].date, {month:'short',day:'numeric'})"></span>
+        <span x-text="ov.leads.series_7d.at(-1) && fmt.date(ov.leads.series_7d.at(-1).date, {month:'short',day:'numeric'})"></span>
+      </div>
+    </div>
+  </template>
+
+  {# ---- Recent errors ---- #}
+  <div class="card">
+    <div class="card-header"><p class="card-title">Recent errors</p>
+      <a href="/super-admin/audit/" class="text-xs font-medium text-brand-600 hover:underline">Audit log</a></div>
+    <div class="card-pad">
+      <div x-show="errState === 'loading'" x-cloak class="space-y-2"><div class="skeleton h-4"></div><div class="skeleton h-4"></div></div>
+      <template x-if="errState === 'ready' && !errors.length">
+        <p class="py-6 text-center text-sm text-slate-500">No recent errors logged. 🎉</p>
+      </template>
+      <template x-if="errState === 'ready' && errors.length">
+        <pre class="max-h-80 overflow-auto rounded-lg bg-slate-900 p-3 text-[11px] leading-relaxed text-slate-200"><template x-for="(l, i) in errors" :key="i"><div x-text="l"></div></template></pre>
+      </template>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("opsPage", () => ({
+      healthState: "loading", health: {},
+      ovState: "loading", ov: {},
+      errState: "loading", errors: [],
+      _maxBar: 1,
+      init() { this.loadHealth(); this.loadOverview(); this.loadErrors(); },
+      loadHealth() {
+        this.healthState = "loading";
+        api.get("/ops/health/", { silent: true }).then((d) => { this.health = d || {}; this.healthState = "ready"; }).catch(() => (this.healthState = "ready"));
+      },
+      loadOverview() {
+        api.get("/ops/overview/", { silent: true }).then((d) => {
+          this.ov = d || {};
+          this._maxBar = Math.max(1, ...((d && d.leads && d.leads.series_7d) || []).map((x) => x.count));
+          this.ovState = "ready";
+        }).catch(() => (this.ovState = "ready"));
+      },
+      loadErrors() {
+        api.get("/ops/errors/", { params: { limit: 40 }, silent: true }).then((d) => { this.errors = (d && d.lines) || []; this.errState = "ready"; }).catch(() => (this.errState = "ready"));
+      },
+      barHeight(n) { return Math.max(3, Math.round((n / this._maxBar) * 88)); },
+      overallTone() { return { ok: "bg-emerald-500", degraded: "bg-amber-500", down: "bg-rose-500" }[this.health.overall] || "bg-slate-300"; },
+      checkTone(s) { return { ok: "text-emerald-600", "no-workers": "text-amber-600", pending: "text-amber-600", degraded: "text-amber-600", down: "text-rose-600" }[s] || "text-slate-500"; },
+    }));
+  });
+</script>
+{% endblock %}

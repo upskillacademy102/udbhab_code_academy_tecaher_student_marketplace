@@ -1,0 +1,6 @@
+{% extends "web/errors/_shell.html" %}
+{% load web_extras %}
+{% block err_code %}500{% endblock %}{% block err_code_txt %}500{% endblock %}
+{% block err_icon %}{% icon "alert-triangle" "h-7 w-7" %}{% endblock %}
+{% block err_heading %}Something went wrong on our end{% endblock %}
+{% block err_message %}We've been notified and are looking into it. Please try again in a moment.{% endblock %}

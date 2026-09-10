@@ -1,0 +1,277 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block breadcrumbs %}
+<a href="/student/teachers/" class="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800">
+  {% icon "arrow-left" "h-4 w-4" %} Back to search
+</a>
+{% endblock %}
+
+{% block content %}
+<div x-data="teacherDetail('{{ id }}')">
+
+  {% include "web/partials/_error.html" %}
+  <div x-show="state === 'missing'" x-cloak class="empty">
+    <div class="empty-icon">{% icon "user" "h-6 w-6" %}</div>
+    <p class="empty-title">Teacher not found</p>
+    <p class="empty-desc">This teacher profile may no longer be available.</p>
+    <a href="/student/teachers/" class="btn-secondary mt-4">Back to search</a>
+  </div>
+
+  <div x-show="state === 'loading'" x-cloak class="grid gap-6 lg:grid-cols-3">
+    <div class="lg:col-span-2 space-y-4"><div class="skeleton h-40"></div><div class="skeleton h-48"></div></div>
+    <div class="skeleton h-64"></div>
+  </div>
+
+  <div x-show="state === 'ready'" x-cloak class="grid animate-fade-in gap-6 lg:grid-cols-3">
+    <div class="space-y-6 lg:col-span-2">
+      {# Header #}
+      <div class="card card-pad">
+        <div class="flex flex-col gap-5 sm:flex-row sm:items-start">
+          <template x-if="t.profile_photo || (t.teacher && t.teacher.profile_photo)">
+            <img :src="t.profile_photo || t.teacher.profile_photo" alt="" class="h-28 w-28 shrink-0 rounded-2xl object-cover">
+          </template>
+          <template x-if="!(t.profile_photo || (t.teacher && t.teacher.profile_photo))">
+            <span class="avatar h-28 w-28 shrink-0 rounded-2xl text-3xl" x-text="fmt.initials(name())"></span>
+          </template>
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <h3 class="text-lg font-semibold text-slate-900" x-text="name()"></h3>
+                  <template x-if="t.is_fully_verified"><span class="badge badge-brand">{% icon "shield" "h-3 w-3" %}Fully verified</span></template>
+                  <template x-if="!t.is_fully_verified && t.is_verified"><span class="badge badge-green"><span class="badge-dot"></span>Verified</span></template>
+                </div>
+                <div class="mt-1.5">
+                  <template x-if="t.rating && Number(t.rating) > 0">
+                    <span class="rating">
+                      <span class="rating-stars">
+                        <template x-for="(filled, i) in fmt.stars(t.rating)" :key="i">
+                          <svg :class="{ 'is-empty': !filled }"><use :href="filled ? '#i-star-filled' : '#i-star'"></use></svg>
+                        </template>
+                      </span>
+                      <span class="rating-value" x-text="Number(t.rating).toFixed(1)"></span>
+                    </span>
+                  </template>
+                  <span class="rating-new" x-show="!(t.rating && Number(t.rating) > 0)">New teacher</span>
+                </div>
+              </div>
+              {# Price — bold and standalone, like a product page's price #}
+              <div class="shrink-0 text-right" x-show="t.hourly_rate">
+                <p class="text-xl font-bold text-slate-900" x-text="fmt.money(t.hourly_rate)"></p>
+                <p class="text-xs text-slate-400">per hour</p>
+              </div>
+            </div>
+            <p class="mt-2 text-sm text-slate-500" x-text="t.headline || fmt.list(t.subjects, 'name') || subjectsText()"></p>
+            <div class="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-600">
+              <span class="inline-flex items-center gap-1.5" x-show="mode()">{% icon "video" "h-4 w-4 text-slate-400" %}<span class="capitalize" x-text="mode()"></span></span>
+              <span class="inline-flex items-center gap-1.5" x-show="exp() != null">{% icon "clock" "h-4 w-4 text-slate-400" %}<span x-text="exp() + ' yrs experience'"></span></span>
+              <span class="inline-flex items-center gap-1.5" x-show="cityText()">{% icon "pin" "h-4 w-4 text-slate-400" %}<span x-text="cityText()"></span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# About #}
+      <template x-if="t.bio || (t.teacher && t.teacher.bio)">
+        <div class="card card-pad">
+          <p class="card-title">About</p>
+          <p class="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-600" x-text="t.bio || t.teacher.bio"></p>
+        </div>
+      </template>
+
+      {# Subjects & languages #}
+      <div class="card card-pad">
+        <p class="card-title">Subjects &amp; languages</p>
+        <div class="mt-3 space-y-3">
+          <div>
+            <p class="text-xs font-medium uppercase tracking-wide text-slate-400">Subjects</p>
+            <div class="mt-1.5 flex flex-wrap gap-1.5">
+              <template x-for="s in (t.subjects || [])" :key="s.id"><span class="chip" x-text="s.name"></span></template>
+              <template x-if="!(t.subjects || []).length && subjectsText()"><span class="chip" x-text="subjectsText()"></span></template>
+            </div>
+          </div>
+          <div x-show="(t.languages || []).length">
+            <p class="text-xs font-medium uppercase tracking-wide text-slate-400">Languages</p>
+            <div class="mt-1.5 flex flex-wrap gap-1.5">
+              <template x-for="l in (t.languages || [])" :key="l.id"><span class="chip" x-text="l.name"></span></template>
+            </div>
+          </div>
+          <div x-show="qual()">
+            <p class="text-xs font-medium uppercase tracking-wide text-slate-400">Qualification</p>
+            <p class="mt-1 text-sm text-slate-600" x-text="qual()"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# Sidebar: best slots + CTA #}
+    <div class="space-y-6 lg:sticky lg:top-20 lg:self-start">
+      <div class="card card-pad">
+        <p class="card-title">Check your schedule fit</p>
+        <p class="mt-1 text-xs text-slate-500">Enter a time you're free to see if it overlaps with this teacher's availability.</p>
+        <form class="mt-4 space-y-3" @submit.prevent="checkSlots()">
+          <div class="field">
+            <label class="label" for="d-day">Day</label>
+            <select id="d-day" class="select" x-model="slot.day">
+              <template x-for="(d,i) in ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']" :key="i">
+                <option :value="i+1" x-text="d"></option>
+              </template>
+            </select>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="field"><label class="label" for="d-start">From</label><input id="d-start" type="time" class="input" x-model="slot.start"></div>
+            <div class="field"><label class="label" for="d-end">To</label><input id="d-end" type="time" class="input" x-model="slot.end"></div>
+          </div>
+          <button type="submit" class="btn-secondary w-full" :data-loading="slotsLoading">Check availability</button>
+        </form>
+        <template x-if="slotsResult">
+          <div class="mt-3 rounded-lg border p-3 text-sm"
+               :class="slotsResult.overlap ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-slate-50 text-slate-600'">
+            <p x-text="slotsResult.message"></p>
+          </div>
+        </template>
+      </div>
+
+      <div class="card card-pad border-brand-100 bg-brand-50/40">
+        <p class="text-sm font-semibold text-slate-900">Ready to reach out?</p>
+        <p class="mt-1 text-xs text-slate-500">Create a requirement for this subject and we'll connect you with matching teachers, including this one.</p>
+        <a href="/student/requirements/" class="btn-primary mt-4 w-full">{% icon "clipboard" %} Post a requirement</a>
+      </div>
+
+      {# Reviews — only rendered if the review system is live #}
+      <template x-if="reviews !== null">
+        <div class="card card-pad">
+          <div class="flex items-center justify-between">
+            <p class="card-title">Reviews</p>
+            <span class="text-sm font-semibold text-slate-700" x-show="reviews.count" x-text="reviews.average_rating + ' ★'"></span>
+          </div>
+          <p class="mt-1 text-xs text-slate-500" x-show="!reviews.count">No reviews yet.</p>
+          <ul class="mt-3 space-y-3">
+            <template x-for="rv in (reviews.results || []).slice(0, 5)" :key="rv.id">
+              <li class="border-t border-slate-100 pt-3 first:border-0 first:pt-0">
+                <div class="flex items-center justify-between text-xs text-slate-500">
+                  <span x-text="rv.author_name"></span>
+                  <span x-text="rv.rating + ' ★'"></span>
+                </div>
+                <p class="mt-1 text-sm text-slate-600" x-text="rv.text" x-show="rv.text"></p>
+              </li>
+            </template>
+          </ul>
+        </div>
+      </template>
+
+      {# Safety: report / block #}
+      <div class="card card-pad">
+        <p class="card-title">Something wrong?</p>
+        <p class="mt-1 text-xs text-slate-500">Report this teacher or hide them from your results.</p>
+        <div class="mt-3 flex gap-2">
+          <button class="btn-secondary flex-1 text-xs" @click="openReport = true">Report</button>
+          <button class="btn-secondary flex-1 text-xs" :data-loading="blocking" @click="blockTeacher()" x-text="blocked ? 'Blocked' : 'Block'"></button>
+        </div>
+        <template x-if="openReport">
+          <div class="mt-3 space-y-2">
+            <select class="select text-sm" x-model="reportReason">
+              <option value="off_platform">Asked to pay / chat off-platform</option>
+              <option value="spam">Spam or scam</option>
+              <option value="abuse">Abusive behaviour</option>
+              <option value="impersonation">Fake profile</option>
+              <option value="no_show">Did not show up</option>
+              <option value="other">Other</option>
+            </select>
+            <textarea class="input w-full text-sm" rows="2" x-model="reportDetail" maxlength="1000" placeholder="Optional details"></textarea>
+            <div class="flex gap-2">
+              <button class="btn-primary flex-1 text-xs" :data-loading="reporting" @click="submitReport()">Send report</button>
+              <button class="btn-ghost text-xs" @click="openReport = false">Cancel</button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("teacherDetail", (id) => ({
+      id, t: {}, state: "loading", errorMsg: "",
+      slot: { day: 1, start: "", end: "" }, slotsLoading: false, slotsResult: null,
+      reviews: null,
+      openReport: false, reportReason: "off_platform", reportDetail: "", reporting: false,
+      blocking: false, blocked: false,
+      init() {
+        // 1) instant hydrate from the search result the user clicked
+        try {
+          const cached = sessionStorage.getItem("tp:" + id);
+          if (cached) { this.t = JSON.parse(cached); this.state = "ready"; }
+        } catch (e) {}
+        // 2) refresh the base teacher record from the API
+        api.get(`/teachers/${id}/`, { silent: true })
+          .then((data) => { this.t = { ...data, ...this.t, teacher: data }; this.state = "ready"; })
+          .catch((e) => { if (this.state !== "ready") this.state = e.status === 404 ? "missing" : "error"; this.errorMsg = e.message; });
+        // 3) reviews (only present if the review system is enabled)
+        api.get(`/teachers/${id}/reviews/`, { silent: true })
+          .then((data) => { this.reviews = data; })
+          .catch(() => { this.reviews = null; });
+      },
+      teacherUserId() {
+        return (this.t.teacher && this.t.teacher.user && this.t.teacher.user.id) || (this.t.user && this.t.user.id) || null;
+      },
+      async submitReport() {
+        const uid = this.teacherUserId();
+        if (!uid) { window.toast("error", "Couldn't identify this teacher."); return; }
+        this.reporting = true;
+        try {
+          await api.post("/safety/report/", { user_id: uid, reason: this.reportReason, detail: this.reportDetail });
+          window.toast("success", "Report sent — thank you.");
+          this.openReport = false; this.reportDetail = "";
+        } catch (e) { window.toast("error", e.message || "Could not send the report."); }
+        finally { this.reporting = false; }
+      },
+      async blockTeacher() {
+        const uid = this.teacherUserId();
+        if (!uid || this.blocked) return;
+        this.blocking = true;
+        try {
+          await api.post("/safety/blocks/", { user_id: uid });
+          this.blocked = true;
+          window.toast("success", "Teacher blocked. You won't see them in your results.");
+        } catch (e) { window.toast("error", e.message || "Could not block."); }
+        finally { this.blocking = false; }
+      },
+      reload() { this.init(); },
+      name() { return (this.t.teacher && this.t.teacher.user && this.t.teacher.user.full_name) || (this.t.user && this.t.user.full_name) || "Teacher"; },
+      mode() { return this.t.teaching_mode || ""; },
+      exp() { return this.t.years_of_experience ?? (this.t.teacher && this.t.teacher.experience_years) ?? this.t.experience_years ?? null; },
+      cityText() {
+        const parts = [];
+        const c = this.t.cities && this.t.cities[0] && this.t.cities[0].name;
+        if (c) return c;
+        const tt = this.t.teacher || this.t;
+        return [tt.city, tt.state].filter(Boolean).join(", ");
+      },
+      subjectsText() { return (this.t.teacher && this.t.teacher.subjects_taught) || this.t.subjects_taught || ""; },
+      qual() { const tt = this.t.teacher || this.t; return [tt.qualification_level, tt.qualification_detail].filter(Boolean).join(" — "); },
+      async checkSlots() {
+        if (!this.slot.start || !this.slot.end) { window.toast("warning", "Enter both a start and end time."); return; }
+        this.slotsLoading = true; this.slotsResult = null;
+        try {
+          const r = await api.get(`/teachers/${this.id}/best-slots/`, { params: {
+            day: this.slot.day, start_time: this.slot.start, end_time: this.slot.end,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          }, silent: true });
+          const best = r && (r.best_matching_time || r.best_slot || r.message);
+          const score = r && (r.time_score ?? r.match_percentage);
+          if (best || (score && score > 0)) {
+            this.slotsResult = { overlap: true, message: best ? `Good news — overlap found: ${typeof best === 'string' ? best : 'this time works'}.` : `Schedule match: ${Math.round(score)}%.` };
+          } else {
+            this.slotsResult = { overlap: false, message: "No overlap with this teacher's availability at that time. Try another slot." };
+          }
+        } catch (e) {
+          this.slotsResult = { overlap: false, message: e.status === 400 ? "Please pick a valid time range." : "Couldn't check availability right now." };
+        } finally { this.slotsLoading = false; }
+      },
+    }));
+  });
+</script>
+{% endblock %}

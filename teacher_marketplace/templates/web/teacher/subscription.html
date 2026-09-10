@@ -1,0 +1,120 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+{% block head_extra %}<script src="https://checkout.razorpay.com/v1/checkout.js"></script>{% endblock %}
+
+{% block content %}
+<div x-data="subscriptionPage()" class="space-y-6">
+
+  {# Current status #}
+  <div class="grid gap-4 sm:grid-cols-2">
+    <div class="card card-pad">
+      <p class="stat-label">Current plan</p>
+      <div x-show="curState === 'loading'" x-cloak class="skeleton mt-3 h-7 w-28"></div>
+      <template x-if="curState === 'ready'">
+        <div class="mt-2">
+          <p class="text-2xl font-semibold text-slate-900" x-text="(current && current.plan && current.plan.name) || 'Free'"></p>
+          <span class="badge badge-green mt-1 capitalize" x-text="(current && current.status) || 'active'"></span>
+          <p class="mt-1 text-xs text-slate-500" x-show="current && current.end_date" x-text="'Valid until ' + fmt.date(current.end_date)"></p>
+        </div>
+      </template>
+    </div>
+    <div class="card card-pad">
+      <p class="stat-label">Unlocks left this cycle</p>
+      <div x-show="quotaState === 'loading'" x-cloak class="skeleton mt-3 h-7 w-16"></div>
+      <template x-if="quotaState === 'ready'">
+        <div class="mt-2">
+          <p class="text-2xl font-semibold text-slate-900"><span x-text="quota.remaining_free_leads"></span> <span class="text-base font-normal text-slate-400">/ <span x-text="quota.total_free_leads"></span></span></p>
+          <div class="meter mt-3"><span :style="`width:${pct()}%`"></span></div>
+          <p class="mt-2 text-xs text-slate-500" x-text="resetLabel"></p>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  {# Plans #}
+  <div>
+    <h3 class="mb-3 text-sm font-semibold text-slate-900">Available plans</h3>
+    {% include "web/partials/_card_skeleton.html" %}
+    {% include "web/partials/_error.html" %}
+    <div x-show="state === 'ready'" x-cloak class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <template x-for="p in items" :key="p.id">
+        <div class="card card-pad flex flex-col" :class="isCurrent(p) && 'ring-2 ring-brand-500'">
+          <div class="flex items-start justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <p class="text-sm font-semibold text-slate-900" x-text="p.name"></p>
+              <span class="badge badge-brand" x-show="isCurrent(p)">Current</span>
+            </div>
+            <template x-if="p.discount_percent">
+              <span class="badge-featured shrink-0 px-3 py-1 text-sm" x-text="p.discount_percent + '% OFF'"></span>
+            </template>
+          </div>
+          <div class="mt-3 flex items-end gap-2">
+            <p class="text-3xl font-bold text-slate-900" x-text="Number(p.monthly_price) > 0 ? fmt.money(p.monthly_price) : 'Free'"></p>
+            <template x-if="p.compare_at_price"><p class="pb-1 text-sm text-slate-900 line-through decoration-rose-500 decoration-2" x-text="fmt.money(p.compare_at_price)"></p></template>
+          </div>
+          <p class="text-xs text-slate-500" x-show="Number(p.monthly_price) > 0">per month</p>
+          <ul class="mt-4 space-y-2 border-t border-slate-100 pt-3 text-sm text-slate-600">
+            {# free_leads is the TOTAL; base + bonus is only how it's advertised. #}
+            <li class="flex items-center gap-2">{% icon "check" "h-4 w-4 text-emerald-500" %}<span class="font-medium text-slate-800" x-text="`${p.free_leads} contact unlocks every 30 days`"></span></li>
+            <li class="flex items-start gap-2" x-show="Number(p.bonus_leads) > 0">
+              {% icon "check" "h-4 w-4 shrink-0 text-emerald-500" %}
+              <span x-text="`${p.base_leads} included + ${p.bonus_leads} bonus unlocks, every cycle`"></span>
+            </li>
+            <li class="flex items-center gap-2">{% icon "check" "h-4 w-4 text-emerald-500" %}<span>Can buy extra unlocks</span></li>
+            <li class="flex items-center gap-2" x-show="p.is_featured_listing">{% icon "check" "h-4 w-4 text-emerald-500" %}<span>Featured in search</span></li>
+            <li class="flex items-center gap-2" x-show="Number(p.lead_multiplier) > 1">{% icon "check" "h-4 w-4 text-emerald-500" %}<span x-text="`${p.lead_multiplier}× lead priority`"></span></li>
+          </ul>
+          <button class="btn-primary mt-4 w-full" x-show="!isCurrent(p)" @click="choose(p)" :data-loading="busy === p.id"
+                  x-text="Number(p.monthly_price) > 0 ? 'Upgrade' : 'Switch to Free'"></button>
+        </div>
+      </template>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("subscriptionPage", () => ({
+      ...mk.collection({ endpoint: "/subscriptions/plans/" }),
+      curState: "loading", current: null,
+      quotaState: "loading", quota: {},
+      busy: null,
+      init() {
+        this.initCollection();
+        api.get("/subscriptions/", { silent: true }).then((d) => { this.current = Array.isArray(d) ? d[0] : d; this.curState = "ready"; }).catch(() => (this.curState = "ready"));
+        api.get("/subscriptions/quota/", { silent: true }).then((q) => { this.quota = q || {}; this.quotaState = "ready"; }).catch(() => (this.quotaState = "ready"));
+      },
+      isCurrent(p) { return this.current && this.current.plan && this.current.plan.id === p.id; },
+      // Allowance resets on a rolling 30-day cycle, not a calendar month, so
+      // the honest label is a countdown rather than a month name.
+      get resetLabel() {
+        const d = Number(this.quota.days_until_reset ?? 0);
+        if (d <= 0) return "Resets today";
+        if (d === 1) return "Resets tomorrow";
+        return `Resets in ${d} days`;
+      },
+      pct() { const t = Number(this.quota.total_free_leads) || 0; return t ? Math.round(((Number(this.quota.remaining_free_leads) || 0) / t) * 100) : 0; },
+      async choose(p) {
+        if (Number(p.monthly_price) > 0) {
+          this.busy = p.id;
+          try {
+            const order = await api.post("/payments/create-order/", { subscription_plan_id: p.id });
+            window.toast("info", "Order created. Complete payment, then activate below once verified.");
+            // Full Razorpay flow available in tokens.html; keeping subscription activation explicit here.
+          } catch (e) { window.toast("error", e.message); }
+          finally { this.busy = null; }
+          return;
+        }
+        if (!(await window.confirmAction({ title: "Switch to the Free plan?", message: "Your current plan benefits will end.", confirmLabel: "Switch" }))) return;
+        this.busy = p.id;
+        try {
+          await api.post("/subscriptions/activate/", { plan_id: p.id });
+          window.toast("success", "Plan updated.");
+          this.init();
+        } catch (e) { window.toast("error", e.message); }
+        finally { this.busy = null; }
+      },
+    }));
+  });
+</script>
+{% endblock %}

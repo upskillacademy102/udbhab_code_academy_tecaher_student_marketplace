@@ -1,0 +1,210 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block content %}
+<div class="grid gap-6 lg:grid-cols-3">
+
+  {# ---- Account overview ---- #}
+  <div class="lg:col-span-1">
+    <div class="card card-pad">
+      <div class="flex items-center gap-3">
+        <span class="avatar h-14 w-14 text-lg">{{ web_user.get_full_name|initials }}</span>
+        <div class="min-w-0">
+          <p class="truncate text-sm font-semibold text-slate-900">{{ web_user.get_full_name|default:web_user.email }}</p>
+          <span class="badge badge-brand mt-1 capitalize">{{ web_role }}</span>
+        </div>
+      </div>
+      <dl class="mt-5 space-y-3 text-sm">
+        <div class="flex items-center justify-between gap-3">
+          <dt class="text-slate-500">Email</dt>
+          <dd class="flex items-center gap-1.5 font-medium text-slate-800">
+            {{ web_user.email }}
+            {% if web_user.is_email_verified %}<span class="badge badge-green">Verified</span>{% else %}<span class="badge badge-amber">Unverified</span>{% endif %}
+          </dd>
+        </div>
+        <div class="flex items-center justify-between gap-3">
+          <dt class="text-slate-500">Mobile</dt>
+          <dd class="flex items-center gap-1.5 font-medium text-slate-800">
+            {{ web_user.mobile|default:"—" }}
+            {% if web_user.mobile %}{% if web_user.is_mobile_verified %}<span class="badge badge-green">Verified</span>{% else %}<span class="badge badge-amber">Unverified</span>{% endif %}{% endif %}
+          </dd>
+        </div>
+        <div class="flex items-center justify-between gap-3">
+          <dt class="text-slate-500">Member since</dt>
+          <dd class="font-medium text-slate-800">{{ web_user.created_at|date:"M Y" }}</dd>
+        </div>
+      </dl>
+    </div>
+
+    {# ---- Verify contact details ---- #}
+    <div id="verify-contacts" class="card card-pad mt-6 scroll-mt-6" x-data="verifyContacts()" x-init="load()">
+      <p class="card-title">Verify contact details</p>
+      <p class="mt-1 text-sm text-slate-500">A verified email and mobile keep your account secure and, for teachers, help you get leads.</p>
+
+      <template x-for="ch in channels" :key="ch.key">
+        <div class="mt-4 border-t border-slate-100 pt-4 first:border-0 first:pt-0">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-sm font-medium text-slate-800" x-text="ch.label"></span>
+            <span class="badge" :class="ch.verified ? 'badge-green' : 'badge-amber'"
+                  x-text="ch.verified ? 'Verified' : 'Unverified'"></span>
+          </div>
+          <template x-if="!ch.verified">
+            <div class="mt-3 space-y-2">
+              <button class="btn-secondary btn-sm w-full" @click="sendCode(ch)"
+                      :data-loading="ch.sending" x-show="!ch.sent" x-text="'Send code to ' + ch.dest"></button>
+              <div x-show="ch.sent" x-cloak class="flex gap-2">
+                <input class="input" inputmode="numeric" maxlength="6" placeholder="6-digit code"
+                       x-model="ch.code" @keydown.enter="confirmCode(ch)">
+                <button class="btn-primary btn-sm shrink-0" @click="confirmCode(ch)" :data-loading="ch.confirming">Confirm</button>
+              </div>
+              <p class="field-error" x-show="ch.error" x-text="ch.error"></p>
+            </div>
+          </template>
+        </div>
+      </template>
+    </div>
+
+    <div class="card card-pad mt-6">
+      <p class="card-title">Session</p>
+      <p class="mt-1 text-sm text-slate-500">Only one account can be signed in at a time on this device.</p>
+      <button class="btn-secondary mt-4 w-full" @click="api.logout()">{% icon "logout" %} Log out</button>
+    </div>
+  </div>
+
+  {# ---- Change password ---- #}
+  <div class="lg:col-span-2">
+    <div class="card" x-data="changePassword()">
+      <div class="card-header"><p class="card-title">Change password</p></div>
+      <form class="card-pad space-y-4" @submit.prevent="submit()">
+        <div class="alert alert-error" x-show="nonField" x-cloak>{% icon "x-circle" %}<span x-text="nonField"></span></div>
+        <div class="alert alert-success" x-show="saved" x-cloak>{% icon "check-circle" %}<span>Your password has been updated.</span></div>
+
+        <div class="field">
+          <label class="label" for="old_password">Current password <span class="req">*</span></label>
+          <input id="old_password" type="password" autocomplete="current-password" class="input"
+                 x-model="model.old_password" :aria-invalid="hasError('old_password')" @input="clearError('old_password')">
+          <p class="field-error" x-show="hasError('old_password')" x-text="fieldError('old_password')"></p>
+        </div>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div class="field">
+            <label class="label" for="new_password">New password <span class="req">*</span></label>
+            <input id="new_password" type="password" autocomplete="new-password" class="input"
+                   x-model="model.new_password" :aria-invalid="hasError('new_password')" @input="clearError('new_password')">
+            <p class="field-error" x-show="hasError('new_password')" x-text="fieldError('new_password')"></p>
+            <p class="field-hint" x-show="!hasError('new_password')">At least 8 characters, with a mix of upper, lower, number and symbol.</p>
+          </div>
+          <div class="field">
+            <label class="label" for="new_password_confirm">Confirm new password <span class="req">*</span></label>
+            <input id="new_password_confirm" type="password" autocomplete="new-password" class="input"
+                   x-model="model.new_password_confirm" :aria-invalid="hasError('new_password_confirm')" @input="clearError('new_password_confirm')">
+            <p class="field-error" x-show="hasError('new_password_confirm')" x-text="fieldError('new_password_confirm')"></p>
+          </div>
+        </div>
+        <div class="flex justify-end">
+          <button type="submit" class="btn-primary" :data-loading="submitting">Update password</button>
+        </div>
+      </form>
+    </div>
+
+    {# ---- Change email / mobile ---- #}
+    <div class="card mt-6" x-data="changeContact()">
+      <div class="card-header"><p class="card-title">Change email or mobile</p></div>
+      <div class="card-pad space-y-5">
+        <p class="text-sm text-slate-500">We'll send a code to the new address to confirm you own it.</p>
+
+        <template x-for="f in fields" :key="f.key">
+          <div class="border-t border-slate-100 pt-4 first:border-0 first:pt-0">
+            <label class="label" x-text="f.label"></label>
+            <div class="flex gap-2" x-show="f.step === 'idle'">
+              <input class="input" :type="f.key === 'email' ? 'email' : 'text'" x-model="f.value" :placeholder="f.placeholder">
+              <input class="input max-w-[10rem]" type="password" x-model="f.password" placeholder="Current password">
+              <button class="btn-secondary btn-sm shrink-0" @click="request(f)" :data-loading="f.busy">Send code</button>
+            </div>
+            <div class="flex gap-2" x-show="f.step === 'code'" x-cloak>
+              <input class="input" inputmode="numeric" maxlength="6" x-model="f.code" placeholder="6-digit code" @keydown.enter="confirm(f)">
+              <button class="btn-primary btn-sm shrink-0" @click="confirm(f)" :data-loading="f.busy">Confirm</button>
+              <button class="btn-ghost btn-sm shrink-0" @click="f.step = 'idle'; f.code=''">Cancel</button>
+            </div>
+            <p class="field-error mt-1" x-show="f.error" x-text="f.error"></p>
+            <p class="field-hint mt-1" x-show="f.done" x-cloak x-text="f.done"></p>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("verifyContacts", () => ({
+      channels: [
+        { key: "email", label: "Email address", dest: "{{ web_user.email }}", verified: {{ web_user.is_email_verified|yesno:"true,false" }},
+          sent: false, sending: false, confirming: false, code: "", error: "" },
+        { key: "mobile", label: "Mobile number", dest: "{{ web_user.mobile|default:'' }}", verified: {{ web_user.is_mobile_verified|yesno:"true,false" }},
+          sent: false, sending: false, confirming: false, code: "", error: "" },
+      ].filter(c => c.key !== "mobile" || c.dest),
+      async load() {
+        try {
+          const s = await api.get("/verify/status/", { silent: true });
+          this.channels.forEach(c => { c.verified = c.key === "email" ? s.email_verified : s.mobile_verified; });
+        } catch (_) {}
+      },
+      path(ch, action) { return `/verify/${ch.key === "email" ? "email" : "mobile"}/${action}/`; },
+      async sendCode(ch) {
+        ch.error = ""; ch.sending = true;
+        try { await api.post(this.path(ch, "request")); ch.sent = true; window.toast("success", "Code sent."); }
+        catch (e) { ch.error = e.message || "Couldn't send the code."; }
+        finally { ch.sending = false; }
+      },
+      async confirmCode(ch) {
+        ch.error = ""; ch.confirming = true;
+        try {
+          await api.post(this.path(ch, "confirm"), { code: (ch.code || "").trim() });
+          ch.verified = true; ch.sent = false; ch.code = "";
+          window.toast("success", ch.label + " verified.");
+        } catch (e) { ch.error = e.message || "That code didn't work."; }
+        finally { ch.confirming = false; }
+      },
+    }));
+
+    Alpine.data("changeContact", () => ({
+      fields: [
+        { key: "email", label: "New email address", placeholder: "you@example.com", value: "", password: "", code: "", step: "idle", busy: false, error: "", done: "" },
+        { key: "mobile", label: "New mobile number", placeholder: "919812345678", value: "", password: "", code: "", step: "idle", busy: false, error: "", done: "" },
+      ],
+      base(f) { return f.key === "email" ? "/auth/change-email/" : "/auth/change-mobile/"; },
+      async request(f) {
+        f.error = ""; f.done = ""; f.busy = true;
+        try {
+          const body = f.key === "email"
+            ? { new_email: f.value.trim(), current_password: f.password }
+            : { new_mobile: f.value.trim(), current_password: f.password };
+          await api.post(this.base(f), body);
+          f.step = "code"; f.password = ""; window.toast("success", "Code sent to the new " + f.key + ".");
+        } catch (e) { f.error = e.message || "Couldn't start the change."; }
+        finally { f.busy = false; }
+      },
+      async confirm(f) {
+        f.error = ""; f.busy = true;
+        try {
+          const r = await api.post(this.base(f) + "confirm/", { code: (f.code || "").trim() });
+          f.step = "idle"; f.code = ""; f.value = "";
+          f.done = r && r.message ? "" : "";
+          window.toast("success", (r && r._meta && r._meta.message) || "Change confirmed.");
+        } catch (e) { f.error = e.message || "That code didn't work."; }
+        finally { f.busy = false; }
+      },
+    }));
+
+    Alpine.data("changePassword", () => ({
+      ...mk.apiForm({
+        endpoint: "/auth/change-password/",
+        method: "post",
+        initial: { old_password: "", new_password: "", new_password_confirm: "" },
+        successMessage: "Password updated.",
+        onSuccess(_, self) { self.model = { old_password: "", new_password: "", new_password_confirm: "" }; },
+      }),
+    }));
+  });
+</script>
+{% endblock %}

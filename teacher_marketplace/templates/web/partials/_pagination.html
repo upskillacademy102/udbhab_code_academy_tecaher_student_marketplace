@@ -1,0 +1,10 @@
+{# Requires the `collection` building block. #}
+<nav x-show="state === 'ready' && (hasPrev() || hasNext())" x-cloak
+     class="mt-5 flex items-center justify-between gap-3" aria-label="Pagination">
+  <p class="text-xs text-slate-500" x-text="rangeLabel()"></p>
+  <div class="flex items-center gap-2">
+    <button class="btn-secondary btn-sm" :disabled="!hasPrev()" @click="prev()">Previous</button>
+    <span class="text-xs text-slate-500" x-text="`Page ${page} of ${totalPages()}`"></span>
+    <button class="btn-secondary btn-sm" :disabled="!hasNext()" @click="next()">Next</button>
+  </div>
+</nav>

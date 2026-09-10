@@ -1,0 +1,194 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block breadcrumbs %}
+<a :href="listUrl" class="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"
+   x-data="{ listUrl: (location.pathname.startsWith('/super-admin/') ? '/super-admin/' : '/admin-portal/') + '{{ resource }}/' }">
+  {% icon "arrow-left" "h-4 w-4" %} Back to {{ resource }}
+</a>
+{% endblock %}
+
+{% block content %}
+<div x-data="personDetail('{{ resource }}', '{{ id }}')" class="mx-auto max-w-2xl">
+  <div x-show="state === 'loading'" x-cloak class="skeleton h-64"></div>
+  {% include "web/partials/_error.html" %}
+  <div x-show="state === 'missing'" x-cloak class="empty">
+    <div class="empty-icon">{% icon "user" "h-6 w-6" %}</div>
+    <p class="empty-title">Not found</p>
+  </div>
+
+  <template x-if="state === 'ready'">
+    <div class="space-y-6">
+      <div class="card card-pad">
+        <div class="flex items-center gap-4">
+          <span class="avatar h-16 w-16 text-lg" x-text="fmt.initials((obj.user && obj.user.full_name) || '')"></span>
+          <div class="min-w-0">
+            <h3 class="text-lg font-semibold text-slate-900" x-text="(obj.user && obj.user.full_name) || '—'"></h3>
+            <p class="text-sm text-slate-500" x-text="(obj.user && obj.user.email) || ''"></p>
+            <div class="mt-1.5 flex flex-wrap gap-1.5">
+              <span class="badge badge-slate capitalize" x-text="(obj.user && obj.user.role) || 'user'"></span>
+              <template x-if="obj.user && obj.user.is_email_verified"><span class="badge badge-green">Email verified</span></template>
+              <template x-if="obj.user && obj.user.is_active === false"><span class="badge badge-red">Inactive</span></template>
+              {% if resource == 'teachers' %}
+              <span class="badge" :class="verifBadge().cls" x-text="verifBadge().text"></span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card card-pad">
+        <p class="card-title">Details</p>
+        <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+          <div><dt class="text-xs uppercase tracking-wide text-slate-400">Mobile</dt><dd class="mt-0.5 font-medium text-slate-800" x-text="(obj.user && obj.user.mobile) || '—'"></dd></div>
+          <div><dt class="text-xs uppercase tracking-wide text-slate-400">Location</dt><dd class="mt-0.5 font-medium text-slate-800" x-text="[obj.city, obj.state, obj.country].filter(Boolean).join(', ') || '—'"></dd></div>
+          {% if resource == 'teachers' %}
+          <div><dt class="text-xs uppercase tracking-wide text-slate-400">Experience</dt><dd class="mt-0.5 font-medium text-slate-800" x-text="obj.experience_years != null ? obj.experience_years + ' years' : '—'"></dd></div>
+          <div><dt class="text-xs uppercase tracking-wide text-slate-400">Qualification</dt><dd class="mt-0.5 font-medium text-slate-800" x-text="[obj.qualification_level, obj.qualification_detail].filter(Boolean).join(' — ') || '—'"></dd></div>
+          {% else %}
+          <div><dt class="text-xs uppercase tracking-wide text-slate-400">Education</dt><dd class="mt-0.5 font-medium text-slate-800" x-text="[obj.education_level, obj.grade_or_year].filter(Boolean).join(' · ') || '—'"></dd></div>
+          {% endif %}
+          <div><dt class="text-xs uppercase tracking-wide text-slate-400">Joined</dt><dd class="mt-0.5 font-medium text-slate-800" x-text="fmt.date(obj.created_at)"></dd></div>
+        </dl>
+        <template x-if="obj.bio"><p class="mt-4 whitespace-pre-line border-t border-slate-100 pt-4 text-sm text-slate-600" x-text="obj.bio"></p></template>
+      </div>
+
+      {% if resource == 'teachers' %}
+      {# ---- Marketplace verification ---- #}
+      <div class="card card-pad">
+        <p class="card-title">Marketplace verification</p>
+
+        <template x-if="!mp">
+          <p class="mt-3 text-sm text-slate-500">This teacher hasn't created a marketplace profile yet, so there's nothing to verify. Students only see verified teachers.</p>
+        </template>
+
+        <template x-if="mp">
+          <div class="mt-3 space-y-4">
+            <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+              <div><dt class="text-xs uppercase tracking-wide text-slate-400">Headline</dt><dd class="mt-0.5 font-medium text-slate-800" x-text="mp.headline || '—'"></dd></div>
+              <div><dt class="text-xs uppercase tracking-wide text-slate-400">Mode · rate</dt><dd class="mt-0.5 font-medium text-slate-800" x-text="[fmt.titleCase(mp.teaching_mode), mp.hourly_rate ? fmt.money(mp.hourly_rate) + '/hr' : null].filter(Boolean).join(' · ') || '—'"></dd></div>
+              <div><dt class="text-xs uppercase tracking-wide text-slate-400">Subjects</dt><dd class="mt-0.5 font-medium text-slate-800" x-text="(mp.subjects || []).join(', ') || '—'"></dd></div>
+              <div><dt class="text-xs uppercase tracking-wide text-slate-400">Languages</dt><dd class="mt-0.5 font-medium text-slate-800" x-text="(mp.languages || []).join(', ') || '—'"></dd></div>
+              <div><dt class="text-xs uppercase tracking-wide text-slate-400">Cities</dt><dd class="mt-0.5 font-medium text-slate-800" x-text="(mp.cities || []).join(', ') || '—'"></dd></div>
+              <div><dt class="text-xs uppercase tracking-wide text-slate-400">Weekly slots</dt><dd class="mt-0.5 font-medium text-slate-800" x-text="mp.weekly_availability_count ?? 0"></dd></div>
+            </dl>
+
+            <div class="flex items-center gap-2 border-t border-slate-100 pt-4">
+              <span class="text-sm text-slate-500">Status:</span>
+              <span class="badge" :class="verifBadge().cls" x-text="verifBadge().text"></span>
+            </div>
+
+            <div class="flex flex-wrap gap-2">
+              <button class="btn-primary btn-sm" x-show="mp.verification_status !== 'verified'"
+                      @click="setVerification('verified')" :data-loading="saving">{% icon "check-circle" "h-4 w-4" %} Verify teacher</button>
+              <button class="btn-secondary btn-sm" x-show="mp.verification_status === 'verified'"
+                      @click="setVerification('pending')" :data-loading="saving">Revoke verification</button>
+              <button class="btn-ghost btn-sm text-rose-600 hover:bg-rose-50" x-show="mp.verification_status !== 'rejected'"
+                      @click="setVerification('rejected')" :data-loading="saving">Reject</button>
+            </div>
+            <p class="text-xs text-slate-400">Verifying makes this teacher visible in student search immediately.</p>
+          </div>
+        </template>
+      </div>
+
+      {# ---- Verification checklist ---- #}
+      <template x-if="mp && mp.verification_items">
+        <div class="card card-pad">
+          <p class="card-title">Verification checklist</p>
+          <ul class="mt-3 divide-y divide-slate-100">
+            <template x-for="it in mp.verification_items.filter((i) => i.weight > 0)" :key="it.key">
+              <li class="py-3">
+                <div class="flex items-center justify-between gap-3">
+                  <span class="text-sm font-medium text-slate-800" x-text="it.label"></span>
+                  <span class="badge" :class="it.status === 'verified' ? 'badge-green' : (it.status === 'rejected' ? 'badge-red' : (it.status === 'submitted' ? 'badge-amber' : 'badge-slate'))"
+                        x-text="it.status"></span>
+                </div>
+                <div class="mt-2 flex flex-wrap gap-1.5" x-show="it.evidence && it.evidence.length">
+                  <template x-for="url in (it.evidence || [])" :key="url">
+                    <a :href="url" target="_blank" rel="noopener">
+                      <img :src="url" class="h-16 w-16 rounded-md border border-slate-200 object-cover">
+                    </a>
+                  </template>
+                </div>
+                <p class="mt-1.5 text-xs text-slate-400" x-show="it.notes" x-text="it.notes"></p>
+                <div class="mt-2 flex flex-wrap gap-2" x-show="!it.is_auto">
+                  <button class="btn-secondary btn-sm" x-show="it.status !== 'verified'"
+                          @click="setItemStatus(it.key, 'verified')" :data-loading="itemBusy === it.key">Approve</button>
+                  <button class="btn-ghost btn-sm text-rose-600 hover:bg-rose-50" x-show="it.status !== 'rejected'"
+                          @click="setItemStatus(it.key, 'rejected')" :data-loading="itemBusy === it.key">Reject</button>
+                </div>
+              </li>
+            </template>
+          </ul>
+        </div>
+      </template>
+      {% endif %}
+    </div>
+  </template>
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("personDetail", (resource, id) => ({
+      ...mk.record({ endpoint: `/${resource}/${id}/` }),
+      _resource: resource,
+      _id: id,
+      mp: null,
+      saving: false,
+      itemBusy: null,
+
+      init() {
+        this.load();
+        if (resource === "teachers") {
+          api.get(`/admin/teacher-profiles/${id}/`, { silent: true })
+            .then((d) => (this.mp = d))
+            .catch(() => (this.mp = null));
+        }
+      },
+      verifBadge() {
+        const v = String((this.mp && this.mp.verification_status) || (this.obj && this.obj.verification_status) || "pending").toLowerCase();
+        if (v === "verified") return { cls: "badge-green", text: "Verified" };
+        if (v === "rejected") return { cls: "badge-red", text: "Rejected" };
+        return { cls: "badge-amber", text: "Pending verification" };
+      },
+      async setVerification(status) {
+        if (this.saving) return;
+        if (status !== "verified" && !(await window.confirmAction({
+          title: status === "rejected" ? "Reject this teacher?" : "Revoke verification?",
+          message: "They will stop appearing in student search.",
+          confirmLabel: status === "rejected" ? "Reject" : "Revoke",
+          danger: true,
+        }))) return;
+        this.saving = true;
+        try {
+          this.mp = await api.post(`/admin/teacher-profiles/${this._id}/verification/`, { status });
+          window.toast("success", status === "verified" ? "Teacher verified." : `Teacher marked ${status}.`);
+        } catch (e) {
+          window.toast("error", e.message);
+        } finally {
+          this.saving = false;
+        }
+      },
+      async setItemStatus(key, status) {
+        if (this.itemBusy) return;
+        if (status === "rejected" && !(await window.confirmAction({
+          title: "Reject this item?",
+          message: "The teacher will need to resubmit it.",
+          confirmLabel: "Reject",
+          danger: true,
+        }))) return;
+        this.itemBusy = key;
+        try {
+          const snap = await api.post(`/admin/teacher-profiles/${this._id}/verification-items/${key}/`, { status });
+          this.mp.verification_items = snap.items;
+          window.toast("success", `'${key}' marked ${status}.`);
+        } catch (e) {
+          window.toast("error", e.message);
+        } finally {
+          this.itemBusy = null;
+        }
+      },
+    }));
+  });
+</script>
+{% endblock %}

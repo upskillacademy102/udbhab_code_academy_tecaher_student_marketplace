@@ -1,0 +1,108 @@
+{% extends "web/base_public.html" %}
+{% load static web_extras %}
+
+{% block title %}{% if portal %}{{ portal|capfirst }} log in{% else %}Log in{% endif %} · {{ SITE_NAME }}{% endblock %}
+{% block head_extra %}<script defer src="{% static 'js/auth.js' %}"></script>{% endblock %}
+
+{% block panel %}
+{% if not portal %}
+  {# ---- Choose portal ---- #}
+  <div class="text-center">
+    <h1 class="text-2xl font-semibold tracking-tight text-slate-900">Log in to {{ SITE_NAME }}</h1>
+    <p class="mt-2 text-sm text-slate-500">Choose how you'd like to continue.</p>
+  </div>
+  <div class="mt-8 space-y-3">
+    <a href="/login/?as=student{% if next_url %}&next={{ next_url|urlencode }}{% endif %}"
+       class="group flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-brand-300 hover:bg-brand-50/40">
+      <span class="grid h-11 w-11 place-items-center rounded-lg bg-brand-50 text-brand-600">{% icon "user" %}</span>
+      <span class="flex-1">
+        <span class="block text-sm font-semibold text-slate-900">I'm a Student</span>
+        <span class="block text-xs text-slate-500">Search for teachers and manage your requirements</span>
+      </span>
+      {% icon "chevron-right" "h-5 w-5 text-slate-300 group-hover:text-brand-500" %}
+    </a>
+    <a href="/login/?as=teacher{% if next_url %}&next={{ next_url|urlencode }}{% endif %}"
+       class="group flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-brand-300 hover:bg-brand-50/40">
+      <span class="grid h-11 w-11 place-items-center rounded-lg bg-brand-50 text-brand-600">{% icon "academic" %}</span>
+      <span class="flex-1">
+        <span class="block text-sm font-semibold text-slate-900">I'm a Teacher</span>
+        <span class="block text-xs text-slate-500">Manage your profile, leads and wallet</span>
+      </span>
+      {% icon "chevron-right" "h-5 w-5 text-slate-300 group-hover:text-brand-500" %}
+    </a>
+  </div>
+
+  <p class="mt-8 text-center text-sm text-slate-500">
+    New to {{ SITE_NAME }}?
+    <a href="/register/{% if next_url %}?next={{ next_url|urlencode }}{% endif %}"
+       class="font-semibold text-brand-700 hover:text-brand-800">Create an account</a>
+  </p>
+
+{% else %}
+  {# ---- Credentials form ---- #}
+  <div x-data="loginForm('{{ portal }}', '{{ next_url|escapejs }}', '{{ prefill_email|escapejs }}', {{ just_registered|yesno:'true,false' }})">
+    <a href="/login/" class="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800">
+      {% icon "arrow-left" "h-4 w-4" %} Back
+    </a>
+    <h1 class="text-2xl font-semibold tracking-tight text-slate-900">
+      {% if portal == 'teacher' %}Teacher log in{% else %}Student log in{% endif %}
+    </h1>
+    <p class="mt-2 text-sm text-slate-500">Welcome back. Enter your details to continue.</p>
+
+    {% if session_expired %}
+      <div class="alert alert-warn mt-5" x-show="!error && !notice">
+        {% icon "clock" %}<span>Your session expired. Please log in again.</span>
+      </div>
+    {% endif %}
+
+    <div class="alert alert-error mt-5" x-show="error && !conflict" x-cloak>
+      {% icon "x-circle" %}<span x-text="error"></span>
+    </div>
+
+    <div class="alert alert-warn mt-5" x-show="conflict" x-cloak>
+      {% icon "alert-triangle" %}
+      <div class="space-y-2">
+        <p x-text="error"></p>
+        <button class="btn-secondary btn-sm" @click="logoutAndRetry()" :data-loading="submitting">
+          Log out the other account &amp; continue
+        </button>
+      </div>
+    </div>
+
+    <div class="alert alert-success mt-5" x-show="notice" x-cloak>
+      {% icon "check-circle" %}<span x-text="notice"></span>
+    </div>
+
+    <form class="mt-6 space-y-4" @submit.prevent="doLogin()">
+      <div class="field">
+        <label class="label" for="email">Email address</label>
+        <input id="email" name="email" type="email" autocomplete="email" required
+               class="input" placeholder="you@example.com" x-model="email">
+      </div>
+      <div class="field">
+        <div class="flex items-center justify-between">
+          <label class="label" for="password">Password</label>
+        </div>
+        <div class="relative">
+          <input id="password" name="password" required autocomplete="current-password"
+                 :type="showPw ? 'text' : 'password'" class="input pr-10" placeholder="••••••••" x-model="password">
+          <button type="button" class="absolute inset-y-0 right-0 grid w-10 place-items-center text-slate-400 hover:text-slate-600"
+                  @click="showPw = !showPw" :aria-label="showPw ? 'Hide password' : 'Show password'">
+            {% icon "eye" "h-4 w-4" %}
+          </button>
+        </div>
+      </div>
+      <button type="submit" class="btn-primary btn-lg w-full" :data-loading="submitting">Log in</button>
+    </form>
+
+    <p class="mt-6 text-center text-sm text-slate-500">
+      New to {{ SITE_NAME }}?
+      <a :href="'/register/?as=' + portal + (nextUrl ? '&next=' + encodeURIComponent(nextUrl) : '')"
+         class="font-semibold text-brand-700 hover:text-brand-800">Create an account</a>
+    </p>
+    <p class="mt-3 text-center text-xs text-slate-400">
+      Protected by session security. One account can be active at a time.
+    </p>
+  </div>
+{% endif %}
+{% endblock %}

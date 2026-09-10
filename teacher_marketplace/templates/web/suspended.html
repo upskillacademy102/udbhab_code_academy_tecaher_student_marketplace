@@ -1,0 +1,167 @@
+{% extends "web/base.html" %}
+{% load web_extras %}
+
+{% block title %}Account under review · {{ SITE_NAME }}{% endblock %}
+
+{% block body %}
+<div class="grid min-h-full place-items-center px-4 py-12"
+     x-data="suspensionAppeal({
+       enabled: {{ appeals_enabled|yesno:'true,false' }},
+       support: '{{ support_email|escapejs }}',
+       email: '{{ web_user.email|escapejs }}',
+       home: '{{ web_home }}'
+     })"
+     x-init="load()">
+  <div class="w-full max-w-lg">
+
+    <a href="/" class="mb-8 flex items-center justify-center gap-2.5">
+      <span class="grid h-9 w-9 place-items-center rounded-lg bg-brand-600 text-base font-bold text-white">{{ SITE_NAME|first }}</span>
+      <span class="text-lg font-semibold tracking-tight text-slate-900">{{ SITE_NAME }}</span>
+    </a>
+
+    {# ---- checking ---- #}
+    <div x-show="state === 'loading'" class="card card-pad text-center text-sm text-slate-500">
+      Checking your account…
+    </div>
+
+    {# ---- not restricted ---- #}
+    <div x-show="state === 'clear'" x-cloak class="card card-pad text-center">
+      <div class="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-2xl bg-emerald-50 text-emerald-600">
+        {% icon "check" "h-6 w-6" %}
+      </div>
+      <h1 class="text-xl font-semibold text-slate-900">Your account is active</h1>
+      <p class="mt-2 text-sm text-slate-500">There are no restrictions on your account right now.</p>
+      <a :href="home" class="btn-primary mt-6 inline-flex">Go to your dashboard</a>
+    </div>
+
+    {# ---- restricted ---- #}
+    <div x-show="state === 'suspended'" x-cloak class="card card-pad">
+      <div class="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-2xl bg-amber-50 text-amber-600">
+        {% icon "lock" "h-6 w-6" %}
+      </div>
+      <h1 class="text-center text-xl font-semibold text-slate-900">Your account is under review</h1>
+      <p class="mt-2 text-center text-sm text-slate-500">
+        Access has been temporarily limited while our team reviews recent activity.
+        If you think this is a mistake, ask us to take another look.
+      </p>
+
+      {# existing appeal #}
+      <template x-if="appeal">
+        <div class="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <p class="text-sm font-medium text-slate-900">
+            Appeal <span x-text="appeal.status_label"></span>
+          </p>
+          <p class="mt-1 text-xs text-slate-500" x-text="'Submitted ' + fmt.dateTime(appeal.submitted_at)"></p>
+          <p class="mt-2 whitespace-pre-line text-sm text-slate-600" x-text="appeal.message"></p>
+          <template x-if="appeal.decision_note">
+            <p class="mt-3 border-t border-slate-200 pt-3 text-sm text-slate-600">
+              <span class="font-medium text-slate-800">Our response:</span>
+              <span x-text="appeal.decision_note"></span>
+            </p>
+          </template>
+          <div class="mt-3 flex items-center gap-3">
+            <button x-show="appeal.is_open" @click="withdraw()" :data-loading="busy"
+                    class="btn-ghost btn-sm text-rose-600">Withdraw appeal</button>
+            <a x-show="appeal.status === 'granted'" :href="home" class="btn-primary btn-sm">Go to your dashboard</a>
+          </div>
+        </div>
+      </template>
+
+      {# appeal form #}
+      <template x-if="canAppeal">
+        <form class="mt-6 space-y-4" @submit.prevent="submit()">
+          <div class="field">
+            <label class="label" for="msg">Tell us what happened</label>
+            <textarea id="msg" x-model="message" rows="5" required minlength="20" maxlength="4000"
+                      class="input" placeholder="Explain why you believe your account should be restored…"></textarea>
+            <p class="mt-1 text-xs text-slate-400"><span x-text="message.length"></span> / 4000</p>
+          </div>
+          <div class="field">
+            <label class="label" for="cemail">Contact email <span class="text-slate-400">(optional)</span></label>
+            <input id="cemail" type="email" x-model="contactEmail" class="input" :placeholder="defaultEmail">
+          </div>
+          <div class="alert alert-error" x-show="error" x-cloak><span x-text="error"></span></div>
+          <button type="submit" class="btn-primary w-full" :data-loading="busy">Submit appeal</button>
+        </form>
+      </template>
+
+      {# email-only fallback #}
+      <template x-if="!appeal && !canAppeal">
+        <div class="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+          <p x-show="!enabled">To appeal, email us from your account address with a short explanation:</p>
+          <p x-show="enabled">You can't file another appeal right now.</p>
+          <a x-show="support" :href="mailtoUrl"
+             class="mt-2 inline-flex font-medium text-brand-700 hover:text-brand-800" x-text="support"></a>
+        </div>
+      </template>
+
+      <div class="mt-6 border-t border-slate-100 pt-4 text-center">
+        <button @click="api.logout()" class="text-sm font-medium text-slate-500 hover:text-slate-800">Log out</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("suspensionAppeal", (opts) => ({
+      state: "loading",
+      enabled: !!opts.enabled,
+      support: opts.support || "",
+      defaultEmail: opts.email || "",
+      home: opts.home || "/",
+      appeal: null,
+      canAppeal: false,
+      message: "",
+      contactEmail: "",
+      busy: false,
+      error: "",
+      get mailtoUrl() {
+        const subject = encodeURIComponent("Account suspension appeal — " + this.defaultEmail);
+        return "mailto:" + this.support + "?subject=" + subject;
+      },
+      apply(d) {
+        d = d || {};
+        this.appeal = d.appeal || null;
+        this.canAppeal = !!d.can_appeal;
+        this.enabled = !!d.appeals_enabled;
+        if (d.support_email) this.support = d.support_email;
+        this.state = d.suspended ? "suspended" : "clear";
+      },
+      async load() {
+        try {
+          this.apply(await api.get("/appeals/suspension/", { silent: true }));
+        } catch (_) {
+          this.state = "suspended"; // fail safe — still show the page
+        }
+      },
+      async submit() {
+        this.error = "";
+        this.busy = true;
+        try {
+          const d = await api.post("/appeals/suspension/",
+            { message: this.message, contact_email: this.contactEmail || undefined },
+            { silent: true });
+          this.apply(d);
+          window.toast("success", "Appeal submitted.");
+        } catch (e) {
+          this.error = (e.fieldErrors && Object.values(e.fieldErrors)[0]) || e.message || "Could not submit your appeal.";
+        } finally {
+          this.busy = false;
+        }
+      },
+      async withdraw() {
+        this.busy = true;
+        try {
+          this.apply(await api.post("/appeals/suspension/withdraw/", {}, { silent: true }));
+          window.toast("success", "Appeal withdrawn.");
+        } catch (e) {
+          window.toast("error", e.message || "Could not withdraw the appeal.");
+        } finally {
+          this.busy = false;
+        }
+      },
+    }));
+  });
+</script>
+{% endblock %}

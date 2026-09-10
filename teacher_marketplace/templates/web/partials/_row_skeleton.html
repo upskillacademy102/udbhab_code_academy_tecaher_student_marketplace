@@ -1,0 +1,13 @@
+{# Table/list loading skeleton. Requires an Alpine scope with `state`. #}
+<div x-show="state === 'loading'" x-cloak class="table-wrap">
+  <div class="divide-y divide-slate-100">
+    <template x-for="i in 8" :key="i">
+      <div class="flex items-center gap-4 px-4 py-3.5">
+        <div class="skeleton h-8 w-8 rounded-full"></div>
+        <div class="skeleton h-3.5 w-40"></div>
+        <div class="skeleton hidden h-3 w-28 sm:block"></div>
+        <div class="ml-auto skeleton h-3 w-16"></div>
+      </div>
+    </template>
+  </div>
+</div>

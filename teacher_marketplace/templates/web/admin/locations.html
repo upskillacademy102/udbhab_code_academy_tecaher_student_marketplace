@@ -1,0 +1,18 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block content %}
+<div x-data="{ tab: 'countries' }">
+  <div class="mb-5 flex gap-1 rounded-lg bg-slate-100 p-1" role="tablist">
+    <template x-for="t in ['countries','states','cities']" :key="t">
+      <button class="flex-1 rounded-md px-3 py-1.5 text-sm font-medium capitalize transition"
+              :class="tab === t ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-700'"
+              @click="tab = t" role="tab" :aria-selected="tab === t" x-text="t"></button>
+    </template>
+  </div>
+
+  <div x-show="tab === 'countries'"><div x-data="resourceManager('countries')">{% include "web/admin/_resource_body.html" %}</div></div>
+  <div x-show="tab === 'states'" x-cloak><div x-data="resourceManager('states')">{% include "web/admin/_resource_body.html" %}</div></div>
+  <div x-show="tab === 'cities'" x-cloak><div x-data="resourceManager('cities')">{% include "web/admin/_resource_body.html" %}</div></div>
+</div>
+{% endblock %}

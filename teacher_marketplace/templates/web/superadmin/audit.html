@@ -1,0 +1,71 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block content %}
+<div x-data="auditLog()">
+  <div class="mb-4 flex flex-wrap items-center gap-3">
+    <select class="select w-auto" @change="setParam('category', $event.target.value)" aria-label="Category">
+      <option value="">All categories</option>
+      <option value="auth">Authentication</option>
+      <option value="admin_login">Admin login</option>
+      <option value="impersonation">Impersonation</option>
+      <option value="user">User management</option>
+      <option value="security">Security</option>
+    </select>
+    <select class="select w-auto" @change="setParam('status', $event.target.value)" aria-label="Status">
+      <option value="">Any outcome</option><option value="success">Success</option><option value="failure">Failure</option><option value="pending">Pending</option>
+    </select>
+    <div class="relative w-full max-w-xs">
+      <span class="pointer-events-none absolute inset-y-0 left-3 grid place-items-center text-slate-400">{% icon "search" "h-4 w-4" %}</span>
+      <input class="input pl-9" placeholder="Search actor or target…" x-model="q" aria-label="Search">
+    </div>
+    <p class="ml-auto text-sm text-slate-500" x-show="state === 'ready'" x-text="rangeLabel()"></p>
+  </div>
+
+  {% include "web/partials/_row_skeleton.html" %}
+  {% include "web/partials/_error.html" %}
+
+  <div x-show="state === 'empty'" x-cloak class="empty">
+    <div class="empty-icon">{% icon "list" "h-6 w-6" %}</div>
+    <p class="empty-title">No matching events</p>
+    <p class="empty-desc">Adjust the filters above.</p>
+  </div>
+
+  <ol x-show="state === 'ready'" x-cloak class="relative space-y-1 border-l border-slate-200 pl-5">
+    <template x-for="e in items" :key="e.id">
+      <li class="relative py-3">
+        <span class="absolute -left-[26px] top-4 grid h-4 w-4 place-items-center rounded-full ring-4 ring-white"
+              :class="dot(e)"></span>
+        <div class="flex flex-wrap items-baseline gap-x-2">
+          <span class="text-sm font-medium text-slate-900" x-text="fmt.titleCase(e.action.replace(/\./g, ' '))"></span>
+          <span class="badge" :class="catTone(e.category)" x-text="fmt.titleCase(e.category)"></span>
+          <span class="text-xs text-slate-400" x-text="fmt.dateTime(e.created_at)"></span>
+        </div>
+        <p class="mt-0.5 text-sm text-slate-600" x-text="e.message || (e.actor_name + ' → ' + (e.target_repr || e.target_type))"></p>
+        <p class="mt-0.5 text-xs text-slate-400">
+          <span x-text="e.actor_name"></span>
+          <template x-if="e.ip_address"><span x-text="` · ${e.ip_address}`"></span></template>
+        </p>
+      </li>
+    </template>
+  </ol>
+
+  {% include "web/partials/_pagination.html" %}
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("auditLog", () => ({
+      ...mk.collection({ endpoint: "/ops/events/" }),
+      q: "",
+      init() { this.initCollection(); this.$watch("q", window.debounce(() => this.setParam("search", this.q), 350)); },
+      catTone(c) { return { auth: "badge-slate", admin_login: "badge-sky", impersonation: "badge-brand", user: "badge-amber", security: "badge-red", ops: "badge-slate" }[c] || "badge-slate"; },
+      dot(e) {
+        if (e.status === "failure") return "bg-rose-500";
+        if (e.category === "impersonation" || e.category === "security") return "bg-brand-500";
+        return "bg-slate-300";
+      },
+    }));
+  });
+</script>
+{% endblock %}

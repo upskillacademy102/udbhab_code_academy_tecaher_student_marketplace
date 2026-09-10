@@ -1,0 +1,137 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block breadcrumbs %}
+<a href="/teacher/leads/" class="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800">
+  {% icon "arrow-left" "h-4 w-4" %} All leads
+</a>
+{% endblock %}
+
+{% block content %}
+{% include "web/partials/_unlock_allowance.html" %}
+
+<div x-data="leadDetail('{{ id }}')" class="grid gap-6 lg:grid-cols-3">
+  <div class="lg:col-span-2 space-y-6">
+    <div x-show="state === 'loading'" x-cloak class="skeleton h-64"></div>
+    {% include "web/partials/_error.html" %}
+    <div x-show="state === 'missing'" x-cloak class="empty">
+      <div class="empty-icon">{% icon "inbox" "h-6 w-6" %}</div>
+      <p class="empty-title">Lead not found</p><a href="/teacher/leads/" class="btn-secondary mt-4">Back to leads</a>
+    </div>
+
+    <template x-if="state === 'ready'">
+      <div class="card card-pad">
+        <div class="flex items-center justify-between">
+          <h3 class="text-lg font-semibold text-slate-900" x-text="(req().subject && req().subject.name) || 'Lead'"></h3>
+          <span class="badge" :class="obj.is_viewed ? 'badge-slate' : 'badge-brand'" x-text="obj.is_viewed ? 'Viewed' : 'New'"></span>
+        </div>
+        <p class="mt-1 text-xs text-slate-500" x-text="'Received ' + fmt.dateTime(obj.created_at)"></p>
+        <dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+          <div><dt class="text-xs uppercase tracking-wide text-slate-400">Mode</dt><dd class="mt-0.5 font-medium capitalize text-slate-800" x-text="req().teaching_mode || '—'"></dd></div>
+          <div><dt class="text-xs uppercase tracking-wide text-slate-400">Class</dt><dd class="mt-0.5 font-medium text-slate-800" x-text="req().student_class || '—'"></dd></div>
+          <div><dt class="text-xs uppercase tracking-wide text-slate-400">Budget</dt><dd class="mt-0.5 font-medium text-slate-800" x-text="req().budget_min || req().budget_max ? `${fmt.money(req().budget_min)} – ${fmt.money(req().budget_max)}` : 'Any'"></dd></div>
+          <div><dt class="text-xs uppercase tracking-wide text-slate-400">Language</dt><dd class="mt-0.5 font-medium text-slate-800" x-text="(req().preferred_language && req().preferred_language.name) || 'Any'"></dd></div>
+          <div><dt class="text-xs uppercase tracking-wide text-slate-400">Location</dt><dd class="mt-0.5 font-medium text-slate-800" x-text="(req().city && req().city.name) || '—'"></dd></div>
+          <div><dt class="text-xs uppercase tracking-wide text-slate-400">Timing</dt><dd class="mt-0.5 font-medium text-slate-800" x-text="req().preferred_timing || '—'"></dd></div>
+        </dl>
+        <template x-if="req().description">
+          <p class="mt-4 whitespace-pre-line border-t border-slate-100 pt-4 text-sm text-slate-600" x-text="req().description"></p>
+        </template>
+      </div>
+    </template>
+  </div>
+
+  {# Contact / unlock #}
+  <div class="space-y-6">
+    <template x-if="state === 'ready'">
+      <div class="card card-pad">
+        <div class="flex items-center gap-2">
+          {% icon "user" "h-4 w-4 text-slate-400" %}<p class="card-title">Student contact</p>
+        </div>
+        <template x-if="obj.contact_unlocked">
+          <dl class="mt-3 space-y-2 text-sm">
+            <div><dt class="text-xs text-slate-400">Name</dt><dd class="font-medium text-slate-900" x-text="contact().student_name"></dd></div>
+            <div><dt class="text-xs text-slate-400">Phone</dt><dd class="font-medium text-slate-900" x-text="contact().phone"></dd></div>
+            <div><dt class="text-xs text-slate-400">Email</dt><dd class="font-medium text-slate-900 break-all" x-text="contact().email"></dd></div>
+          </dl>
+        </template>
+        <template x-if="!obj.contact_unlocked">
+          <div class="mt-3">
+            <div class="space-y-2 rounded-lg bg-slate-50 p-3 text-sm text-slate-400">
+              <p class="flex items-center gap-2">{% icon "lock" "h-4 w-4" %} Name, phone and email are hidden</p>
+            </div>
+            <button class="btn-primary mt-4 w-full" @click="unlock()" :data-loading="unlocking">Unlock contact details</button>
+            <p class="mt-2 text-center text-xs text-slate-500">Costs 1 unlock — taken from your plan allowance first, then any extra unlocks.</p>
+          </div>
+        </template>
+      </div>
+    </template>
+
+    {# Lead-quality feedback — required for every unlocked lead #}
+    <template x-if="state === 'ready' && obj.contact_unlocked">
+      <div class="card card-pad" :class="!rated && 'border border-amber-200 bg-amber-50'">
+        <div class="flex items-center gap-2 text-slate-500">
+          {% icon "alert-triangle" "h-4 w-4" %}
+          <p class="card-title">Rate this lead<span x-show="!rated" class="text-amber-700"> · needed</span></p>
+        </div>
+        <template x-if="!rated">
+          <div class="mt-3 space-y-3">
+            <p class="text-xs text-slate-500">Was this a genuine enquiry, or a fake one? Every teacher is asked to rate every lead they unlock — it's how fake enquiries get caught, and unreachable or fake leads can be refunded.</p>
+            <div class="grid grid-cols-3 gap-2">
+              <button class="btn-secondary text-xs" :data-loading="rating" @click="rate('genuine')">Genuine</button>
+              <button class="btn-secondary text-xs" :data-loading="rating" @click="rate('unreachable')">Unreachable</button>
+              <button class="btn-danger text-xs" :data-loading="rating" @click="rate('fake')">Fake</button>
+            </div>
+            <textarea x-model="rateNote" rows="2" maxlength="500" placeholder="Optional note for our review team" class="input w-full text-sm"></textarea>
+          </div>
+        </template>
+        <template x-if="rated">
+          <p class="mt-3 flex items-center gap-2 text-sm text-emerald-600">
+            {% icon "check" "h-4 w-4" %} Thanks — you rated this lead
+            <span class="font-semibold capitalize" x-text="ratedVerdict"></span>.
+          </p>
+        </template>
+      </div>
+    </template>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("leadDetail", (id) => ({
+      ...mk.record({ endpoint: `/leads/${id}/` }),
+      _id: id, unlocking: false, rating: false, _justRated: null, rateNote: "",
+      req() { return this.obj && this.obj.student_requirement || {}; },
+      contact() { return this.obj && this.obj.masked_contact || {}; },
+      // Rated already (from a prior visit, via obj.my_rating) or just now.
+      get rated() { return !!(this._justRated || (this.obj && this.obj.my_rating)); },
+      get ratedVerdict() { return this._justRated || (this.obj && this.obj.my_rating) || ""; },
+      async rate(verdict) {
+        this.rating = true;
+        try {
+          await api.post(`/leads/${this._id}/rate/`, { verdict, note: this.rateNote });
+          this._justRated = verdict;
+          window.toast("success", "Thanks — your feedback helps keep leads honest.");
+        } catch (e) {
+          window.toast("error", e.message || "Could not record your rating.");
+        } finally { this.rating = false; }
+      },
+      async unlock() {
+        if (!(await window.confirmAction({ title: "Unlock this lead?", message: "This uses 1 unlock from your plan allowance, or an extra unlock if your allowance is used up.", confirmLabel: "Unlock" }))) return;
+        this.unlocking = true;
+        try {
+          await api.post("/leads/unlock/", { lead_id: this._id });
+          window.toast("success", "Contact details unlocked.");
+          this.load();
+          if (window.Alpine.store("badges")) window.Alpine.store("badges").refresh();
+        } catch (e) {
+          // The API already explains the way out (reset date, upgrade, top-up)
+          // in the UNLOCK_ALLOWANCE_EXHAUSTED detail - surface it verbatim
+          // rather than inventing a second, vaguer message.
+          window.toast("error", e.status === 400 || e.status === 402 ? (e.message || "You have no unlocks left this cycle.") : e.message);
+        } finally { this.unlocking = false; }
+      },
+    }));
+  });
+</script>
+{% endblock %}

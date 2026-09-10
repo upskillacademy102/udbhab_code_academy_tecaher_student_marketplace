@@ -1,0 +1,275 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block page_actions %}
+<button class="btn-primary" @click="$dispatch('req-new')">{% icon "plus" %} New requirement</button>
+{% endblock %}
+
+{% block content %}
+<div x-data="requirementsPage()">
+  {% include "web/partials/_row_skeleton.html" %}
+  {% include "web/partials/_error.html" %}
+
+  <div x-show="state === 'empty'" x-cloak class="empty">
+    <div class="empty-icon">{% icon "clipboard" "h-6 w-6" %}</div>
+    <p class="empty-title">No requirements yet</p>
+    <p class="empty-desc">Post what you're looking for — subject, budget, mode and the exact times you're free — and we'll match you with teachers.</p>
+    <button class="btn-primary mt-4" @click="openForm()">{% icon "plus" %} Create your first requirement</button>
+  </div>
+
+  <div x-show="state === 'ready'" x-cloak class="grid gap-4 sm:grid-cols-2">
+    <template x-for="r in items" :key="r.id">
+      <div class="card card-hover card-pad">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <p class="truncate text-sm font-semibold text-slate-900" x-text="(r.subject && r.subject.name) || 'Subject'"></p>
+            <p class="mt-0.5 text-xs text-slate-500" x-text="[fmt.titleCase(r.teaching_mode), r.student_class].filter(Boolean).join(' · ')"></p>
+          </div>
+          <span class="badge shrink-0" :class="r.status === 'open' ? 'badge-green' : 'badge-slate'" x-text="fmt.titleCase(r.status)"></span>
+        </div>
+        <dl class="mt-3 grid grid-cols-2 gap-2 text-xs">
+          <div><dt class="text-slate-400">Budget</dt><dd class="font-medium text-slate-700" x-text="r.budget_min || r.budget_max ? `${fmt.money(r.budget_min)}–${fmt.money(r.budget_max)}` : 'Any'"></dd></div>
+          <div><dt class="text-slate-400">Language</dt><dd class="font-medium text-slate-700" x-text="(r.preferred_language && r.preferred_language.name) || 'Any'"></dd></div>
+          <div><dt class="text-slate-400">Location</dt><dd class="font-medium text-slate-700" x-text="(r.city && r.city.name) || '—'"></dd></div>
+          <div><dt class="text-slate-400">Times</dt><dd class="font-medium text-slate-700" x-text="scheduleSummary(r)"></dd></div>
+        </dl>
+        <p class="mt-2 text-[11px] text-slate-400" x-show="r.lead_distribution_status && r.lead_distribution_status !== 'completed'"
+           x-text="r.lead_distribution_status === 'failed' ? 'Matching failed — edit and resave to retry.' : 'Matching you with teachers…'"></p>
+        <div class="mt-4 flex gap-2">
+          <a :href="`/student/requirements/${r.id}/`" class="btn-secondary btn-sm flex-1">Manage</a>
+          <button class="btn-ghost btn-sm text-rose-600 hover:bg-rose-50" @click="remove(r)" aria-label="Withdraw requirement">{% icon "trash" "h-4 w-4" %}</button>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  {% include "web/partials/_pagination.html" %}
+
+  {# ---- Create drawer ---- #}
+  <div x-show="formOpen" x-cloak @keydown.escape.window="formOpen = false">
+    <div class="dialog-backdrop animate-fade-in" @click="formOpen = false"></div>
+    <div class="fixed inset-y-0 right-0 z-50 w-full max-w-md overflow-y-auto border-l border-slate-200 bg-white shadow-pop animate-slide-up"
+         x-trap.noscroll="formOpen" role="dialog" aria-modal="true" aria-label="New requirement">
+      <div class="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-5 py-4">
+        <p class="text-sm font-semibold text-slate-900">New requirement</p>
+        <button class="btn-ghost p-1.5" @click="formOpen = false" aria-label="Close">{% icon "x" "h-5 w-5" %}</button>
+      </div>
+      <form class="space-y-4 p-5" @submit.prevent="save()">
+        <div class="alert alert-error" x-show="nonField" x-cloak>{% icon "x-circle" %}<span x-text="nonField"></span></div>
+
+        <div class="field">
+          <label class="label" for="rq-subject">Subject <span class="req">*</span></label>
+          <select id="rq-subject" class="select" x-model="model.subject" :aria-invalid="hasError('subject')" @change="clearError('subject')">
+            <option value="">— Select —</option>
+            <template x-for="s in subjects" :key="s.id"><option :value="s.name" x-text="s.name"></option></template>
+          </select>
+          <p class="field-error" x-show="hasError('subject')" x-text="fieldError('subject')"></p>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="field">
+            <label class="label" for="rq-class">Class / year</label>
+            <select id="rq-class" class="select" x-model="model.student_class">
+              <option value="">— Select —</option>
+              <template x-for="g in gradeLevels" :key="g.id"><option :value="g.name" x-text="g.name"></option></template>
+            </select>
+          </div>
+          <div class="field">
+            <label class="label" for="rq-lang">Language</label>
+            <select id="rq-lang" class="select" x-model="model.preferred_language">
+              <option value="">— Select —</option>
+              <template x-for="l in languages" :key="l.id"><option :value="l.name" x-text="l.name"></option></template>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <span class="label">Teaching mode <span class="req">*</span></span>
+          <div class="mt-1 flex gap-1.5">
+            <template x-for="m in ['online','offline','both']" :key="m">
+              <button type="button" class="chip flex-1 justify-center capitalize" :aria-pressed="model.teaching_mode === m"
+                      @click="model.teaching_mode = m; clearError('city')" x-text="m"></button>
+            </template>
+          </div>
+        </div>
+        <div class="field" x-show="model.teaching_mode !== 'online'">
+          <div class="flex items-baseline justify-between">
+            <label class="label" for="rq-city">City <span class="req">*</span></label>
+            <button type="button" class="text-xs font-medium text-brand-700 hover:underline"
+                    @click="cityInputMode = cityInputMode === 'select' ? 'pincode' : 'select'; model.city = ''"
+                    x-text="cityInputMode === 'select' ? 'Enter pincode instead' : 'Pick a city instead'"></button>
+          </div>
+          <select id="rq-city" class="select" x-show="cityInputMode === 'select'" x-model="model.city"
+                  :aria-invalid="hasError('city')" @change="clearError('city')">
+            <option value="">— Select —</option>
+            <template x-for="c in cities" :key="c.id"><option :value="c.name" x-text="c.name"></option></template>
+          </select>
+          <input id="rq-pincode" class="input" x-show="cityInputMode === 'pincode'" placeholder="e.g. 700001" x-model="model.city"
+                 :aria-invalid="hasError('city')" @input="clearError('city')">
+          <p class="field-error" x-show="hasError('city')" x-text="fieldError('city')"></p>
+        </div>
+
+        {# ---- structured schedule ---- #}
+        <div class="field">
+          <div class="flex items-baseline justify-between">
+            <span class="label">When can you attend? <span class="req">*</span></span>
+            <span class="text-xs text-slate-400" x-text="tz"></span>
+          </div>
+          <p class="-mt-1 mb-2 text-xs text-slate-500">Pick the weekly days and time ranges that work. Teachers are matched on real time overlap, so add every slot you can do.</p>
+
+          <div class="space-y-2">
+            <template x-for="(w, i) in model.windows" :key="i">
+              <div class="rounded-lg border border-slate-200 p-2.5">
+                <div class="flex items-center gap-2">
+                  <select class="input h-9 flex-1 text-sm" x-model.number="w.day_of_week" :aria-label="`Day for slot ${i + 1}`">
+                    <template x-for="d in DAYS" :key="d.value"><option :value="d.value" x-text="d.label"></option></template>
+                  </select>
+                  <button type="button" class="btn-ghost p-1.5 text-slate-400 hover:text-rose-600" x-show="model.windows.length > 1"
+                          @click="model.windows.splice(i, 1); clearError('schedule_preferences')" :aria-label="`Remove slot ${i + 1}`">
+                    {% icon "trash" "h-4 w-4" %}
+                  </button>
+                </div>
+                <div class="mt-2 flex items-center gap-2">
+                  <input type="time" class="input h-9 flex-1 text-sm" x-model="w.start_time" step="900"
+                         @input="clearError('schedule_preferences')" :aria-label="`Start time for slot ${i + 1}`">
+                  <span class="text-xs text-slate-400">to</span>
+                  <input type="time" class="input h-9 flex-1 text-sm" x-model="w.end_time" step="900"
+                         @input="clearError('schedule_preferences')" :aria-label="`End time for slot ${i + 1}`">
+                </div>
+                <div class="mt-2 flex gap-1.5">
+                  <template x-for="f in [['flexible','Flexible'],['fixed','Must be exact']]" :key="f[0]">
+                    <button type="button" class="chip flex-1 justify-center text-xs" :aria-pressed="w.flexibility === f[0]"
+                            @click="w.flexibility = f[0]" x-text="f[1]"></button>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </div>
+          <button type="button" class="btn-ghost btn-sm mt-2 text-brand-700" @click="addWindow()">{% icon "plus" "h-4 w-4" %} Add another time</button>
+          <p class="field-error" x-show="hasError('schedule_preferences') || scheduleError" x-text="fieldError('schedule_preferences') || scheduleError"></p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div class="field"><label class="label" for="rq-bmin">Budget min (₹)</label><input id="rq-bmin" type="number" min="0" class="input" x-model.number="model.budget_min" :aria-invalid="hasError('budget_min')"></div>
+          <div class="field"><label class="label" for="rq-bmax">Budget max (₹)</label><input id="rq-bmax" type="number" min="0" class="input" x-model.number="model.budget_max"></div>
+        </div>
+        <p class="field-error -mt-2" x-show="hasError('budget_min')" x-text="fieldError('budget_min')"></p>
+
+        <div class="field">
+          <label class="label" for="rq-dur">Class length</label>
+          <select id="rq-dur" class="input" x-model.number="model.class_duration_minutes">
+            <template x-for="d in [30,45,60,90,120]" :key="d"><option :value="d" x-text="`${d} minutes`"></option></template>
+          </select>
+        </div>
+        <div class="field">
+          <label class="label" for="rq-timing">Timing notes <span class="text-xs font-normal text-slate-400">(optional)</span></label>
+          <input id="rq-timing" class="input" placeholder="e.g. Prefer after exams, flexible during holidays" x-model="model.preferred_timing">
+        </div>
+        <div class="field">
+          <label class="label" for="rq-desc">Anything else</label>
+          <textarea id="rq-desc" class="textarea" placeholder="Goals, exam prep, current level…" x-model="model.description"></textarea>
+        </div>
+        <div class="flex gap-2 pt-2">
+          <button type="button" class="btn-secondary flex-1" @click="formOpen = false">Cancel</button>
+          <button type="submit" class="btn-primary flex-1" :data-loading="submitting">Post requirement</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    const DAYS = [
+      { value: 1, label: "Monday" }, { value: 2, label: "Tuesday" }, { value: 3, label: "Wednesday" },
+      { value: 4, label: "Thursday" }, { value: 5, label: "Friday" }, { value: 6, label: "Saturday" },
+      { value: 7, label: "Sunday" },
+    ];
+    let TZ = "Asia/Kolkata";
+    try { TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || TZ; } catch (_) {}
+
+    const blankWindow = () => ({ day_of_week: 1, start_time: "18:00", end_time: "19:00", flexibility: "flexible" });
+    const initialModel = () => ({
+      subject: "", student_class: "", preferred_language: "", teaching_mode: "online", city: "",
+      budget_min: null, budget_max: null, class_duration_minutes: 60,
+      preferred_timing: "", description: "", windows: [blankWindow()],
+    });
+
+    Alpine.data("requirementsPage", () => ({
+      ...mk.collection({ endpoint: "/student-requirements/" }),
+      ...mk.apiForm({
+        endpoint: "/student-requirements/", method: "post",
+        initial: initialModel(),
+        successMessage: "Requirement posted — matching you with teachers now.",
+        transform: (m) => {
+          const out = Object.fromEntries(
+            Object.entries(m).filter(([k, v]) => k !== "windows" && v !== "" && v !== null)
+          );
+          out.schedule_preferences = (m.windows || [])
+            .filter((w) => w.start_time && w.end_time)
+            .map((w) => ({
+              day_of_week: Number(w.day_of_week),
+              start_time: w.start_time,
+              end_time: w.end_time,
+              timezone: TZ,
+              flexibility: w.flexibility || "flexible",
+            }));
+          return out;
+        },
+      }),
+      DAYS,
+      tz: TZ,
+      formOpen: false,
+      subjects: [], languages: [], gradeLevels: [], cities: [],
+      cityInputMode: "select",
+      scheduleError: "",
+
+      init() {
+        this.initCollection();
+        window.addEventListener("req-new", () => this.openForm());
+        api.get("/subjects/", { params: { page_size: 200 }, silent: true }).then((d) => this.subjects = d || []).catch(() => {});
+        api.get("/languages/", { params: { page_size: 200 }, silent: true }).then((d) => this.languages = d || []).catch(() => {});
+        api.get("/grade-levels/", { params: { page_size: 100 }, silent: true }).then((d) => this.gradeLevels = d || []).catch(() => {});
+        api.get("/location/cities/", { params: { page_size: 500 }, silent: true }).then((d) => this.cities = d || []).catch(() => {});
+      },
+      openForm() {
+        this.model = initialModel();
+        this.errors = {}; this.nonField = ""; this.scheduleError = "";
+        this.cityInputMode = "select";
+        this.formOpen = true;
+      },
+      addWindow() { this.model.windows.push(blankWindow()); this.clearError("schedule_preferences"); },
+
+      scheduleSummary(r) {
+        const p = r.schedule_preferences || [];
+        if (!p.length) return r.preferred_timing || "—";
+        const first = p[0];
+        const label = (first.day_of_week_label || "").slice(0, 3);
+        return p.length === 1 ? `${label} ${first.start_time.slice(0, 5)}` : `${label} +${p.length - 1} more`;
+      },
+
+      _validSchedule() {
+        const rows = (this.model.windows || []).filter((w) => w.start_time && w.end_time);
+        if (!rows.length) { this.scheduleError = "Add at least one day and time you're free."; return false; }
+        for (const w of rows) {
+          if (w.start_time >= w.end_time) { this.scheduleError = "Each slot's end time must be after its start time."; return false; }
+        }
+        this.scheduleError = "";
+        return true;
+      },
+
+      async save() {
+        this.scheduleError = "";
+        if (!this._validSchedule()) return;
+        try { await this.submit(); this.formOpen = false; this.load(); } catch (e) {}
+      },
+      async remove(r) {
+        if (!(await window.confirmAction({ title: "Withdraw this requirement?", message: "Teachers will no longer be matched to it. This can't be undone.", confirmLabel: "Withdraw", danger: true }))) return;
+        try {
+          await api.del(`/student-requirements/${r.id}/`);
+          window.toast("success", "Requirement withdrawn.");
+          this.removeFromList((x) => x.id === r.id);
+        } catch (e) { window.toast("error", e.message); }
+      },
+    }));
+  });
+</script>
+{% endblock %}

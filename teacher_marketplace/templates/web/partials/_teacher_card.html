@@ -1,0 +1,87 @@
+{% load web_extras %}
+{# Expects Alpine `t` in scope (a TeacherProfile search result) and `detailBase` (string url prefix). #}
+<a :href="detailBase + ((t.teacher && t.teacher.id) || t.id) + '/'"
+   @click="try { sessionStorage.setItem('tp:' + ((t.teacher && t.teacher.id) || t.id), JSON.stringify(t)); } catch(e){}"
+   class="card card-hover group flex flex-col overflow-hidden">
+
+  {# Photo banner — the visual anchor of the card, real photo or a tasteful fallback #}
+  <div class="card-media">
+    <template x-if="t.teacher && t.teacher.profile_photo">
+      <img :src="t.teacher.profile_photo" alt="">
+    </template>
+    <template x-if="!(t.teacher && t.teacher.profile_photo)">
+      <div class="card-media-fallback" x-text="fmt.initials((t.teacher && t.teacher.user && t.teacher.user.full_name) || '')"></div>
+    </template>
+    <div class="card-media-badges">
+      <span>
+        <template x-if="t.is_fully_verified">
+          <span class="badge badge-brand shadow-xs" title="All identity checks completed">{% icon "shield" "h-3 w-3" %}Fully verified</span>
+        </template>
+        <template x-if="!t.is_fully_verified && t.is_verified">
+          <span class="badge badge-green shadow-xs"><span class="badge-dot"></span>Verified</span>
+        </template>
+      </span>
+      <template x-if="Number(t.rating) >= 4.5 && (t.is_verified || t.is_fully_verified)">
+        <span class="badge-featured">{% icon "star-filled" "h-3 w-3" %} Top rated</span>
+      </template>
+    </div>
+  </div>
+
+  <div class="flex flex-1 flex-col p-4">
+    <p class="truncate text-sm font-semibold text-slate-900" x-text="(t.teacher && t.teacher.user && t.teacher.user.full_name) || 'Teacher'"></p>
+
+    <div class="mt-1">
+      <template x-if="t.rating && Number(t.rating) > 0">
+        <span class="rating">
+          <span class="rating-stars">
+            <template x-for="(filled, i) in fmt.stars(t.rating)" :key="i">
+              <svg :class="{ 'is-empty': !filled }"><use :href="filled ? '#i-star-filled' : '#i-star'"></use></svg>
+            </template>
+          </span>
+          <span class="rating-value" x-text="Number(t.rating).toFixed(1)"></span>
+        </span>
+      </template>
+      <span class="rating-new" x-show="!(t.rating && Number(t.rating) > 0)">New teacher</span>
+    </div>
+
+    <p class="mt-1.5 truncate text-xs text-slate-500" x-text="t.headline || fmt.list(t.subjects, 'name', 2) || 'Teacher'"></p>
+
+    <div class="mt-2.5 flex flex-wrap gap-1.5">
+      <template x-for="s in (t.subjects || []).slice(0, 3)" :key="s.id">
+        <span class="chip" x-text="s.name"></span>
+      </template>
+      <template x-if="(t.subjects || []).length > 3">
+        <span class="chip" x-text="`+${t.subjects.length - 3}`"></span>
+      </template>
+    </div>
+
+    {# Compact secondary details — kept to one line so the photo stays dominant #}
+    <div class="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+      <span class="inline-flex items-center gap-1 capitalize" x-show="t.teaching_mode">{% icon "video" "h-3.5 w-3.5 text-slate-400" %}<span x-text="t.teaching_mode"></span></span>
+      <span class="inline-flex items-center gap-1" x-show="(t.years_of_experience ?? (t.teacher && t.teacher.experience_years)) != null">
+        {% icon "clock" "h-3.5 w-3.5 text-slate-400" %}<span x-text="(t.years_of_experience ?? t.teacher.experience_years) + ' yrs exp.'"></span>
+      </span>
+    </div>
+
+    <template x-if="t.match_percentage != null">
+      <div class="mt-2.5">
+        <div class="flex items-center justify-between text-[11px] font-medium text-slate-500">
+          <span>Schedule match</span><span x-text="Math.round(t.match_percentage) + '%'"></span>
+        </div>
+        <div class="meter mt-1"><span :style="`width:${Math.round(t.match_percentage)}%`"></span></div>
+      </div>
+    </template>
+
+    {# Price + CTA — the "buy box" row every one of these product cards ends on #}
+    <div class="mt-auto flex items-center justify-between border-t border-slate-100 pt-3">
+      <span class="text-base font-bold text-slate-900">
+        <template x-if="t.hourly_rate"><span x-text="fmt.money(t.hourly_rate)"></span></template>
+        <template x-if="!t.hourly_rate">—</template>
+        <span class="text-xs font-medium text-slate-400" x-show="t.hourly_rate">/hr</span>
+      </span>
+      <span class="inline-flex items-center gap-1 text-sm font-medium text-brand-600">
+        View profile {% icon "chevron-right" "h-4 w-4 transition group-hover:translate-x-0.5" %}
+      </span>
+    </div>
+  </div>
+</a>

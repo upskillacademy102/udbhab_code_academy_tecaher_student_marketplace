@@ -1,0 +1,122 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block content %}
+<div x-data="supportTickets()">
+  <div class="mb-4 flex flex-wrap items-center gap-3">
+    <select class="select w-auto" @change="setParam('status', $event.target.value)" aria-label="Status">
+      <option value="">Open + assigned</option>
+      <option value="all">All tickets</option>
+    </select>
+    <label class="inline-flex items-center gap-2 text-sm text-slate-600">
+      <input type="checkbox" @change="setParam('mine', $event.target.checked ? '1' : '')"> Assigned to me
+    </label>
+  </div>
+
+  {% include "web/partials/_row_skeleton.html" %}
+  {% include "web/partials/_error.html" %}
+
+  <div x-show="state === 'empty'" x-cloak class="empty">
+    <div class="empty-icon">{% icon "alert-triangle" "h-6 w-6" %}</div>
+    <p class="empty-title">No bugs reported</p>
+    <p class="empty-desc">Nothing has come in through Report an Issue.</p>
+  </div>
+
+  <div x-show="state === 'ready'" x-cloak class="space-y-3">
+    <template x-for="t in items" :key="t.id">
+      <div class="card card-pad">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-sm font-medium text-slate-900" x-text="t.subject"></span>
+          <span class="badge" :class="t.status === 'resolved' ? 'badge-green' : (t.status === 'closed' ? 'badge-slate' : (t.status === 'assigned' ? 'badge-sky' : 'badge-amber'))"
+                x-text="fmt.titleCase(t.status)"></span>
+          <template x-if="t.contact_preference !== 'none'">
+            <span class="badge badge-red" x-text="t.contact_preference === 'video_call' ? 'Video call requested' : 'Phone call requested'"></span>
+          </template>
+          <span class="ml-auto text-xs text-slate-400" x-text="fmt.dateTime(t.created_at)"></span>
+        </div>
+        <p class="mt-0.5 text-xs text-slate-500">
+          <span x-text="t.reporter_name || t.reporter_email"></span> ·
+          <span class="capitalize" x-text="t.reporter_role"></span>
+        </p>
+        <p class="mt-2 whitespace-pre-line text-sm text-slate-600" x-text="t.description"></p>
+        <div class="mt-2 flex flex-wrap gap-1.5" x-show="t.attachments.length">
+          <template x-for="a in t.attachments" :key="a.id">
+            <a :href="a.file" target="_blank" rel="noopener"><img :src="a.file" class="h-14 w-14 rounded-md border border-slate-200 object-cover"></a>
+          </template>
+        </div>
+        <p class="mt-2 text-xs text-slate-500" x-show="t.assigned_admin_names.length">
+          Assigned to <span x-text="t.assigned_admin_names.join(', ')"></span>
+        </p>
+        <template x-if="t.resolution">
+          <p class="mt-2 rounded-lg bg-slate-50 p-2.5 text-sm text-slate-600">
+            <span class="font-medium text-slate-800">Response: </span><span x-text="t.resolution"></span>
+          </p>
+        </template>
+
+        {% if web_role == 'superadmin' %}
+        <div class="mt-3 flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-3">
+          <span class="text-xs text-slate-500">Assign:</span>
+          <template x-for="a in admins" :key="a.id">
+            <button type="button" class="chip" :aria-pressed="(t._assignees || []).includes(a.id)"
+                    @click="toggleAssignee(t, a.id)" x-text="a.full_name || a.email"></button>
+          </template>
+          <button class="btn-secondary btn-sm" :disabled="!(t._assignees || []).length" :data-loading="t._busy"
+                  @click="assign(t)">Assign</button>
+        </div>
+        {% endif %}
+
+        <template x-if="t.status !== 'resolved' && t.status !== 'closed'">
+          <div class="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+            <input class="input flex-1 text-xs" x-model="t._note" placeholder="Resolution note (optional)">
+            <button class="btn-primary text-xs" :data-loading="t._busy" @click="resolve(t, false)">Resolve</button>
+            <button class="btn-ghost text-xs" :data-loading="t._busy" @click="resolve(t, true)">Dismiss</button>
+          </div>
+        </template>
+      </div>
+    </template>
+  </div>
+
+  {% include "web/partials/_pagination.html" %}
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("supportTickets", () => ({
+      ...mk.collection({ endpoint: "/admin/support-tickets/" }),
+      isSuper: "{{ web_role }}" === "superadmin",
+      admins: [],
+      init() {
+        this.initCollection();
+        if (this.isSuper) {
+          api.get("/admin/users/", { params: { role: "admin", page_size: 200 }, silent: true })
+            .then((d) => (this.admins = d || [])).catch(() => {});
+        }
+      },
+      toggleAssignee(t, id) {
+        const arr = t._assignees || (t._assignees = []);
+        const i = arr.indexOf(id);
+        if (i === -1) arr.push(id); else arr.splice(i, 1);
+      },
+      async assign(t) {
+        if (!(t._assignees || []).length) return;
+        t._busy = true;
+        try {
+          await api.post(`/admin/support-tickets/${t.id}/assign/`, { assigned_admin_ids: t._assignees });
+          window.toast("success", "Assigned.");
+          this.reload();
+        } catch (e) { window.toast("error", e.message || "Couldn't assign."); }
+        finally { t._busy = false; }
+      },
+      async resolve(t, dismiss) {
+        t._busy = true;
+        try {
+          await api.post(`/admin/support-tickets/${t.id}/resolve/`, { dismiss, resolution: t._note || "" });
+          window.toast("success", dismiss ? "Dismissed." : "Resolved.");
+          this.reload();
+        } catch (e) { window.toast("error", e.message || "Couldn't update."); }
+        finally { t._busy = false; }
+      },
+    }));
+  });
+</script>
+{% endblock %}
