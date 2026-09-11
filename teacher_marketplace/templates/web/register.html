@@ -108,6 +108,119 @@ the moment you sign in.{% endblock %}
     </div>
   </template>
 
+  {% comment %}STEP: languages a teacher teaches in.
+
+  Multiple, and ORDERED — the order is the data. Students filter on language,
+  and a teacher who is fluent in Tamil but merely passable in Hindi should
+  surface differently for each. Arrows rather than drag-and-drop because this
+  is used on a phone, where dragging a list item fights the page scroll.
+  {% endcomment %}
+  <template x-if="step === 'teach-languages'">
+    <div>
+      <button type="button" @click="back()" class="u-btn-ghost u-btn-sm -ml-3 mb-5" x-show="canGoBack">
+        {% icon "arrow-left" "h-4 w-4" %} <span x-text="resolvedSubject"></span>
+      </button>
+
+      <h1 class="u-h2">Which languages do you teach in?</h1>
+      <p class="u-lede mt-2 text-[0.9375rem]">Pick every one you're comfortable teaching in. Put your strongest first.</p>
+
+      {% if languages %}
+        <div class="mt-7 flex flex-wrap gap-2">
+          {% for name in languages %}
+            <button type="button" class="u-chip u-chip-sm"
+                    :aria-pressed="teachLanguages.includes('{{ name|escapejs }}')"
+                    @click="toggleTeachLanguage('{{ name|escapejs }}')">{{ name }}</button>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="u-hint mt-7">No languages have been added to the platform yet.</p>
+      {% endif %}
+
+      {# The ranked list. Only appears once there's something to rank. #}
+      <div class="mt-6" x-show="teachLanguages.length" x-collapse>
+        <p class="u-eyebrow">Your order — strongest first</p>
+        <ul class="mt-2.5 flex flex-col gap-2">
+          <template x-for="(lang, i) in teachLanguages" :key="lang">
+            <li class="flex items-center gap-3 rounded-xl border-[1.5px] border-pine-600 bg-pine-50 py-2 pl-3 pr-2">
+              <span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-pine-700 text-[0.75rem] font-bold text-white"
+                    x-text="i + 1"></span>
+              <span class="min-w-0 flex-1 truncate text-[0.9375rem] font-semibold text-pine-900" x-text="lang"></span>
+              <div class="flex shrink-0 items-center gap-1">
+                <button type="button" class="grid h-7 w-7 place-items-center rounded-lg text-pine-700 transition hover:bg-pine-100 disabled:opacity-30"
+                        :disabled="i === 0" @click="moveTeachLanguage(i, -1)" :aria-label="'Move ' + lang + ' up'">↑</button>
+                <button type="button" class="grid h-7 w-7 place-items-center rounded-lg text-pine-700 transition hover:bg-pine-100 disabled:opacity-30"
+                        :disabled="i === teachLanguages.length - 1" @click="moveTeachLanguage(i, 1)" :aria-label="'Move ' + lang + ' down'">↓</button>
+                <button type="button" class="grid h-7 w-7 place-items-center rounded-lg text-pine-700 transition hover:bg-pine-100"
+                        @click="toggleTeachLanguage(lang)" :aria-label="'Remove ' + lang">✕</button>
+              </div>
+            </li>
+          </template>
+        </ul>
+        <p class="u-hint mt-2">Students searching in your first language will see you higher.</p>
+      </div>
+
+      <button type="button" class="u-btn-primary u-btn-lg mt-8 w-full" :disabled="!teachLanguages.length" @click="next()">
+        Continue {% icon "chevron-right" %}
+      </button>
+    </div>
+  </template>
+
+  {% comment %}STEP: when a teacher wants to teach. Same control as the
+  student's "when are you free", because it is scored against it — these two
+  answers are the two halves of the same overlap calculation.{% endcomment %}
+  <template x-if="step === 'teach-hours'">
+    <div>
+      <button type="button" @click="back()" class="u-btn-ghost u-btn-sm -ml-3 mb-5" x-show="canGoBack">
+        {% icon "arrow-left" "h-4 w-4" %} Back
+      </button>
+
+      <h1 class="u-h2">When do you want to teach?</h1>
+      <p class="u-lede mt-2 text-[0.9375rem]">We only send you students who are free when you are. You can change this any time.</p>
+
+      <fieldset class="mt-7">
+        <legend class="u-eyebrow">Days</legend>
+        <div class="mt-3 grid grid-cols-7 gap-1.5">
+          <template x-for="d in DAYS" :key="d.n">
+            <button type="button"
+                    class="flex h-12 items-center justify-center rounded-lg border-[1.5px] text-[0.875rem] font-semibold transition duration-150 ease-enter"
+                    :class="days.includes(d.n)
+                      ? 'border-pine-600 bg-pine-600 text-white'
+                      : 'border-ink-300 bg-paper text-ink-600 hover:border-pine-400 hover:bg-pine-50'"
+                    :aria-pressed="days.includes(d.n)" :aria-label="d.full"
+                    @click="toggleDay(d.n)" x-text="d.s"></button>
+          </template>
+        </div>
+      </fieldset>
+
+      <fieldset class="mt-6">
+        <legend class="u-eyebrow">Time of day</legend>
+        <div class="mt-3 grid grid-cols-3 gap-2">
+          <template x-for="b in BANDS" :key="b.id">
+            <button type="button" class="u-chip flex-col gap-0.5 px-2 py-2" :aria-pressed="band === b.id" @click="band = b.id">
+              <span class="text-[0.875rem]" x-text="b.label"></span>
+              <span class="u-num text-[0.6875rem] font-normal text-ink-400" x-text="b.hint"></span>
+            </button>
+          </template>
+        </div>
+      </fieldset>
+
+      <div class="mt-6 flex items-start gap-3 rounded-xl bg-pine-50 p-4" x-show="days.length" x-collapse>
+        <span class="u-proof-mark mt-0">{% icon "check" %}</span>
+        <p class="text-[0.875rem] leading-snug text-pine-900">
+          We'll send you students free <strong class="font-semibold" x-text="scheduleSummary()"></strong>.
+        </p>
+      </div>
+
+      <button type="button" class="u-btn-primary u-btn-lg mt-8 w-full" :disabled="!days.length" @click="next()">
+        Continue {% icon "chevron-right" %}
+      </button>
+      <button type="button" class="u-btn-ghost u-btn-sm mt-2 w-full" @click="skip()">
+        Skip — I'll set my hours later
+      </button>
+      <p class="u-fine mt-2 text-center">Without hours we can't match you to anyone, so it's worth 20 seconds now.</p>
+    </div>
+  </template>
+
   {% comment %}STEP: language. Regional-language teaching is the clearest
   differentiator this marketplace has, and TeacherSearchFilterSet already
   carries a language text filter. "Any language" is the pre-selected
@@ -230,12 +343,15 @@ the moment you sign in.{% endblock %}
 
       {% comment %}Restate what they've already invested. Endowed progress:
       four things done makes the fifth feel like finishing, not starting.{% endcomment %}
-      <div class="mt-6 flex flex-wrap gap-2" x-show="resolvedSubject || resolvedLanguage || level || days.length">
+      <div class="mt-6 flex flex-wrap gap-2" x-show="resolvedSubject || resolvedLanguage || teachLanguages.length || level || days.length">
         <template x-if="resolvedSubject">
           <span class="u-badge u-badge-pine">{% icon "book" %}<span x-text="resolvedSubject"></span></span>
         </template>
         <template x-if="resolvedLanguage">
           <span class="u-badge u-badge-pine">{% icon "globe" %}<span x-text="resolvedLanguage"></span></span>
+        </template>
+        <template x-if="teachLanguages.length">
+          <span class="u-badge u-badge-pine">{% icon "globe" %}<span x-text="teachLanguages.join(', ')"></span></span>
         </template>
         <template x-if="level">
           <span class="u-badge u-badge-pine">{% icon "academic" %}<span x-text="level"></span></span>

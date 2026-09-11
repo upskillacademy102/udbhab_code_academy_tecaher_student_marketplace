@@ -182,6 +182,11 @@ document.addEventListener("alpine:init", () => {
         level: null,
         days: [],
         band: "evening",
+        // Teachers pick MULTIPLE languages, in order of how well they teach
+        // in them. Order is the data: it is what the first language in the
+        // list means. Kept as an ordered array of names, resolved to ids
+        // after sign-in (the taxonomy endpoints are unreachable logged out).
+        teachLanguages: [],
 
         // account form
         showPw: false,
@@ -242,7 +247,9 @@ document.addEventListener("alpine:init", () => {
         /* ---- step machinery ---- */
         get steps() {
           if (!this.role) return ["role"];
-          if (this.role === "teacher") return ["role", "teaches", "account"];
+          if (this.role === "teacher") {
+            return ["role", "teaches", "teach-languages", "teach-hours", "account"];
+          }
           return ["role", "subject", "language", "level", "when", "account"];
         },
         get step() { return this.steps[this.stepIndex] || "role"; },
@@ -300,6 +307,25 @@ document.addEventListener("alpine:init", () => {
           const i = this.days.indexOf(n);
           if (i === -1) this.days.push(n); else this.days.splice(i, 1);
           this.days.sort((a, b) => a - b);
+        },
+
+        /* ---- languages a teacher teaches in, best first ---- */
+        toggleTeachLanguage(name) {
+          const i = this.teachLanguages.indexOf(name);
+          if (i === -1) this.teachLanguages.push(name);
+          else this.teachLanguages.splice(i, 1);
+        },
+        // Order carries meaning here, so it has to be adjustable. Arrows
+        // rather than drag-and-drop: this is used on a phone, and dragging a
+        // list item on a touchscreen fights the page scroll.
+        moveTeachLanguage(i, dir) {
+          const j = i + dir;
+          if (j < 0 || j >= this.teachLanguages.length) return;
+          const arr = this.teachLanguages;
+          [arr[i], arr[j]] = [arr[j], arr[i]];
+        },
+        teachLanguageRank(name) {
+          return this.teachLanguages.indexOf(name) + 1;
         },
 
         // "Monday mornings", "Tuesday & Thursday evenings", "most evenings" —
@@ -390,7 +416,9 @@ document.addEventListener("alpine:init", () => {
             saveIntent({
               role: this.role,
               subject: this.resolvedSubject,
+              // Students pick one language; teachers pick several, ranked.
               language: this.resolvedLanguage,
+              teachLanguages: this.teachLanguages,
               level: this.level,
               days: this.days,
               from: this.days.length && band ? band.from : null,

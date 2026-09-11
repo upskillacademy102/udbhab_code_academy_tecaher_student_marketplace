@@ -1,8 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import type { Lead, TeacherProfile } from "@/lib/types";
 import { AllowanceBar, useAllowance } from "@/components/Allowance";
+import { replayTeacherIntent } from "@/lib/replayIntent";
 import { titleCase } from "@/lib/ui";
 
 /**
@@ -15,6 +17,22 @@ import { titleCase } from "@/lib/ui";
  */
 export function TeacherDashboard() {
   const { dash } = useAllowance();
+  const qc = useQueryClient();
+  const replayed = useRef(false);
+
+  // Sign-up collected subjects, ranked languages and hours before this
+  // account existed. Turn them into real rows on the first authenticated
+  // load, then refresh whatever depended on them. Guarded by a ref because
+  // StrictMode runs effects twice in development.
+  useEffect(() => {
+    if (replayed.current) return;
+    replayed.current = true;
+    replayTeacherIntent().then((changed) => {
+      if (!changed) return;
+      qc.invalidateQueries({ queryKey: ["my-teacher-profile"] });
+      qc.invalidateQueries({ queryKey: ["weekly-availability"] });
+    });
+  }, [qc]);
 
   const leads = useQuery({
     queryKey: ["leads"],

@@ -46,10 +46,20 @@ Honesty constraints held throughout:
         <span class="grid h-9 w-9 place-items-center rounded-lg bg-pine-700 font-display text-lg font-bold text-marigold-400">{{ SITE_NAME|first }}</span>
         <span class="font-display text-[1.0625rem] font-semibold tracking-tight text-ink-900">{{ SITE_NAME }}</span>
       </a>
-      <nav class="hidden items-center gap-7 md:flex" aria-label="Sections">
+      {% comment %}"Get matched" and "How it works" are sections of this page.
+      "For teachers" is a different AUDIENCE — a teacher landing here is on the
+      wrong page and needs a door, not a third anchor that looks identical to
+      the other two. Giving it a bordered pill and an icon separates the two
+      kinds of link, which is the whole job.{% endcomment %}
+      <nav class="hidden items-center gap-6 md:flex" aria-label="Sections">
         <a href="#start" class="text-[0.875rem] font-medium text-ink-600 hover:text-pine-700">Get matched</a>
         <a href="#how" class="text-[0.875rem] font-medium text-ink-600 hover:text-pine-700">How it works</a>
-        <a href="#teachers" class="text-[0.875rem] font-medium text-ink-600 hover:text-pine-700">For teachers</a>
+        <a href="#teachers"
+           class="group inline-flex items-center gap-1.5 rounded-full border-[1.5px] border-pine-300 bg-pine-50 py-1.5 pl-3 pr-2.5 text-[0.875rem] font-semibold text-pine-800 transition duration-150 ease-enter hover:border-pine-600 hover:bg-pine-100">
+          {% icon "academic" "h-4 w-4" %}
+          I'm a teacher
+          <span aria-hidden="true" class="text-pine-600 transition group-hover:translate-x-0.5">→</span>
+        </a>
       </nav>
       <div class="flex items-center gap-2">
         <a href="/login/" class="u-btn-ghost u-btn-sm sm:min-h-[40px] sm:px-4 sm:text-[0.9375rem]">Log in</a>
