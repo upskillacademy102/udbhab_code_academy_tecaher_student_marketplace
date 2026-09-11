@@ -21,6 +21,25 @@ the moment you sign in.{% endblock %}
        languages: JSON.parse(document.getElementById('tax-languages').textContent)
      })" x-cloak>
 
+  {% comment %}What the home page already answered. Shown rather than
+  silently applied: an answer that vanishes feels lost even when it was kept.
+  Each one is editable, so carrying it over never traps anybody.{% endcomment %}
+  <div class="u-card mb-6 overflow-hidden" x-show="carriedOver.length && step !== 'account'" x-cloak>
+    <div class="flex items-center gap-2 border-b border-ink-200 bg-pine-50 px-4 py-2.5">
+      {% icon "check-circle" "h-4 w-4 text-pine-700" %}
+      <p class="text-[0.8125rem] font-semibold text-pine-800">Saved from the home page</p>
+    </div>
+    <ul class="divide-y divide-ink-200">
+      <template x-for="c in carriedOver" :key="c.step">
+        <li class="flex items-center justify-between gap-3 px-4 py-2.5">
+          <span class="min-w-0 truncate text-[0.875rem] font-medium text-ink-900" x-text="c.value"></span>
+          <button type="button" class="shrink-0 text-[0.8125rem] font-semibold text-pine-700 hover:underline"
+                  @click="goToStep(c.step)">Change</button>
+        </li>
+      </template>
+    </ul>
+  </div>
+
   {# ============ Progress rail — hidden on the role fork, which is a branch not progress ============ #}
   <div class="mb-8" x-show="step !== 'role'">
     <div class="u-rail" role="presentation">
@@ -71,7 +90,7 @@ the moment you sign in.{% endblock %}
   {# ============ STEP: subject (student) / teaches (teacher) ============ #}
   <template x-if="step === 'subject' || step === 'teaches'">
     <div>
-      <button type="button" @click="back()" class="u-btn-ghost u-btn-sm -ml-3 mb-5">
+      <button type="button" @click="back()" class="u-btn-ghost u-btn-sm -ml-3 mb-5" x-show="canGoBack">
         {% icon "arrow-left" "h-4 w-4" %} Back
       </button>
 
@@ -95,7 +114,7 @@ the moment you sign in.{% endblock %}
   default, so this costs the indifferent majority a single tap.{% endcomment %}
   <template x-if="step === 'language'">
     <div>
-      <button type="button" @click="back()" class="u-btn-ghost u-btn-sm -ml-3 mb-5">
+      <button type="button" @click="back()" class="u-btn-ghost u-btn-sm -ml-3 mb-5" x-show="canGoBack">
         {% icon "arrow-left" "h-4 w-4" %} <span x-text="resolvedSubject"></span>
       </button>
 
@@ -115,7 +134,7 @@ the moment you sign in.{% endblock %}
   {# ============ STEP: level ============ #}
   <template x-if="step === 'level'">
     <div>
-      <button type="button" @click="back()" class="u-btn-ghost u-btn-sm -ml-3 mb-5">
+      <button type="button" @click="back()" class="u-btn-ghost u-btn-sm -ml-3 mb-5" x-show="canGoBack">
         {% icon "arrow-left" "h-4 w-4" %} Back
       </button>
 
@@ -145,7 +164,7 @@ the moment you sign in.{% endblock %}
   hiding it.{% endcomment %}
   <template x-if="step === 'when'">
     <div>
-      <button type="button" @click="back()" class="u-btn-ghost u-btn-sm -ml-3 mb-5">
+      <button type="button" @click="back()" class="u-btn-ghost u-btn-sm -ml-3 mb-5" x-show="canGoBack">
         {% icon "arrow-left" "h-4 w-4" %} Back
       </button>
 
@@ -199,7 +218,7 @@ the moment you sign in.{% endblock %}
   {# ============ STEP: account ============ #}
   <template x-if="step === 'account'">
     <div>
-      <button type="button" @click="back()" class="u-btn-ghost u-btn-sm -ml-3 mb-5">
+      <button type="button" @click="back()" class="u-btn-ghost u-btn-sm -ml-3 mb-5" x-show="canGoBack">
         {% icon "arrow-left" "h-4 w-4" %} Back
       </button>
 

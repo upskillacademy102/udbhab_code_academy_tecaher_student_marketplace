@@ -162,6 +162,7 @@ document.addEventListener("alpine:init", () => {
         nextUrl: nextUrl || "",
         stepIndex: 0,
         prefilled: [],
+        minIndex: 0,
 
         // captured intent — subject / subjectCustom / language come from
         // the mixin, which also owns the picker behaviour
@@ -209,16 +210,20 @@ document.addEventListener("alpine:init", () => {
 
           this.prefilled = done;
 
-          // Skip past any leading step the URL already answered. Only
-          // URL-answered steps are skipped — a step with a sensible
-          // default (language) is still shown, because a default is not
-          // the same as an answer.
-          while (
-            this.stepIndex < this.steps.length - 1 &&
-            this.prefilled.indexOf(this.steps[this.stepIndex]) !== -1
-          ) {
-            this.stepIndex++;
-          }
+          // Land on the first step the landing page did NOT answer, and
+          // remember it as the floor so Back can never walk into a question
+          // the visitor has already answered.
+          this.stepIndex = this._skipForward(-1);
+          this.minIndex = this.stepIndex;
+        },
+
+        /* Index of the next step at or after `from` that still needs an
+           answer. Never runs past the account step, which is always shown. */
+        _skipForward(from) {
+          const last = this.steps.length - 1;
+          let i = from + 1;
+          while (i < last && this.prefilled.indexOf(this.steps[i]) !== -1) i++;
+          return Math.min(i, last);
         },
 
         /* ---- step machinery ---- */
@@ -236,12 +241,43 @@ document.addEventListener("alpine:init", () => {
           this.stepIndex = 1;
         },
 
-        next() { if (this.stepIndex < this.steps.length - 1) this.stepIndex++; },
+        // Forward and back both step OVER anything the landing page already
+        // answered. Without this a visitor who picked their free hours on the
+        // home page gets asked for them a second time here.
+        next() { this.stepIndex = this._skipForward(this.stepIndex); },
         back() {
-          if (this.stepIndex > 0) this.stepIndex--;
+          let i = this.stepIndex - 1;
+          while (i > this.minIndex && this.prefilled.indexOf(this.steps[i]) !== -1) i--;
+          this.stepIndex = Math.max(i, this.minIndex);
           this.formError = "";
           this.emailTaken = false;
           this.cbClose();
+        },
+        get canGoBack() { return this.stepIndex > this.minIndex; },
+
+        /* Jump straight to a step — used by the "carried over" summary so an
+           answer brought from the home page can still be changed. */
+        goToStep(id) {
+          const i = this.steps.indexOf(id);
+          if (i >= 0) this.stepIndex = i;
+        },
+
+        /* What the landing page answered, for the summary at the top of the
+           first step. Showing it is the point: an answer that silently
+           disappears feels lost even when it was kept. */
+        get carriedOver() {
+          const out = [];
+          const has = (k) => this.prefilled.indexOf(k) !== -1;
+          if (has("subject") && this.resolvedSubject) {
+            out.push({ step: "subject", value: this.resolvedSubject, icon: "book" });
+          }
+          if (has("language") && this.resolvedLanguage) {
+            out.push({ step: "language", value: this.resolvedLanguage, icon: "globe" });
+          }
+          if (has("when") && this.days.length) {
+            out.push({ step: "when", value: this.scheduleSummary(), icon: "clock" });
+          }
+          return out;
         },
         // "when" is genuinely optional — but skipping it costs the match
         // score, and the copy says so rather than hiding it.
