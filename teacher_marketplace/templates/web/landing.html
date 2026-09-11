@@ -73,16 +73,16 @@ Honesty constraints held throughout:
           </h1>
 
           <p class="u-lede mt-6">
-            Most tutor sites match you on subject and leave the hard part to you.
-            We weigh <strong class="font-semibold text-ink-800">the language you learn best in</strong>
-            and <strong class="font-semibold text-ink-800">when you're actually free</strong> —
-            because the right teacher at the wrong time isn't a match.
+            Tell us <strong class="font-semibold text-ink-800">what you want to learn</strong>,
+            the <strong class="font-semibold text-ink-800">language</strong> you want it in,
+            and <strong class="font-semibold text-ink-800">when you're free</strong>.
+            We'll do the looking.
           </p>
 
           <ul class="mt-8 flex flex-col gap-3.5">
-            <li class="u-proof"><span class="u-proof-mark">{% icon "shield" %}</span><span>Every teacher's identity and credentials checked by a person</span></li>
-            <li class="u-proof"><span class="u-proof-mark">{% icon "globe" %}</span><span>Taught in your language — English, Hindi and regional languages</span></li>
-            <li class="u-proof"><span class="u-proof-mark">{% icon "check" %}</span><span>Free for students. There is no student side of the bill.</span></li>
+            <li class="u-proof"><span class="u-proof-mark">{% icon "shield" %}</span><span>We check every teacher ourselves</span></li>
+            <li class="u-proof"><span class="u-proof-mark">{% icon "globe" %}</span><span>Learn in Hindi, Tamil, Bengali — or any language you like</span></li>
+            <li class="u-proof"><span class="u-proof-mark">{% icon "check" %}</span><span>Always free for students</span></li>
           </ul>
 
           {% comment %}Real numbers only, and only once they exist. An empty
@@ -120,7 +120,7 @@ Honesty constraints held throughout:
               {# ---- Step 1: subject ---- #}
               <div x-show="step === 1">
                 <h2 class="font-display text-[1.25rem] font-semibold text-ink-900">What do you want to learn?</h2>
-                <p class="u-fine mt-1">Pick one to start. You can add more later.</p>
+                <p class="u-fine mt-1">Pick one to start — you can add more later.</p>
                 <div class="mt-5">
                   {% include "web/partials/_taxonomy_picker.html" with items=subjects field="subject" pid="hero-subj" placeholder="Type a subject — e.g. Mathematics" other=1 %}
                 </div>
@@ -135,8 +135,8 @@ Honesty constraints held throughout:
                 <button type="button" class="u-btn-ghost u-btn-sm -ml-3 mb-3" @click="step = 1">
                   {% icon "arrow-left" "h-4 w-4" %} <span x-text="resolvedSubject"></span>
                 </button>
-                <h2 class="font-display text-[1.25rem] font-semibold text-ink-900">Taught in which language?</h2>
-                <p class="u-fine mt-1">Many students learn faster in their first language.</p>
+                <h2 class="font-display text-[1.25rem] font-semibold text-ink-900">In which language?</h2>
+                <p class="u-fine mt-1">Most people learn faster in their own language.</p>
                 <div class="mt-5">
                   {% include "web/partials/_taxonomy_picker.html" with items=languages field="language" pid="hero-lang" placeholder="Type a language — e.g. Hindi" anylabel="Any language" %}
                 </div>
@@ -151,7 +151,7 @@ Honesty constraints held throughout:
                   {% icon "arrow-left" "h-4 w-4" %} <span x-text="crumb()"></span>
                 </button>
                 <h2 class="font-display text-[1.25rem] font-semibold text-ink-900">When are you free?</h2>
-                <p class="u-fine mt-1">This is what we score teachers on.</p>
+                <p class="u-fine mt-1">We'll only show teachers free at those times.</p>
 
                 <fieldset class="mt-5">
                   <legend class="u-eyebrow">Days</legend>
@@ -210,18 +210,18 @@ Honesty constraints held throughout:
         <div class="mt-10 grid gap-6 md:grid-cols-3">
           <div>
             <span class="grid h-11 w-11 place-items-center rounded-xl bg-pine-100 text-pine-700">{% icon "clock" "h-5 w-5" %}</span>
-            <h3 class="u-h3 mt-5">Time is weighed highest</h3>
-            <p class="u-body mt-2 text-ink-600">Every result carries a schedule-fit score against the hours you gave us. A brilliant teacher who can't make your Tuesday isn't a match, and we don't pretend otherwise.</p>
+            <h3 class="u-h3 mt-5">Your time comes first</h3>
+            <p class="u-body mt-2 text-ink-600">A great teacher who can't make Tuesday evening is no use to you. So we only show you the ones free when you are.</p>
           </div>
           <div>
             <span class="grid h-11 w-11 place-items-center rounded-xl bg-pine-100 text-pine-700">{% icon "globe" "h-5 w-5" %}</span>
-            <h3 class="u-h3 mt-5">Taught in your language</h3>
-            <p class="u-body mt-2 text-ink-600">Filter for a teacher who teaches in Hindi, Tamil, Bengali or any language on the platform — not just whoever is nearest.</p>
+            <h3 class="u-h3 mt-5">Learn in your language</h3>
+            <p class="u-body mt-2 text-ink-600">Hindi, Tamil, Bengali — or whatever you pick. Things click faster in the language you think in.</p>
           </div>
           <div>
             <span class="grid h-11 w-11 place-items-center rounded-xl bg-pine-100 text-pine-700">{% icon "shield" "h-5 w-5" %}</span>
-            <h3 class="u-h3 mt-5">Verified by a person</h3>
-            <p class="u-body mt-2 text-ink-600">Identity and credentials are checked before a teacher can appear in search. A badge here means someone looked — it isn't self-declared.</p>
+            <h3 class="u-h3 mt-5">We check every teacher</h3>
+            <p class="u-body mt-2 text-ink-600">Someone here looks at their ID and qualifications before they ever reach you. Nobody gets in just by saying so.</p>
           </div>
         </div>
       </div>
@@ -234,24 +234,24 @@ Honesty constraints held throughout:
       <div class="u-shell">
         <div class="max-w-prose">
           <span class="u-eyebrow">How it works</span>
-          <h2 class="u-h2 mt-3">You post once. Teachers come to you.</h2>
-          <p class="u-lede mt-3">No bidding wars, no cold-messaging fifty profiles, no inbox to manage.</p>
+          <h2 class="u-h2 mt-3">Tell us once. Teachers come to you.</h2>
+          <p class="u-lede mt-3">No scrolling through hundreds of profiles. No messages to chase.</p>
         </div>
         <ol class="mt-10 grid gap-5 md:grid-cols-3">
           <li class="u-block flex flex-col gap-2.5 pl-6">
             <span class="u-num font-display text-[1.75rem] font-bold leading-none text-pine-700">1</span>
-            <h3 class="text-[0.9375rem] font-semibold text-ink-900">Say what you need</h3>
-            <p class="u-fine">Subject, language, level and the hours you're free. Two minutes, and it's the only form you fill in.</p>
+            <h3 class="text-[0.9375rem] font-semibold text-ink-900">Tell us once</h3>
+            <p class="u-fine">Subject, language, level, and when you're free. Two minutes — and it's the only form you'll fill in.</p>
           </li>
           <li class="u-block flex flex-col gap-2.5 pl-6">
             <span class="u-num font-display text-[1.75rem] font-bold leading-none text-pine-700">2</span>
-            <h3 class="text-[0.9375rem] font-semibold text-ink-900">We match and rank</h3>
-            <p class="u-fine">Verified teachers who teach your subject in your language and are free when you are, scored on how well the timing overlaps.</p>
+            <h3 class="text-[0.9375rem] font-semibold text-ink-900">We find the right ones</h3>
+            <p class="u-fine">Teachers who teach your subject, in your language, at the times you're free. Best fit first.</p>
           </li>
           <li class="u-block flex flex-col gap-2.5 pl-6">
             <span class="u-num font-display text-[1.75rem] font-bold leading-none text-pine-700">3</span>
-            <h3 class="text-[0.9375rem] font-semibold text-ink-900">They reach out</h3>
-            <p class="u-fine">Matched teachers see your requirement and get in touch. You choose who to reply to — and you're never charged for any of it.</p>
+            <h3 class="text-[0.9375rem] font-semibold text-ink-900">They get in touch</h3>
+            <p class="u-fine">You pick who to reply to. And you never pay a rupee.</p>
           </li>
         </ol>
       </div>
@@ -264,10 +264,9 @@ Honesty constraints held throughout:
           <span class="u-eyebrow text-pine-300">For teachers</span>
           <h2 class="u-h2 mt-3 text-white">Stop chasing. Start teaching.</h2>
           <p class="mt-4 max-w-prose text-[1.0625rem] leading-relaxed text-pine-100">
-            Student requirements matched to the subjects you teach, the languages you
-            teach in, and the hours you've set as available. Your plan includes a set
-            number of contact unlocks every 30 days — the same price for every lead,
-            with no bidding and no surprises.
+            Students who want what you teach, in your language, at times you're already
+            free. Your plan gives you a set number of student contacts each month —
+            same price every time, no bidding, no surprises.
           </p>
           <a href="/register/?as=teacher" class="u-btn-secondary u-btn-lg mt-8">
             {% icon "academic" %} Create a teacher account
@@ -276,15 +275,15 @@ Honesty constraints held throughout:
         <ul class="flex flex-col gap-4">
           <li class="u-proof text-pine-50">
             <span class="u-proof-mark bg-pine-600/60 text-marigold-300">{% icon "target" %}</span>
-            <span><strong class="font-semibold text-white">Matched, not broadcast.</strong> Leads are scored against your subjects, languages and actual availability.</span>
+            <span><strong class="font-semibold text-white">The right students, not all of them.</strong> Only ones who fit what you teach and when you're free.</span>
           </li>
           <li class="u-proof text-pine-50">
             <span class="u-proof-mark bg-pine-600/60 text-marigold-300">{% icon "wallet" %}</span>
-            <span><strong class="font-semibold text-white">Flat, predictable cost.</strong> One price per unlock. No auctions, no premium placement fees.</span>
+            <span><strong class="font-semibold text-white">One price, always.</strong> No bidding. No paying extra to show up higher.</span>
           </li>
           <li class="u-proof text-pine-50">
             <span class="u-proof-mark bg-pine-600/60 text-marigold-300">{% icon "calendar" %}</span>
-            <span><strong class="font-semibold text-white">You set the hours.</strong> Set your weekly availability once; matching respects it.</span>
+            <span><strong class="font-semibold text-white">You set your hours.</strong> Tell us when you teach, once. We stick to it.</span>
           </li>
         </ul>
       </div>
@@ -294,7 +293,7 @@ Honesty constraints held throughout:
     <section class="u-band-fade py-16 sm:py-20">
       <div class="u-shell flex flex-col items-start gap-6 sm:items-center sm:text-center">
         <h2 class="u-h2 max-w-2xl">Tell us what you need. We'll do the looking.</h2>
-        <p class="u-lede sm:mx-auto">Takes under a minute, and it costs students nothing.</p>
+        <p class="u-lede sm:mx-auto">Under a minute. Free for students, always.</p>
         <a :href="registerHref()" class="u-btn-primary u-btn-lg">
           Get matched — it's free {% icon "chevron-right" %}
         </a>
@@ -380,25 +379,26 @@ Honesty constraints held throughout:
         },
 
         summary() {
-          const subject = this.resolvedSubject || "Teachers";
+          if (!this.days.length) return "Pick a day or two to see who's free.";
+          const subject = this.resolvedSubject ? this.resolvedSubject + " teachers" : "teachers";
           const lang = this.resolvedLanguage ? ` in ${this.resolvedLanguage}` : "";
-          if (!this.days.length) {
-            return `Pick a day or two and we'll show you which ${subject}${lang} teachers are genuinely free then.`;
-          }
-          return `${subject}${lang} teachers free ${this.scheduleText()} — ranked by how well their hours fit yours.`;
+          return `We'll find ${subject}${lang}, free on ${this.scheduleText()}.`;
         },
 
+        // "Monday mornings", "Tuesday & Thursday evenings", "most evenings" —
+        // the day stays singular and the part of day takes the plural, which
+        // is how people actually say it.
         scheduleText() {
           const names = this.days
             .map((n) => (this.DAYS.find((d) => d.n === n) || {}).full)
             .filter(Boolean);
-          const band = (this.BANDS.find((b) => b.id === this.band) || {}).label || "";
+          const band = ((this.BANDS.find((b) => b.id === this.band) || {}).label || "").toLowerCase();
+          if (names.length >= 5) return "most " + band + "s";
           let dayText;
-          if (names.length === 1) dayText = names[0] + "s";
-          else if (names.length === 2) dayText = names[0] + "s & " + names[1] + "s";
-          else if (names.length <= 4) dayText = names.slice(0, -1).map((d) => d + "s").join(", ") + " & " + names[names.length - 1] + "s";
-          else dayText = names.length + " days a week";
-          return dayText + " " + band.toLowerCase() + "s";
+          if (names.length === 1) dayText = names[0];
+          else if (names.length === 2) dayText = names[0] + " & " + names[1];
+          else dayText = names.slice(0, -1).join(", ") + " & " + names[names.length - 1];
+          return dayText + " " + band + "s";
         },
 
         get hasStats() { return this.statLine.length > 0; },

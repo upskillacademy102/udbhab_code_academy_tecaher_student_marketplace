@@ -253,16 +253,19 @@ document.addEventListener("alpine:init", () => {
           this.days.sort((a, b) => a - b);
         },
 
+        // "Monday mornings", "Tuesday & Thursday evenings", "most evenings" —
+        // the day stays singular and the part of day takes the plural, which
+        // is how people actually say it.
         scheduleSummary() {
           if (!this.days.length) return "";
           const names = this.days.map((n) => (DAYS.find((d) => d.n === n) || {}).full).filter(Boolean);
-          const band = (BANDS.find((b) => b.id === this.band) || {}).label || "";
+          const band = ((BANDS.find((b) => b.id === this.band) || {}).label || "").toLowerCase();
+          if (names.length >= 5) return "most " + band + "s";
           let dayText;
-          if (names.length === 1) dayText = names[0] + "s";
-          else if (names.length === 2) dayText = names[0] + "s & " + names[1] + "s";
-          else if (names.length <= 4) dayText = names.slice(0, -1).map((d) => d + "s").join(", ") + " & " + names[names.length - 1] + "s";
-          else dayText = names.length + " days a week";
-          return dayText + " " + band.toLowerCase() + "s";
+          if (names.length === 1) dayText = names[0];
+          else if (names.length === 2) dayText = names[0] + " & " + names[1];
+          else dayText = names.slice(0, -1).join(", ") + " & " + names[names.length - 1];
+          return dayText + " " + band + "s";
         },
 
         /* ---- account form validation ---- */

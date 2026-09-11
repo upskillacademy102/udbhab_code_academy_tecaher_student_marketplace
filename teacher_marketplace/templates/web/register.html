@@ -9,9 +9,8 @@
 {% block panel_width %}max-w-[30rem]{% endblock %}
 
 {% block promo_title %}Tell us what you need before you tell us who you are.{% endblock %}
-{% block promo_body %}A few quick questions first. They're not a formality — they're what
-lets us show you teachers who teach in your language and are genuinely free when you
-are, the moment you sign in.{% endblock %}
+{% block promo_body %}A few quick questions first, so the right teachers are waiting
+the moment you sign in.{% endblock %}
 
 {% block panel %}
 {{ subjects|json_script:"tax-subjects" }}
@@ -49,7 +48,7 @@ are, the moment you sign in.{% endblock %}
           <span class="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-pine-100 text-pine-700">{% icon "user" %}</span>
           <span class="flex-1">
             <span class="block text-[0.9375rem] font-semibold text-ink-900">I want to learn</span>
-            <span class="u-fine mt-0.5 block">Get matched with verified teachers — free, always</span>
+            <span class="u-fine mt-0.5 block">Find a teacher who fits. Always free.</span>
           </span>
           {% icon "chevron-right" "h-5 w-5 text-ink-300 group-hover:text-pine-600" %}
         </button>
@@ -59,7 +58,7 @@ are, the moment you sign in.{% endblock %}
           <span class="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-pine-100 text-pine-700">{% icon "academic" %}</span>
           <span class="flex-1">
             <span class="block text-[0.9375rem] font-semibold text-ink-900">I want to teach</span>
-            <span class="u-fine mt-0.5 block">Receive student requirements matched to your subjects and hours</span>
+            <span class="u-fine mt-0.5 block">Get students who fit your subjects and your hours.</span>
           </span>
           {% icon "chevron-right" "h-5 w-5 text-ink-300 group-hover:text-pine-600" %}
         </button>
@@ -80,7 +79,7 @@ are, the moment you sign in.{% endblock %}
 
       <h1 class="u-h2" x-text="step === 'teaches' ? 'What do you teach?' : 'What do you want to learn?'"></h1>
       <p class="u-lede mt-2 text-[0.9375rem]"
-         x-text="step === 'teaches' ? 'Pick your main subject. You can add more once your profile is set up.' : 'Pick one to start. You can add more subjects later.'"></p>
+         x-text="step === 'teaches' ? 'Pick your main one — you can add more later.' : 'Pick one to start — you can add more later.'"></p>
 
       <div class="mt-7">
         {% include "web/partials/_taxonomy_picker.html" with items=subjects field="subject" pid="rg-subj" placeholder="Type a subject — e.g. Mathematics" other=1 %}
@@ -102,8 +101,8 @@ are, the moment you sign in.{% endblock %}
         {% icon "arrow-left" "h-4 w-4" %} <span x-text="resolvedSubject"></span>
       </button>
 
-      <h1 class="u-h2">Taught in which language?</h1>
-      <p class="u-lede mt-2 text-[0.9375rem]">Many students learn faster in their first language. Leave it on <em>Any</em> if you don't mind.</p>
+      <h1 class="u-h2">In which language?</h1>
+      <p class="u-lede mt-2 text-[0.9375rem]">Most people learn faster in their own language. Leave it on <em>Any</em> if you don't mind.</p>
 
       <div class="mt-7">
         {% include "web/partials/_taxonomy_picker.html" with items=languages field="language" pid="rg-lang" placeholder="Type a language — e.g. Hindi" anylabel="Any language" %}
@@ -124,7 +123,7 @@ are, the moment you sign in.{% endblock %}
 
       <h1 class="u-h2">What level?</h1>
       <p class="u-lede mt-2 text-[0.9375rem]">
-        Teachers set the levels they take. This keeps the ones who don't teach yours out of your results.
+        So we don't send you teachers who don't take your level.
       </p>
 
       <div class="mt-7 grid grid-cols-2 gap-2">
@@ -153,7 +152,7 @@ are, the moment you sign in.{% endblock %}
       </button>
 
       <h1 class="u-h2">When are you free?</h1>
-      <p class="u-lede mt-2 text-[0.9375rem]">This is the one that does the heavy lifting — it's how we score who actually fits.</p>
+      <p class="u-lede mt-2 text-[0.9375rem]">This is the one that matters most.</p>
 
       <fieldset class="mt-7">
         <legend class="u-eyebrow">Days</legend>
@@ -193,9 +192,9 @@ are, the moment you sign in.{% endblock %}
         Continue {% icon "chevron-right" %}
       </button>
       <button type="button" class="u-btn-ghost u-btn-sm mt-2 w-full" @click="skip()">
-        Skip — I'm flexible on timing
+        Skip — any time works for me
       </button>
-      <p class="u-fine mt-2 text-center">Skipping means results won't carry a schedule-fit score. You can add hours any time.</p>
+      <p class="u-fine mt-2 text-center">Skip and we can't put the best-fitting teachers first. You can add this later.</p>
     </div>
   </template>
 

@@ -34,7 +34,7 @@ JavaScript array. Alpine only owns selection state and the filter.
            maxlength="60" placeholder="{{ placeholder }}"
            x-model.trim="{% if field == 'subject' %}subjectCustom{% else %}{{ field }}{% endif %}"
            @input="{% if field == 'subject' %}subject = subjectCustom ? '__other' : null{% endif %}">
-    <p class="u-hint">We'll match it to a teacher's {{ field }}s.</p>
+    <p class="u-hint">{% if field == 'subject' %}We'll find teachers who teach it.{% else %}We'll find teachers who teach in it.{% endif %}</p>
   </div>
 
 {% elif items|length <= 12 %}
@@ -104,16 +104,16 @@ JavaScript array. Alpine only owns selection state and the filter.
     </ul>
 
     <p class="u-hint mt-1.5" x-show="cb.open && cb.field === '{{ field }}' && !cbOptions().length" x-cloak>
-      Nothing matches &ldquo;<span x-text="cb.query"></span>&rdquo;{% if other %} — pick <strong>Something else</strong> to type it in{% endif %}.
+      No match for &ldquo;<span x-text="cb.query"></span>&rdquo;{% if other %} — tap <strong>Something else</strong> to type it in{% endif %}.
     </p>
   </div>
 {% endif %}
 
 {% if other %}
   <div class="u-field mt-3" x-show="subject === '__other'" x-collapse>
-    <label class="u-label" for="{{ pid }}-other">Which subject?</label>
+    <label class="u-label" for="{{ pid }}-other">What is it?</label>
     <input type="text" id="{{ pid }}-other" class="u-input" maxlength="60"
            placeholder="e.g. Tabla, French, NEET Biology" x-model.trim="subjectCustom">
-    <p class="u-hint">Type it however you'd say it — we'll match it to the right subject.</p>
+    <p class="u-hint">Type it how you'd say it.</p>
   </div>
 {% endif %}
