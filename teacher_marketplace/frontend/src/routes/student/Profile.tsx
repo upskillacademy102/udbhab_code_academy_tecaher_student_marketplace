@@ -96,7 +96,11 @@ export function Profile() {
       // these optional fields rather than as "cleared".
       const payload: Record<string, string> = {};
       for (const [k, v] of Object.entries(f)) if (v) payload[k] = v;
-      await api.patch("/students/me/", payload, { silent: true });
+      // PATCH updates an existing profile; on a first save there is nothing
+      // to patch and the API answers "Student profile not found. Create one
+      // first." POST is what creates it.
+      if (exists) await api.patch("/students/me/", payload, { silent: true });
+      else await api.post("/students/me/", payload, { silent: true });
       setExists(true);
       toast("success", "Saved.");
     } catch (err) {

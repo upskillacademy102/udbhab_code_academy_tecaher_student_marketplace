@@ -74,7 +74,10 @@ export function TeacherDetail() {
   });
 
   const t = data;
-  const notFound = isError && (error as { status?: number })?.status === 404;
+  // Only claim "not found" when there is genuinely nothing to show. If the
+  // card handed data forward, render it even if the person fetch failed —
+  // a blank error page over perfectly good data is the worse outcome.
+  const notFound = !t && isError && (error as { status?: number })?.status === 404;
 
   if (notFound) {
     return (

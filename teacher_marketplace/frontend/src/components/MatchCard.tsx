@@ -80,6 +80,17 @@ export interface MatchCardProps {
 }
 
 /**
+ * A search row is a TeacherProfile, so `row.id` is the PROFILE id — but
+ * /teachers/{id}/ is keyed on the Teacher id. Routing with the profile id
+ * looks fine when clicked (the stash below hydrates the page) and then 404s
+ * on refresh or a shared link, with the availability checker silently
+ * failing too. So the route and the stash both key on the Teacher id.
+ */
+export function teacherRouteId(t: TeacherProfile): string {
+  return t.teacher?.id ?? t.id;
+}
+
+/**
  * The detail page cannot refetch the marketplace half of a teacher — no API
  * returns another teacher's profile by id — so the card hands its own data
  * forward before navigating. Without this, opening a teacher shows the person
@@ -87,7 +98,7 @@ export interface MatchCardProps {
  */
 function stash(t: TeacherProfile) {
   try {
-    sessionStorage.setItem("tp:" + t.id, JSON.stringify(t));
+    sessionStorage.setItem("tp:" + teacherRouteId(t), JSON.stringify(t));
   } catch {
     /* private mode: the detail page degrades to the person record */
   }
@@ -107,7 +118,7 @@ export function MatchCard({ teacher, isTopMatch = false, index = 0 }: MatchCardP
 
   return (
     <Link
-      to={`/student/teachers/${teacher.id}/`}
+      to={`/student/teachers/${teacherRouteId(teacher)}/`}
       onClick={() => stash(teacher)}
       className="u-stagger-item group flex h-full flex-col overflow-hidden rounded-2xl border-[1.5px] border-ink-300 bg-paper shadow-lift transition duration-150 ease-enter hover:-translate-y-px hover:border-pine-400 hover:shadow-raise"
       style={{ "--d": `${Math.min(index, 7) * 30}ms` } as React.CSSProperties}
