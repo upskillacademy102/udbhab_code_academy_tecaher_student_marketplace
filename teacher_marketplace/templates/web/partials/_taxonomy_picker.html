@@ -19,16 +19,16 @@ JavaScript array. Alpine only owns selection state and the filter.
 {% endcomment %}
 
 {% if anylabel %}
-  {# "Any language" — pre-selected by default, so this whole step is a
-     one-tap pass for the majority who have no preference. #}
+  {% comment %}"Any language" — pre-selected by default, so this whole step
+  is a one-tap pass for the majority who have no preference.{% endcomment %}
   <button type="button" class="u-chip u-chip-sm mb-2"
           :aria-pressed="{{ field }} === null"
           @click="{{ field }} = null; cbClose()">{{ anylabel }}</button>
 {% endif %}
 
 {% if items|length == 0 %}
-  {# ---- 0 rows: free text only. An empty chip row reads as broken, and
-       text resolves through the matching service anyway. ---- #}
+  {% comment %}0 rows: free text only. An empty chip row reads as broken,
+  and text resolves through the matching service anyway.{% endcomment %}
   <div class="u-field">
     <input type="text" id="{{ pid }}-text" class="u-input"
            maxlength="60" placeholder="{{ placeholder }}"
@@ -53,8 +53,8 @@ JavaScript array. Alpine only owns selection state and the filter.
   </div>
 
 {% else %}
-  {# ---- 13+ rows: the most-taught options stay visible as chips, the
-       long tail lives behind an accessible filter. ---- #}
+  {% comment %}13+ rows: the most-taught options stay visible as chips, the
+  long tail lives behind an accessible filter.{% endcomment %}
   <div class="flex flex-wrap gap-2">
     {% for name in items|slice:":8" %}
       <button type="button" class="u-chip u-chip-sm"
