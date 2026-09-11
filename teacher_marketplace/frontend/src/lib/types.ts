@@ -98,6 +98,89 @@ export interface StudentRequirement {
   created_at: string;
 }
 
+/* ---------------------------------------------------------------- *
+ * Teacher side. Field names taken from live responses, not guessed.  *
+ * ---------------------------------------------------------------- */
+
+/** GET /dashboard/ — the teacher's own numbers. */
+export interface TeacherDashboard {
+  wallet_balance?: number | string | null;
+  extra_unlocks?: number | null;
+  free_leads_remaining?: number | null;
+  allowance_total?: number | null;
+  allowance_used?: number | null;
+  allowance_resets_in_days?: number | null;
+  allowance_resets_at?: string | null;
+  todays_leads?: number | null;
+  unlocked_leads?: number | null;
+  pending_rating_count?: number | null;
+  subscription_status?: string | null;
+}
+
+/** GET /subscriptions/quota/ */
+export interface Quota {
+  period_start?: string;
+  period_end?: string;
+  days_until_reset?: number;
+  total_free_leads?: number;
+  used_free_leads?: number;
+  remaining_free_leads?: number;
+  has_free_leads_remaining?: boolean;
+}
+
+/** GET /leads/ — a student enquiry matched to this teacher. */
+export interface Lead {
+  id: string;
+  subject_name?: string | null;
+  teaching_mode?: string | null;
+  city_name?: string | null;
+  budget_min?: string | null;
+  budget_max?: string | null;
+  student_name?: string | null;
+  status?: string | null;
+  is_viewed?: boolean;
+  contact_unlocked?: boolean;
+  my_rating?: string | null;
+  created_at: string;
+  /** Only present once unlocked. */
+  student_email?: string | null;
+  student_mobile?: string | null;
+  description?: string | null;
+  preferred_timing?: string | null;
+}
+
+/** GET /matching/assignments/ — a time-limited offer of a lead. */
+export interface Assignment {
+  id: string;
+  lead?: string | null;
+  subject_name?: string | null;
+  subscription_tier?: string | null;
+  assignment_stage?: string | null;
+  assigned_at?: string | null;
+  expires_at?: string | null;
+  status?: string | null;
+  response?: string | null;
+  time_match_score?: number | null;
+  location_score?: number | null;
+  subject_match_score?: number | null;
+  language_match_score?: number | null;
+}
+
+/** GET /subscriptions/plans/ */
+export interface Plan {
+  id: string;
+  name: string;
+  monthly_price?: string | null;
+  compare_at_price?: string | null;
+  discount_percent?: number | null;
+  free_leads?: number | null;
+  base_leads?: number | null;
+  bonus_leads?: number | null;
+  priority_rank?: number | null;
+  is_featured_listing?: boolean;
+  status?: string | null;
+}
+
 /**
  * What the sign-up flow parked in localStorage before the account existed.
  * Written by static/js/auth.js; read once here and then cleared.

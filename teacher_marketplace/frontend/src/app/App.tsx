@@ -6,6 +6,10 @@ import { Requirements } from "@/routes/student/Requirements";
 import { RequirementDetail } from "@/routes/student/RequirementDetail";
 import { Profile } from "@/routes/student/Profile";
 import { Notifications } from "@/routes/Notifications";
+import { TeacherDashboard } from "@/routes/teacher/Dashboard";
+import { Leads } from "@/routes/teacher/Leads";
+import { LeadDetail } from "@/routes/teacher/LeadDetail";
+import { Assignments } from "@/routes/teacher/Assignments";
 
 /**
  * Routes the SPA owns.
@@ -25,7 +29,24 @@ export function App() {
       <Route path="/student/requirements/:id/" element={<RequirementDetail />} />
       <Route path="/student/profile/" element={<Profile />} />
       <Route path="/student/notifications/" element={<Notifications />} />
-      <Route path="*" element={<Navigate to="/student/" replace />} />
+
+      <Route path="/teacher/" element={<TeacherDashboard />} />
+      <Route path="/teacher/leads/" element={<Leads />} />
+      <Route path="/teacher/leads/:id/" element={<LeadDetail />} />
+      <Route path="/teacher/assignments/" element={<Assignments />} />
+      <Route path="/teacher/notifications/" element={<Notifications />} />
+
+      <Route path="*" element={<Fallback />} />
     </Routes>
   );
+}
+
+/**
+ * Unknown paths go to the right home for whoever is signed in. The shell
+ * template stamps the role on <body>, so the SPA never has to guess and a
+ * teacher is never bounced into the student area.
+ */
+function Fallback() {
+  const role = document.body.dataset.role;
+  return <Navigate to={role === "teacher" ? "/teacher/" : "/student/"} replace />;
 }

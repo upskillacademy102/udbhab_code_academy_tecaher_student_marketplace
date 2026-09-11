@@ -95,31 +95,29 @@ urlpatterns = [
     # ============ TEACHER ============
     path(
         "teacher/",
-        page("web/teacher/dashboard.html", roles=T, title="Dashboard"),
+        spa(roles=T, title="Your enquiries"),
         name="teacher-home",
     ),
     path(
         "teacher/leads/",
-        page(
-            "web/teacher/leads.html",
+        spa(
             roles=T,
-            title="Leads",
-            desc="Student enquiries matched to your profile. Unlock a lead to see full contact details.",
+            title="Enquiries",
+            desc="Students who want what you teach. Unlock one to see how to reach them.",
         ),
         name="teacher-leads",
     ),
     path(
         "teacher/leads/<uuid:id>/",
-        page("web/teacher/lead_detail.html", roles=T, title="Lead"),
+        spa(roles=T, title="Enquiry"),
         name="teacher-lead-detail",
     ),
     path(
         "teacher/assignments/",
-        page(
-            "web/teacher/assignments.html",
+        spa(
             roles=T,
-            title="Lead Assignments",
-            desc="Time-limited lead offers. Accept to add them to your leads.",
+            title="Offers",
+            desc="First refusal on students who match you closely. They expire.",
         ),
         name="teacher-assignments",
     ),
@@ -182,7 +180,7 @@ urlpatterns = [
     ),
     path(
         "teacher/notifications/",
-        page("web/notifications.html", roles=T, title="Notifications"),
+        spa(roles=T, title="Notifications"),
         name="teacher-notifications",
     ),
     path(
