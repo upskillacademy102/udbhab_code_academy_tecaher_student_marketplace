@@ -37,11 +37,10 @@ urlpatterns = [
     ),
     path(
         "student/teachers/",
-        page(
-            "web/student/teachers.html",
+        spa(
             roles=S,
             title="Find Teachers",
-            desc="Search verified teachers by subject, language, mode and schedule.",
+            desc="Search verified teachers by subject, language, price and when you're free.",
         ),
         name="student-teachers",
     ),

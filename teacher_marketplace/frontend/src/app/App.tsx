@@ -1,18 +1,20 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { Discover } from "@/routes/student/Discover";
+import { Search } from "@/routes/student/Search";
 
 /**
- * Stage B mounts one route: the student's Discover page.
+ * Routes the SPA owns so far.
  *
- * Every other student and teacher page is still served by Django, so the
- * router deliberately does NOT catch everything — an unknown path falls back
- * to Discover rather than rendering a blank SPA over a page Django owns. The
- * remaining routes arrive in stages C and D.
+ * Everything not listed here is still served by Django, so the catch-all
+ * sends unknown paths back to Discover rather than painting a blank SPA over
+ * a page Django owns. Pages move across one at a time; the remaining student
+ * routes and the teacher area follow.
  */
 export function App() {
   return (
     <Routes>
       <Route path="/student/" element={<Discover />} />
+      <Route path="/student/teachers/" element={<Search />} />
       <Route path="*" element={<Navigate to="/student/" replace />} />
     </Routes>
   );
