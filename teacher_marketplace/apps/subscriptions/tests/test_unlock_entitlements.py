@@ -294,10 +294,27 @@ class TopUpPurchaseTests(PipelineFixtureMixin, APITestCase):
         single = TokenPackage.objects.get(name="1 extra unlock")
         self.assertEqual(single.token_count, 1)
         self.assertEqual(str(single.final_price), "15.00")
-        # Rs.49.00 exactly is unreachable at 18% on a 2dp base; we take the
-        # paisa UNDER the advertised price, never over.
+        # Repriced to Rs.60 by payments/0008. Unlike Rs.49, Rs.60 lands
+        # exactly on a two-decimal base (50.85 * 1.18 = 60.0030 -> 60.00),
+        # so there is no paisa-under fudge here.
         self.assertEqual(self.pack.token_count, 5)
-        self.assertEqual(str(self.pack.final_price), "48.99")
+        self.assertEqual(str(self.pack.final_price), "60.00")
+
+    def test_every_plan_including_free_may_buy_top_ups(self):
+        """
+        Packs sell CAPACITY to everyone; the subscription sells PRIORITY.
+
+        The priority half is covered by the cascade test above - this one
+        pins the eligibility half, which the UI reads via
+        TokenPackageSerializer.can_purchase.
+        """
+        from apps.payments.views import teacher_can_buy_topups
+
+        free = self.make_teacher("FreeBuyer", plan=self.free_plan)
+        paid = self.make_teacher("PaidBuyer", plan=self.elite_plan)
+
+        self.assertTrue(teacher_can_buy_topups(free.teacher))
+        self.assertTrue(teacher_can_buy_topups(paid.teacher))
 
 
 class AllowanceClawbackTests(PipelineFixtureMixin, APITestCase):

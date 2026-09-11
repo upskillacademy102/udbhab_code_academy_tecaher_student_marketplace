@@ -21,7 +21,13 @@ interface Pack {
   id: string;
   name?: string | null;
   token_count?: number | null;
+  /** GST-EXCLUSIVE base. Never show this — it is not what gets charged. */
   price?: string | null;
+  gst_amount?: string | null;
+  /** What actually reaches Razorpay. This is the number to display. */
+  final_price?: string | null;
+  /** The API decides eligibility; the UI must not invent its own rule. */
+  can_purchase?: boolean;
   is_active?: boolean;
 }
 
@@ -152,7 +158,10 @@ export function Plan() {
     } catch (e) {
       const err = e as ApiError;
       if (err.code === "TOPUP_REQUIRES_PAID_PLAN") {
-        toast("warning", "Top-up packs are for paid plans only.");
+        // Only reachable if TOPUP_ELIGIBLE_PLANS is narrowed again; the
+        // server's message is the accurate one, so use it rather than a
+        // guess baked in here.
+        toast("warning", err.message || "This pack isn't available on your plan.");
       } else {
         toast("error", err.status === 400 ? "That's no longer available." : err.message || "Couldn't start checkout.");
       }
@@ -236,32 +245,42 @@ export function Plan() {
         )}
       </section>
 
-      {/* Top-ups, honestly gated */}
+      {/* Top-ups — open to every plan. Capacity, not priority. */}
       {(packs.data?.items ?? []).length > 0 && (
         <section className="flex flex-col gap-4">
           <div>
             <h2 className="u-h3">Need a few more this month?</h2>
-            <p className="u-fine mt-0.5">Top-ups never expire — unlike your monthly allowance.</p>
+            <p className="u-fine mt-0.5">
+              Any plan can buy these, and they never expire — unlike your monthly allowance.
+              {!onPaidPlan && " A paid plan is what gets you seen first."}
+            </p>
           </div>
-          {!onPaidPlan && (
-            <div className="u-alert u-alert-warn">
-              <span>Top-up packs are for paid plans. Pick a plan above first.</span>
-            </div>
-          )}
           <div className="grid gap-4 sm:grid-cols-3">
-            {(packs.data?.items ?? []).map((pk) => (
-              <article key={pk.id} className="flex flex-col gap-2 rounded-2xl border-[1.5px] border-ink-300 bg-paper p-5 shadow-lift">
-                <h3 className="text-[1rem] font-semibold text-ink-900">
-                  {pk.token_count} {pk.token_count === 1 ? "unlock" : "unlocks"}
-                </h3>
-                <p className="font-display text-xl font-bold tabular-nums text-ink-900">{money(pk.price) ?? "—"}</p>
-                <button type="button" className="u-btn-secondary u-btn-sm mt-auto"
-                  disabled={!onPaidPlan || busy === pk.id} data-loading={busy === pk.id || undefined}
-                  onClick={() => checkout({ token_package_id: pk.id }, `${pk.token_count} extra unlocks`, pk.id)}>
-                  Buy
-                </button>
-              </article>
-            ))}
+            {(packs.data?.items ?? []).map((pk) => {
+              const count = pk.token_count ?? 0;
+              // final_price is what Razorpay charges. `price` is the
+              // GST-exclusive base and showing it quotes a number lower
+              // than the one that leaves their account.
+              const pay = money(pk.final_price ?? pk.price);
+              const each = count > 1 && pk.final_price ? Number(pk.final_price) / count : null;
+              const buyable = pk.can_purchase !== false;
+              return (
+                <article key={pk.id} className="flex flex-col gap-2 rounded-2xl border-[1.5px] border-ink-300 bg-paper p-5 shadow-lift">
+                  <h3 className="text-[1rem] font-semibold text-ink-900">
+                    {count} {count === 1 ? "unlock" : "unlocks"}
+                  </h3>
+                  <p className="font-display text-xl font-bold tabular-nums text-ink-900">{pay ?? "—"}</p>
+                  <p className="u-fine">
+                    {each ? `₹${Math.round(each)} each · ` : ""}GST included
+                  </p>
+                  <button type="button" className="u-btn-secondary u-btn-sm mt-auto"
+                    disabled={!buyable || busy === pk.id} data-loading={busy === pk.id || undefined}
+                    onClick={() => checkout({ token_package_id: pk.id }, `${count} extra unlocks`, pk.id)}>
+                    Buy
+                  </button>
+                </article>
+              );
+            })}
           </div>
         </section>
       )}

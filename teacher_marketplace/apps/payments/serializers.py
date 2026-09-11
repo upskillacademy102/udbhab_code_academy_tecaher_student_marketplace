@@ -44,10 +44,15 @@ class TokenPackageSerializer(serializers.ModelSerializer):
         """
         Whether the requesting teacher may actually buy this pack right now.
 
-        While the token system is disabled, extra-unlock packs are sold to
-        paid plans only - so a Free teacher still SEES the catalogue (that
-        listing is the upsell surface) but gets False here, and the frontend
-        renders "Upgrade to buy" in place of the buy button.
+        Driven by settings.TOPUP_ELIGIBLE_PLANS, which includes Free: EVERY
+        plan may buy extra unlocks. Packs sell CAPACITY; the subscription
+        sells PRIORITY. A Free teacher holding twenty top-ups still sits at
+        priority_rank 0 and sees each lead only after every paid teacher in
+        LeadDistributionService's cascade, so selling them capacity never
+        erodes what a paid plan is actually for.
+
+        False here means no Teacher record yet, not "wrong plan" - the
+        frontend should send them to create a profile, not to upgrade.
         """
         request = self.context.get("request")
         user = getattr(request, "user", None)
