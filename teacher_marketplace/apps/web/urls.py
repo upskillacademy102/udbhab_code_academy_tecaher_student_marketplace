@@ -8,7 +8,7 @@ every role_required() route (mirrors the API), and additionally gets the
 from django.urls import path
 
 from apps.web import views
-from apps.web.views import page
+from apps.web.views import page, spa
 
 S = ("student",)
 T = ("teacher",)
@@ -24,9 +24,15 @@ urlpatterns = [
     path("login/staff/", views.staff_login_page, name="staff-login"),
     path("suspended/", views.suspended_page, name="suspended"),
     # ============ STUDENT ============
+    # Stage B: the student home is the React Discover page. Every other
+    # student route is still a Django template and moves across in stage C.
     path(
         "student/",
-        page("web/student/dashboard.html", roles=S, title="Dashboard"),
+        spa(
+            roles=S,
+            title="Discover",
+            desc="Teachers who teach what you want, in your language, when you're free.",
+        ),
         name="student-home",
     ),
     path(

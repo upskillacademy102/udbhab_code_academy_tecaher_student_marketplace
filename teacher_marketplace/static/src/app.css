@@ -659,9 +659,11 @@
 
   /* Staggered arrival. The template sets --d per item; capped in markup at
      8 items so a long list never feels like it's loading slowly. */
-  .u-stagger > * { animation: rise-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: var(--d, 0ms); }
+  .u-stagger > *,
+  .u-stagger-item { animation: rise-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: var(--d, 0ms); }
   @media (prefers-reduced-motion: reduce) {
-    .u-stagger > * { animation: none; }
+    .u-stagger > *,
+    .u-stagger-item { animation: none; }
   }
 
   /* Warm paper texture — replaces the indigo dot-grid, which was the accent

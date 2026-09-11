@@ -118,6 +118,34 @@ def page(template, *, roles, title, desc="", **extra):
     return view
 
 
+def spa(*, roles, title, desc=""):
+    """
+    A page owned by the React app instead of a Django template.
+
+    Identical guard story to page(): role_required still decides who may see
+    the shell, and the DRF API still re-authorises every call the browser
+    makes. The only difference is that the body is mounted by React rather
+    than rendered here, so pages can move across one at a time.
+    """
+    from apps.web.vite import spa_assets
+
+    @role_required(*roles)
+    def view(request, **kwargs):
+        assets = spa_assets()
+        ctx = {
+            "page_title": title,
+            "page_desc": desc,
+            "spa_js": assets["js"],
+            "spa_css": assets["css"],
+            "spa_built": assets["built"],
+        }
+        ctx.update(kwargs)
+        return render(request, "web/app_shell.html", ctx)
+
+    view.__name__ = "spa_" + title.lower().replace(" ", "_")
+    return view
+
+
 # ----------------------------------------------------------------------
 # Error handlers (wired in config/urls.py)
 # ----------------------------------------------------------------------

@@ -32,6 +32,10 @@ module.exports = {
     "./templates/**/*.html",
     "./apps/**/templates/**/*.html",
     "./static/js/**/*.js",
+    // The student/teacher SPA shares this stylesheet — without this glob
+    // every Tailwind class used in React would be purged and the app would
+    // render unstyled.
+    "./frontend/src/**/*.{ts,tsx}",
   ],
   theme: {
     extend: {

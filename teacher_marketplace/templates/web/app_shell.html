@@ -1,0 +1,47 @@
+{% extends "web/base_app.html" %}
+{% load static web_extras %}
+
+{% comment %}
+The SPA mount point.
+
+This deliberately extends base_app.html rather than replacing it: the
+sidebar, topbar, role-aware nav, notification badges and impersonation
+banner all keep working exactly as they do on the Django-rendered pages, and
+React owns only the page body. That means stages C and D can move pages over
+one at a time without the shell ever changing.
+
+Route guards are untouched — apps/web/views.py still wraps this in
+role_required, and the DRF API remains the real authorisation boundary.
+{% endcomment %}
+
+{% block page_actions %}{% endblock %}
+
+{% block content %}
+  {% for href in spa_css %}<link rel="stylesheet" href="{{ href }}">{% endfor %}
+
+  <div id="root">
+    {% comment %}Server-rendered skeleton so the first frame is never blank —
+    React replaces it on mount.{% endcomment %}
+    <div class="flex flex-col gap-6">
+      <div class="u-card h-[72px] animate-pulse"></div>
+      <div class="h-7 w-64 animate-pulse rounded bg-ink-100"></div>
+      <div class="grid gap-5 grid-auto-fill-280">
+        {% for _ in "123456" %}
+          <div class="h-72 animate-pulse rounded-2xl border-[1.5px] border-ink-200 bg-paper"></div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {% if not spa_built %}
+    <div class="u-alert u-alert-warn mt-6">
+      {% icon "alert-triangle" %}
+      <div>
+        <p class="font-semibold">The app bundle hasn't been built yet.</p>
+        <p class="mt-1">Run <code>npm install &amp;&amp; npm run build</code> in <code>frontend/</code>, then reload.</p>
+      </div>
+    </div>
+  {% endif %}
+
+  {% for src in spa_js %}<script type="module" src="{{ src }}"></script>{% endfor %}
+{% endblock %}

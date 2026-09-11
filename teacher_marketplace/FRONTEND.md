@@ -1,9 +1,36 @@
 # Frontend (`apps/web`)
 
-A server-rendered application shell (Django templates) + Tailwind CSS + Alpine.js.
-No Node.js, no build server. Pages render the shell + route guards on the server;
-data is loaded in the browser from the existing DRF API (`/api/v1`) over the same
-httpOnly `access` cookie the API uses.
+Two layers, one origin, one stylesheet.
+
+**Django templates + Tailwind + Alpine** serve the public pages (landing, login,
+register, errors) and every student/teacher/admin page that hasn't moved yet.
+
+**A React + Vite SPA** (`frontend/`) owns pages behind the login, mounted into the
+same `base_app.html` shell so the sidebar, topbar and guards are unchanged. It is
+being moved across a page at a time — `/student/` (Discover) is the first.
+
+Everything is served by Django on a single origin, so the httpOnly `access`
+cookie works identically in both layers. There is no separate dev server.
+
+## Working on the SPA
+
+```powershell
+cd frontend
+npm install
+npm run build      # one-off
+npm run dev        # vite build --watch — rewrites static/app/ on save
+```
+
+`npm run dev` is a watching build, not an HMR dev server. Two servers would mean
+two origins, and the auth cookie only belongs to one of them. Slightly slower;
+auth behaves exactly as it does in production.
+
+`static/app/` is committed (like `static/css/app.css`) so a checkout runs without
+Node installed. `apps/web/vite.py` reads Vite's `manifest.json` to resolve hashed
+filenames; if the bundle is missing the shell says so instead of 404-ing a script.
+
+**Tailwind scans `frontend/src/**/*.{ts,tsx}`** — both layers share
+`static/css/app.css`, so the SPA cannot drift from the public pages.
 
 ```
 apps/web/
