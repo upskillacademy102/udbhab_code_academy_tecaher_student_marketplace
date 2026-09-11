@@ -53,16 +53,65 @@ class PublicPageTests(TestCase):
 
 
 class RequirementScheduleUiTests(TestCase):
-    """H.3: the requirement form collects structured day/time windows."""
+    """
+    H.3: a requirement collects structured day/time windows, not free text.
 
-    def test_form_renders_structured_schedule_controls(self):
+    This used to assert on Alpine markup in the Django template. That page is
+    now a React route, so the same guarantee is checked where it actually
+    lives: the page is SPA-owned and guarded, and the API round-trips
+    structured `schedule_preferences`. Asserting on the bundle's internals
+    would test the bundler, not the behaviour.
+    """
+
+    def test_requirements_page_is_spa_owned_and_guarded(self):
         client = self.client_class()
         login(client, make_user(role=UserRole.STUDENT))
         html = client.get("/student/requirements/").content.decode()
-        self.assertIn("When can you attend?", html)
-        self.assertIn("schedule_preferences", html)  # transform builds this key
-        self.assertIn("model.windows", html)  # repeatable day/time rows
-        self.assertIn("Timing notes", html)  # free-text kept, now optional
+        self.assertIn('id="root"', html)  # React mounts here
+        self.assertIn("/static/app/", html)  # the built bundle is wired up
+
+    def test_api_persists_structured_day_time_windows(self):
+        from apps.subjects.models import Subject
+
+        client = self.client_class()
+        student = make_user(role=UserRole.STUDENT)
+        login(client, student)
+        Subject.objects.get_or_create(name="Mathematics", defaults={"is_active": True})
+
+        resp = client.post(
+            "/api/v1/student-requirements/",
+            data={
+                "subject": "Mathematics",
+                "teaching_mode": "online",
+                "class_duration_minutes": 60,
+                "schedule_preferences": [
+                    {
+                        "day_of_week": 2,
+                        "start_time": "18:00",
+                        "end_time": "20:00",
+                        "timezone": "Asia/Kolkata",
+                        "flexibility": "flexible",
+                    },
+                    {
+                        "day_of_week": 6,
+                        "start_time": "10:00",
+                        "end_time": "12:00",
+                        "timezone": "Asia/Kolkata",
+                        "flexibility": "flexible",
+                    },
+                ],
+            },
+            content_type="application/json",
+        )
+        self.assertIn(resp.status_code, (200, 201, 202), resp.content)
+
+        from apps.student_requirement.models import StudentRequirement
+
+        req = StudentRequirement.objects.filter(student=student).first()
+        self.assertIsNotNone(req)
+        windows = list(req.schedule_preferences.all())
+        self.assertEqual(len(windows), 2)
+        self.assertEqual({w.day_of_week for w in windows}, {2, 6})
 
 
 class AuthGatewayTests(TestCase):

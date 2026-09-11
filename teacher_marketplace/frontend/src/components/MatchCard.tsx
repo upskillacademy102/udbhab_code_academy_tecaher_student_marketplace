@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import type { TeacherProfile } from "@/lib/types";
 
 /**
@@ -76,10 +77,23 @@ export interface MatchCardProps {
   isTopMatch?: boolean;
   /** Row index, used only to stagger the entry animation. */
   index?: number;
-  onSelect?: (t: TeacherProfile) => void;
 }
 
-export function MatchCard({ teacher, isTopMatch = false, index = 0, onSelect }: MatchCardProps) {
+/**
+ * The detail page cannot refetch the marketplace half of a teacher — no API
+ * returns another teacher's profile by id — so the card hands its own data
+ * forward before navigating. Without this, opening a teacher shows the person
+ * with no subjects, rate or rating.
+ */
+function stash(t: TeacherProfile) {
+  try {
+    sessionStorage.setItem("tp:" + t.id, JSON.stringify(t));
+  } catch {
+    /* private mode: the detail page degrades to the person record */
+  }
+}
+
+export function MatchCard({ teacher, isTopMatch = false, index = 0 }: MatchCardProps) {
   const name = teacher.teacher?.user?.full_name || "Teacher";
   const photo = teacher.teacher?.profile_photo;
   const fit = teacher.match_percentage;
@@ -92,8 +106,10 @@ export function MatchCard({ teacher, isTopMatch = false, index = 0, onSelect }: 
   const languages = teacher.languages?.map((l) => l.name) ?? [];
 
   return (
-    <article
-      className="u-stagger-item flex h-full flex-col overflow-hidden rounded-2xl border-[1.5px] border-ink-300 bg-paper shadow-lift transition duration-150 ease-enter hover:-translate-y-px hover:border-pine-400 hover:shadow-raise"
+    <Link
+      to={`/student/teachers/${teacher.id}/`}
+      onClick={() => stash(teacher)}
+      className="u-stagger-item group flex h-full flex-col overflow-hidden rounded-2xl border-[1.5px] border-ink-300 bg-paper shadow-lift transition duration-150 ease-enter hover:-translate-y-px hover:border-pine-400 hover:shadow-raise"
       style={{ "--d": `${Math.min(index, 7) * 30}ms` } as React.CSSProperties}
     >
       {/* ---- The anchor: fit, or the subject fallback ---- */}
@@ -182,16 +198,12 @@ export function MatchCard({ teacher, isTopMatch = false, index = 0, onSelect }: 
           {price ?? "—"}
           {price && <span className="ml-0.5 text-[0.6875rem] font-medium text-ink-500">/hr</span>}
         </span>
-        <button
-          type="button"
-          onClick={() => onSelect?.(teacher)}
-          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[0.8125rem] font-semibold text-pine-700 transition hover:bg-pine-50 hover:text-pine-800"
-        >
-          Add to request
-          <span aria-hidden="true">→</span>
-        </button>
+        <span className="inline-flex items-center gap-1 text-[0.8125rem] font-semibold text-pine-700">
+          See profile
+          <span aria-hidden="true" className="transition group-hover:translate-x-0.5">→</span>
+        </span>
       </div>
-    </article>
+    </Link>
   );
 }
 

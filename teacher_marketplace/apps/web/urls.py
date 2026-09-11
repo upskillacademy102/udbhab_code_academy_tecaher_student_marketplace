@@ -46,32 +46,35 @@ urlpatterns = [
     ),
     path(
         "student/teachers/<uuid:id>/",
-        page("web/student/teacher_detail.html", roles=S, title="Teacher Profile"),
+        spa(roles=S, title="Teacher"),
         name="student-teacher-detail",
     ),
     path(
         "student/requirements/",
-        page(
-            "web/student/requirements.html",
+        spa(
             roles=S,
-            title="My Requirements",
-            desc="Tell us what you're looking for so we can match you with the right teachers.",
+            title="What you need",
+            desc="Post it once. Matching teachers get in touch with you.",
         ),
         name="student-requirements",
     ),
     path(
         "student/requirements/<uuid:id>/",
-        page("web/student/requirement_detail.html", roles=S, title="Requirement"),
+        spa(roles=S, title="Your request"),
         name="student-requirement-detail",
     ),
     path(
         "student/profile/",
-        page("web/student/profile.html", roles=S, title="My Profile"),
+        spa(
+            roles=S,
+            title="Your profile",
+            desc="Helps us aim better. All of it is optional.",
+        ),
         name="student-profile",
     ),
     path(
         "student/notifications/",
-        page("web/notifications.html", roles=S, title="Notifications"),
+        spa(roles=S, title="Notifications"),
         name="student-notifications",
     ),
     path(
