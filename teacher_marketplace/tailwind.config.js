@@ -36,13 +36,22 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        canvas: "#f6f7f9",
+        // The page ground. Measured deliberately, not picked by eye: a white
+        // card on the previous #f7f5f1 separated from it by 1.09:1 - invisible,
+        // so nothing on the page looked tappable. Two light tones can only
+        // separate so far (the darkest ground that still holds AA body text
+        // reaches 1.26:1), which is why the edge does the real work - see the
+        // interactive-surface layer in static/src/app.css.
+        //
+        // #e7ede9 keeps ink-500 at 4.73:1 (AA) while reading as a deliberate
+        // tint rather than almost-white.
+        canvas: "#e7ede9",
 
         // ---- NEW: the rebuild palette -------------------------------
         paper: {
           DEFAULT: "#ffffff",
-          canvas: "#f7f5f1", // warm page ground (not cool slate)
-          sunk: "#f1eee8", // recessed wells, table headers
+          canvas: "#e7ede9", // tinted page ground; actions sit on white above it
+          sunk: "#dde6e1", // recessed wells, table headers
         },
         pine: {
           50: "#eef6f4",
@@ -87,19 +96,47 @@ module.exports = {
         danger: "#b4413c",
         warning: "#b87215",
 
-        // ---- ORIGINAL: admin portal only ----------------------------
+        // ---- `slate` is now an ALIAS of ink -------------------------
+        // The admin portal's 531 slate-* references are cool grey, which
+        // clashed with the new warm ground - but more importantly it broke
+        // contrast: slate-500 (the most-used shade, 121 uses) measures
+        // 4.01:1 on #e7ede9 and FAILS AA. The warm ink-500 is 4.73:1 and
+        // passes. Every other shade improves too. Aliasing fixes the
+        // regression and the clash together, with no template edits.
+        slate: {
+          50: "#f1f3f1",
+          100: "#e3e7e4",
+          200: "#cbd3cf",
+          300: "#a8b5b0",
+          400: "#7a8a84",
+          500: "#5b6b66",
+          600: "#44534e",
+          700: "#2c3b37",
+          800: "#1b2a26",
+          900: "#12211e",
+          950: "#0a1210",
+        },
+
+        // ---- `brand` is now an ALIAS of pine ------------------------
+        // The admin / super-admin portal was deliberately left on the old
+        // indigo while the public pages were rebuilt, so it could not shift
+        // under review. It now inherits the new palette.
+        //
+        // Aliasing rather than editing templates resolves all 44 brand-*
+        // references plus the original component layer in one move, with no
+        // template edits and a one-line path back to indigo if ever needed.
         brand: {
-          50: "#eef2ff",
-          100: "#e0e7ff",
-          200: "#c7d2fe",
-          300: "#a5b4fc",
-          400: "#818cf8",
-          500: "#6366f1",
-          600: "#4f46e5",
-          700: "#4338ca",
-          800: "#3730a3",
-          900: "#312e81",
-          950: "#1e1b4b",
+          50: "#eef6f4",
+          100: "#d6eae6",
+          200: "#afd5ce",
+          300: "#7fbab0",
+          400: "#4e9c90",
+          500: "#2a8175",
+          600: "#176b61",
+          700: "#12574f",
+          800: "#0e4a43",
+          900: "#0b3b36",
+          950: "#062622",
         },
       },
       fontFamily: {

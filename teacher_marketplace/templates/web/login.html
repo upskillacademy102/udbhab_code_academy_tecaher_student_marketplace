@@ -15,25 +15,23 @@
     <p class="u-lede mt-2 text-[0.9375rem]">Which account are you signing in to?</p>
   </div>
 
-  <div class="mt-8 flex flex-col gap-3">
-    <a href="/login/?as=student{% if next_url %}&next={{ next_url|urlencode }}{% endif %}"
-       class="group flex items-center gap-4 rounded-2xl border border-ink-200 bg-paper p-5 shadow-soft transition duration-150 ease-enter hover:border-pine-400 hover:bg-pine-50">
-      <span class="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-pine-100 text-pine-700">{% icon "user" %}</span>
-      <span class="flex-1">
-        <span class="block text-[0.9375rem] font-semibold text-ink-900">I'm a student</span>
-        <span class="u-fine mt-0.5 block">Your matches, requirements and saved teachers</span>
+  <div class="mt-8 flex flex-col gap-3.5">
+    <a href="/login/?as=student{% if next_url %}&next={{ next_url|urlencode }}{% endif %}" class="u-option">
+      <span class="u-option-mark">{% icon "user" %}</span>
+      <span class="u-option-body">
+        <span class="u-option-title">I'm a student</span>
+        <span class="u-option-sub">Your matches and everything you've asked for</span>
       </span>
-      {% icon "chevron-right" "h-5 w-5 text-ink-300 group-hover:text-pine-600" %}
+      {% icon "chevron-right" "u-option-go" %}
     </a>
 
-    <a href="/login/?as=teacher{% if next_url %}&next={{ next_url|urlencode }}{% endif %}"
-       class="group flex items-center gap-4 rounded-2xl border border-ink-200 bg-paper p-5 shadow-soft transition duration-150 ease-enter hover:border-pine-400 hover:bg-pine-50">
-      <span class="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-pine-100 text-pine-700">{% icon "academic" %}</span>
-      <span class="flex-1">
-        <span class="block text-[0.9375rem] font-semibold text-ink-900">I'm a teacher</span>
-        <span class="u-fine mt-0.5 block">Your leads, profile and plan</span>
+    <a href="/login/?as=teacher{% if next_url %}&next={{ next_url|urlencode }}{% endif %}" class="u-option">
+      <span class="u-option-mark">{% icon "academic" %}</span>
+      <span class="u-option-body">
+        <span class="u-option-title">I'm a teacher</span>
+        <span class="u-option-sub">Your students, profile and plan</span>
       </span>
-      {% icon "chevron-right" "h-5 w-5 text-ink-300 group-hover:text-pine-600" %}
+      {% icon "chevron-right" "u-option-go" %}
     </a>
   </div>
 

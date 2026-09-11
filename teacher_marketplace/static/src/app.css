@@ -420,20 +420,61 @@
   /* --- Surfaces ------------------------------------------------------ */
   /* Border, fill and shadow are spent by role here, not stamped on every
      block — that uniformity is what flattened the original hierarchy. */
-  .u-card { @apply rounded-2xl border border-ink-100 bg-paper shadow-soft; }
+  .u-card { @apply rounded-2xl border border-ink-200 bg-paper shadow-soft; }
   .u-card-pad { @apply p-6 sm:p-7; }
   .u-panel { @apply rounded-2xl bg-paper-sunk p-6 sm:p-7; }
-  .u-quiet { @apply rounded-xl border border-ink-100 bg-paper p-5; }
+  .u-quiet { @apply rounded-xl border border-ink-200 bg-paper p-5; }
+
+  /* ============================================================
+     INTERACTIVE SURFACES
+     ============================================================
+     One rule, everywhere: the page is tinted, anything you can act on is
+     white and lifted, anything selected is pine.
+
+     This is measured, not taste. A white card on the old #f7f5f1 ground
+     separated from it by 1.09:1 — so a tappable card and the page behind
+     it were the same colour and nothing invited a click. Darkening the
+     ground helps but is capped: the darkest ground that still holds AA
+     body text only reaches 1.26:1. So the EDGE carries the contrast:
+
+         ink-200 border on white   1.53:1   (what we had — invisible)
+         ink-300                   2.12:1   resting state
+         pine-400                  3.24:1   hover / focus
+         pine-600                  6.34:1   selected
+
+     And the real "pop" is the solid colour block inside each option —
+     a filled pine tile, not a pale tint. Same move as the trust strip. */
+  .u-option {
+    @apply relative flex w-full items-center gap-4 rounded-2xl border-[1.5px] border-ink-300
+           bg-paper p-5 text-left shadow-lift transition duration-150 ease-enter
+           hover:-translate-y-px hover:border-pine-400 hover:shadow-raise;
+  }
+  .u-option[aria-pressed="true"],
+  .u-option[data-selected="true"] {
+    /* pine-50 fill against a pine-tinted ground is only 1.08:1, so the
+       selected state leans on the 2px edge and the tick, not the fill. */
+    @apply border-2 border-pine-600 bg-pine-50 shadow-soft hover:-translate-y-0;
+  }
+  .u-option-mark {
+    @apply grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-pine-700 text-white;
+  }
+  .u-option-mark svg { @apply h-[22px] w-[22px]; }
+  .u-option-body { @apply min-w-0 flex-1; }
+  .u-option-title { @apply block text-[1rem] font-semibold leading-snug text-ink-900; }
+  .u-option-sub { @apply mt-1 block text-[0.8125rem] leading-snug text-ink-500; }
+  .u-option-go { @apply h-5 w-5 shrink-0 text-ink-300 transition; }
+  .u-option:hover .u-option-go { @apply translate-x-0.5 text-pine-600; }
 
   /* --- Forms --------------------------------------------------------- */
   .u-field { @apply flex flex-col gap-1.5; }
   .u-label { @apply text-[0.8125rem] font-semibold text-ink-800; }
   .u-label .opt { @apply ml-1 font-normal text-ink-400; }
   .u-input, .u-select, .u-textarea {
-    @apply block min-h-[44px] w-full rounded-xl border border-ink-200 bg-paper px-3.5 py-2.5
+    @apply block min-h-[44px] w-full rounded-xl border-[1.5px] border-ink-300 bg-paper px-3.5 py-2.5
            text-[0.9375rem] text-ink-900 shadow-soft transition placeholder:text-ink-400
-           focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-600/25
-           disabled:cursor-not-allowed disabled:bg-ink-50 disabled:text-ink-400;
+           hover:border-ink-400
+           focus:border-pine-600 focus:outline-none focus:ring-2 focus:ring-pine-600/25
+           disabled:cursor-not-allowed disabled:border-ink-200 disabled:bg-ink-50 disabled:text-ink-400;
   }
   .u-textarea { @apply min-h-[104px] resize-y; }
   .u-select {
@@ -451,12 +492,12 @@
      phone, and Fitts' law is not a style preference. */
   .u-chip {
     @apply inline-flex min-h-[44px] select-none items-center justify-center gap-2 rounded-xl
-           border border-ink-200 bg-paper px-4 text-[0.9375rem] font-medium text-ink-700
+           border-[1.5px] border-ink-300 bg-paper px-4 text-[0.9375rem] font-medium text-ink-700
            shadow-soft transition duration-150 ease-enter
-           hover:border-pine-300 hover:bg-pine-50 hover:text-pine-800;
+           hover:border-pine-400 hover:bg-pine-50 hover:text-pine-800 hover:shadow-lift;
   }
   .u-chip[aria-pressed="true"] {
-    @apply border-pine-600 bg-pine-50 text-pine-800 shadow-none ring-1 ring-inset ring-pine-600;
+    @apply border-2 border-pine-600 bg-pine-50 font-semibold text-pine-800 shadow-none;
   }
   .u-chip svg { @apply h-[18px] w-[18px] shrink-0 text-ink-400; }
   .u-chip[aria-pressed="true"] svg { @apply text-pine-600; }
@@ -524,9 +565,11 @@
     z-index: -2;
     --tt-col: clamp(58px, 8vw, 92px);
     --tt-row: clamp(40px, 5.5vw, 52px);
+    /* Retuned for the deeper ground: at 3.5% the grid vanished into the
+       tint, so it goes up to 5.5% to stay legible as faint graph paper. */
     background-image:
-      repeating-linear-gradient(to right, rgb(18 87 79 / 0.035) 0 1px, transparent 1px var(--tt-col)),
-      repeating-linear-gradient(to bottom, rgb(18 87 79 / 0.035) 0 1px, transparent 1px var(--tt-row));
+      repeating-linear-gradient(to right, rgb(14 74 67 / 0.055) 0 1px, transparent 1px var(--tt-col)),
+      repeating-linear-gradient(to bottom, rgb(14 74 67 / 0.055) 0 1px, transparent 1px var(--tt-row));
   }
   .u-ground::after {
     z-index: -1;
@@ -576,8 +619,8 @@
      they turn from vertical to horizontal for free when the row stacks on
      a phone. */
   .u-trust {
-    @apply grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-ink-100
-           bg-ink-100 shadow-lift sm:grid-cols-3;
+    @apply grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-ink-200
+           bg-ink-200 shadow-lift sm:grid-cols-3;
   }
   .u-trust-item { @apply flex items-center gap-4 bg-paper px-5 py-5 sm:px-6; }
   /* A filled rounded square, echoing a block dropped on the timetable

@@ -42,25 +42,23 @@ the moment you sign in.{% endblock %}
       <h1 class="u-h2">Create your account</h1>
       <p class="u-lede mt-2 text-[0.9375rem]">Which side of the classroom are you on?</p>
 
-      <div class="mt-8 flex flex-col gap-3">
-        <button type="button" @click="pickRole('student')"
-                class="group flex items-center gap-4 rounded-2xl border border-ink-200 bg-paper p-5 text-left shadow-soft transition duration-150 ease-enter hover:border-pine-400 hover:bg-pine-50">
-          <span class="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-pine-100 text-pine-700">{% icon "user" %}</span>
-          <span class="flex-1">
-            <span class="block text-[0.9375rem] font-semibold text-ink-900">I want to learn</span>
-            <span class="u-fine mt-0.5 block">Find a teacher who fits. Always free.</span>
+      <div class="mt-8 flex flex-col gap-3.5">
+        <button type="button" class="u-option" @click="pickRole('student')">
+          <span class="u-option-mark">{% icon "user" %}</span>
+          <span class="u-option-body">
+            <span class="u-option-title">I want to learn</span>
+            <span class="u-option-sub">Find a teacher who fits. Always free.</span>
           </span>
-          {% icon "chevron-right" "h-5 w-5 text-ink-300 group-hover:text-pine-600" %}
+          {% icon "chevron-right" "u-option-go" %}
         </button>
 
-        <button type="button" @click="pickRole('teacher')"
-                class="group flex items-center gap-4 rounded-2xl border border-ink-200 bg-paper p-5 text-left shadow-soft transition duration-150 ease-enter hover:border-pine-400 hover:bg-pine-50">
-          <span class="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-pine-100 text-pine-700">{% icon "academic" %}</span>
-          <span class="flex-1">
-            <span class="block text-[0.9375rem] font-semibold text-ink-900">I want to teach</span>
-            <span class="u-fine mt-0.5 block">Get students who fit your subjects and your hours.</span>
+        <button type="button" class="u-option" @click="pickRole('teacher')">
+          <span class="u-option-mark">{% icon "academic" %}</span>
+          <span class="u-option-body">
+            <span class="u-option-title">I want to teach</span>
+            <span class="u-option-sub">Get students who fit your subjects and hours.</span>
           </span>
-          {% icon "chevron-right" "h-5 w-5 text-ink-300 group-hover:text-pine-600" %}
+          {% icon "chevron-right" "u-option-go" %}
         </button>
       </div>
 
