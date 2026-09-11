@@ -82,6 +82,43 @@ def staff_login_page(request):
     return render(request, "web/login_staff.html", {"page_title": "Staff sign-in"})
 
 
+@role_required("teacher")
+def teacher_profile(request):
+    """
+    The teaching profile, with one escape hatch.
+
+    The SPA owns this page, but identity verification — document upload,
+    selfie liveness, the video-interview request — still lives in the Django
+    template and gates whether a teacher is visible at all. Rather than port
+    a security-sensitive upload flow in the same pass, ?legacy=1 serves the
+    original page so verification stays reachable and working.
+    """
+    from apps.web.vite import spa_assets
+
+    if request.GET.get("legacy") == "1":
+        return render(
+            request,
+            "web/teacher/profile.html",
+            {
+                "page_title": "Verification",
+                "page_desc": "Identity checks. The rest of your profile has moved.",
+            },
+        )
+
+    assets = spa_assets()
+    return render(
+        request,
+        "web/app_shell.html",
+        {
+            "page_title": "Your teaching profile",
+            "page_desc": "This is what students see.",
+            "spa_js": assets["js"],
+            "spa_css": assets["css"],
+            "spa_built": assets["built"],
+        },
+    )
+
+
 @login_required_web
 def suspended_page(request):
     """

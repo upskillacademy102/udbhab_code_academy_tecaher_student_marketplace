@@ -16,19 +16,23 @@ everything the backend cannot support yet is marked future=True rather than
 faked (per the build brief).
 """
 
+# Hick's Law: decision time grows with the number of options, and the
+# comfortable ceiling for a sidebar is around seven. Profile, Settings and
+# Report an Issue moved into the account menu in the topbar — they are
+# destinations you go to deliberately, not things you scan for.
 _STUDENT = [
     {
         "label": None,
         "items": [
             {
-                "label": "Dashboard",
+                "label": "Discover",
                 "url": "/student/",
-                "icon": "home",
+                "icon": "sparkles",
                 "match": "/student/$",
             },
-            {"label": "Find Teachers", "url": "/student/teachers/", "icon": "search"},
+            {"label": "Find teachers", "url": "/student/teachers/", "icon": "search"},
             {
-                "label": "My Requirements",
+                "label": "What you need",
                 "url": "/student/requirements/",
                 "icon": "clipboard",
             },
@@ -40,77 +44,53 @@ _STUDENT = [
             },
         ],
     },
-    {
-        "label": "Account",
-        "items": [
-            {"label": "My Profile", "url": "/student/profile/", "icon": "user"},
-            {"label": "Settings", "url": "/student/settings/", "icon": "cog"},
-            {
-                "label": "Report an Issue",
-                "url": "/student/connect-admin/",
-                "icon": "alert-triangle",
-            },
-        ],
-    },
 ]
 
+# Was twelve items across three groups. Subscription + Buy Tokens + Payments
+# became one "Plan & unlocks" page; Settings and Report an Issue moved to the
+# account menu; Wallet is already dropped while TOKEN_SYSTEM_ENABLED is off.
+# Six, one group, no scrolling.
 _TEACHER = [
     {
         "label": None,
         "items": [
             {
-                "label": "Dashboard",
+                "label": "Home",
                 "url": "/teacher/",
                 "icon": "home",
                 "match": "/teacher/$",
             },
             {
-                "label": "Leads",
+                "label": "Enquiries",
                 "url": "/teacher/leads/",
                 "icon": "inbox",
                 "badge": "leads",
             },
             {
-                "label": "Lead Assignments",
+                "label": "Offers",
                 "url": "/teacher/assignments/",
                 "icon": "target",
             },
-        ],
-    },
-    {
-        "label": "Marketplace",
-        "items": [
-            # "Wallet" is deliberately absent while TOKEN_SYSTEM_ENABLED is
-            # False - see nav_for(). The wallet still exists as the ledger
-            # behind purchased unlocks, but a teacher has no reason to read a
-            # token transaction log, and the word "token" must not reach the
-            # screen. Buying is folded into the "Extra Unlocks" page.
-            {"label": "Wallet", "url": "/teacher/wallet/", "icon": "wallet"},
-            {"label": "Buy Tokens", "url": "/teacher/tokens/", "icon": "coin"},
-            {"label": "Subscription", "url": "/teacher/subscription/", "icon": "star"},
-            {"label": "Payments", "url": "/teacher/payments/", "icon": "receipt"},
-        ],
-    },
-    {
-        "label": "My Teaching",
-        "items": [
-            {"label": "Profile", "url": "/teacher/profile/", "icon": "user"},
             {
-                "label": "Availability",
+                "label": "Your hours",
                 "url": "/teacher/availability/",
                 "icon": "calendar",
+            },
+            {"label": "Your profile", "url": "/teacher/profile/", "icon": "user"},
+            {
+                "label": "Plan & unlocks",
+                "url": "/teacher/plan/",
+                "icon": "star",
+                # Keep the old routes highlighting this item — they redirect
+                # here. `match` is a plain prefix UNLESS it ends with "$",
+                # which switches nav_active() to a regex fullmatch.
+                "match": "/teacher/(plan|subscription|tokens|payments)/$",
             },
             {
                 "label": "Notifications",
                 "url": "/teacher/notifications/",
                 "icon": "bell",
                 "badge": "notifications",
-            },
-            {"label": "Settings", "url": "/teacher/settings/", "icon": "cog"},
-            {
-                "label": "Report an Issue",
-                "url": "/teacher/connect-admin/",
-                "icon": "alert-triangle",
             },
         ],
     },
@@ -262,25 +242,27 @@ def _teacher_nav():
     """
     The teacher nav, adjusted for whichever unlock economy is live.
 
-    While TOKEN_SYSTEM_ENABLED is False the Wallet page is dropped (a token
-    ledger is meaningless to a teacher who never sees tokens) and "Buy
-    Tokens" becomes "Extra Unlocks", which is the single purchase surface
-    for top-up packs.
+    The default list carries no Wallet: while TOKEN_SYSTEM_ENABLED is False a
+    token ledger is meaningless to a teacher who never sees tokens, and the
+    word "token" must not reach the screen. If the token economy is ever
+    switched on, the ledger becomes worth reading and the link is added back.
     """
     from django.conf import settings
 
-    if settings.TOKEN_SYSTEM_ENABLED:
+    if not settings.TOKEN_SYSTEM_ENABLED:
         return _TEACHER
 
     sections = []
     for section in _TEACHER:
-        items = []
-        for item in section["items"]:
-            if item.get("url") == "/teacher/wallet/":
-                continue
-            if item.get("url") == "/teacher/tokens/":
-                item = {**item, "label": "Extra Unlocks", "icon": "unlock"}
-            items.append(item)
+        items = list(section["items"])
+        # Sits next to Plan & unlocks, which is what it's the ledger for.
+        for i, item in enumerate(items):
+            if item.get("url") == "/teacher/plan/":
+                items.insert(
+                    i + 1,
+                    {"label": "Wallet", "url": "/teacher/wallet/", "icon": "wallet"},
+                )
+                break
         sections.append({**section, "items": items})
     return sections
 

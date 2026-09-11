@@ -10,6 +10,9 @@ import { TeacherDashboard } from "@/routes/teacher/Dashboard";
 import { Leads } from "@/routes/teacher/Leads";
 import { LeadDetail } from "@/routes/teacher/LeadDetail";
 import { Assignments } from "@/routes/teacher/Assignments";
+import { TeachingProfile } from "@/routes/teacher/TeachingProfile";
+import { Availability } from "@/routes/teacher/Availability";
+import { Plan } from "@/routes/teacher/Plan";
 
 /**
  * Routes the SPA owns.
@@ -34,6 +37,13 @@ export function App() {
       <Route path="/teacher/leads/" element={<Leads />} />
       <Route path="/teacher/leads/:id/" element={<LeadDetail />} />
       <Route path="/teacher/assignments/" element={<Assignments />} />
+      <Route path="/teacher/profile/" element={<TeachingProfile />} />
+      <Route path="/teacher/availability/" element={<Availability />} />
+      <Route path="/teacher/plan/" element={<Plan />} />
+      {/* Old nav split these three; they are one page now. */}
+      <Route path="/teacher/subscription/" element={<Navigate to="/teacher/plan/" replace />} />
+      <Route path="/teacher/tokens/" element={<Navigate to="/teacher/plan/" replace />} />
+      <Route path="/teacher/payments/" element={<Navigate to="/teacher/plan/" replace />} />
       <Route path="/teacher/notifications/" element={<Notifications />} />
 
       <Route path="*" element={<Fallback />} />

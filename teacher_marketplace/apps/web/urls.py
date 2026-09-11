@@ -131,50 +131,47 @@ urlpatterns = [
         ),
         name="teacher-wallet",
     ),
-    # Route name kept ("teacher-tokens") so existing links and tests still
-    # resolve; the page itself now sells extra unlocks, not tokens.
+    # Plan, top-ups and payment history were three nav items asking a teacher
+    # to hold state across pages to answer one question. They are one page
+    # now; the old three keep their route names so existing links and tests
+    # still resolve, and the SPA redirects them to /teacher/plan/.
+    path(
+        "teacher/plan/",
+        spa(
+            roles=T,
+            title="Plan & unlocks",
+            desc="Where you are, what you could change, and what you've paid.",
+        ),
+        name="teacher-plan",
+    ),
     path(
         "teacher/tokens/",
-        page(
-            "web/teacher/tokens.html",
-            roles=T,
-            title="Extra Unlocks",
-            desc="Top-up packs for once your plan's unlocks run out.",
-        ),
+        spa(roles=T, title="Plan & unlocks"),
         name="teacher-tokens",
     ),
     path(
         "teacher/subscription/",
-        page(
-            "web/teacher/subscription.html",
-            roles=T,
-            title="Subscription",
-            desc="Your plan, monthly unlock allowance and available upgrades.",
-        ),
+        spa(roles=T, title="Plan & unlocks"),
         name="teacher-subscription",
     ),
     path(
         "teacher/payments/",
-        page("web/teacher/payments.html", roles=T, title="Payments"),
+        spa(roles=T, title="Plan & unlocks"),
         name="teacher-payments",
     ),
+    # The legacy template is still reachable at ?legacy=1 because identity
+    # verification (document + selfie upload) has not been ported yet.
     path(
         "teacher/profile/",
-        page(
-            "web/teacher/profile.html",
-            roles=T,
-            title="Teaching Profile",
-            desc="This is what students see. A complete profile ranks higher in search.",
-        ),
+        views.teacher_profile,
         name="teacher-profile",
     ),
     path(
         "teacher/availability/",
-        page(
-            "web/teacher/availability.html",
+        spa(
             roles=T,
-            title="Availability",
-            desc="Weekly teaching hours and one-off exceptions.",
+            title="Your hours",
+            desc="We only match you to students who are free when you are.",
         ),
         name="teacher-availability",
     ),

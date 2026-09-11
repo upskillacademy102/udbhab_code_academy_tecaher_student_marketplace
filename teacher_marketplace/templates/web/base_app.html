@@ -122,8 +122,14 @@
             <p class="truncate text-xs text-slate-500">{{ web_user.email }}</p>
           </div>
           <div class="menu-sep"></div>
+          {% comment %}Profile, Settings and Report an Issue moved out of the
+          sidebar here: they are places you go on purpose, not things you scan
+          for, and the sidebar was over the ~7-item ceiling.{% endcomment %}
           <a href="{{ web_home }}profile/" class="menu-item" role="menuitem">{% icon "user" %} Profile</a>
           <a href="{{ web_home }}settings/" class="menu-item" role="menuitem">{% icon "cog" %} Settings</a>
+          {% if web_role == 'student' or web_role == 'teacher' %}
+            <a href="{{ web_home }}connect-admin/" class="menu-item" role="menuitem">{% icon "alert-triangle" %} Report an issue</a>
+          {% endif %}
           <div class="menu-sep"></div>
           <button class="menu-item w-full text-rose-600 hover:bg-rose-50" role="menuitem"
                   @click="api.logout()">{% icon "logout" %} Log out</button>
