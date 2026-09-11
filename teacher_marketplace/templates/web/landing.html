@@ -347,13 +347,18 @@ Honesty constraints held throughout:
       catch (_) { return []; }
     }
 
-    Alpine.data("landingPage", () => Object.assign(
+    // defineProperties + getOwnPropertyDescriptors, NOT Object.assign:
+    // Object.assign invokes getters and copies their VALUES, which would
+    // freeze `hasStats` and `statLine` at their empty state from definition
+    // time — the live counts would never appear no matter what the API
+    // returned. Copying descriptors keeps them reactive.
+    Alpine.data("landingPage", () => Object.defineProperties(
       // subject / language selection + the adaptive picker & combobox
       window.taxonomyMixin({
         subjects: readJSON("tax-subjects"),
         languages: readJSON("tax-languages"),
       }),
-      {
+      Object.getOwnPropertyDescriptors({
         step: 1,
         days: [],
         band: "evening",
@@ -450,7 +455,7 @@ Honesty constraints held throughout:
           }
           return "/register/?" + q.toString();
         },
-      }
+      })
     ));
   });
 </script>

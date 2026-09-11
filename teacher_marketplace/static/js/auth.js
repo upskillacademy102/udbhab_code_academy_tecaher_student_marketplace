@@ -151,11 +151,24 @@ document.addEventListener("alpine:init", () => {
     { id: "evening", label: "Evening", hint: "5–10", from: "17:00", to: "22:00" },
   ];
 
+  /*
+   * NOTE: defineProperties + getOwnPropertyDescriptors, NOT Object.assign.
+   *
+   * Object.assign READS every source property, which means it *invokes* any
+   * getter and copies the returned value as a plain data property. Every
+   * computed below (steps, step, canGoBack, carriedOver, pwRules) would be
+   * frozen at its value from definition time — `step` would be the literal
+   * string "role" forever, so clicking a role button set the state but never
+   * changed the visible step, and the page appeared dead.
+   *
+   * Copying descriptors keeps getters as getters, which is what Alpine's
+   * reactivity needs.
+   */
   window.Alpine.data("registerFlow", (portal, nextUrl, tax) =>
-    Object.assign(
+    Object.defineProperties(
       // subject / language selection, adaptive picker and combobox
       window.taxonomyMixin(tax || {}),
-      {
+      Object.getOwnPropertyDescriptors({
         LEVELS, DAYS, BANDS,
 
         role: portal === "student" || portal === "teacher" ? portal : "",
@@ -402,7 +415,7 @@ document.addEventListener("alpine:init", () => {
             this.submitting = false;
           }
         },
-      }
+      })
     )
   );
 
