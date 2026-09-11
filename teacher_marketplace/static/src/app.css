@@ -561,6 +561,34 @@
     @apply absolute inset-y-4 left-0 w-[3px] rounded-full bg-pine-600;
   }
 
+  /* ============================================================
+     TRUST STRIP — the three promises
+     ============================================================
+     The three claims that matter most were a quiet bullet list inside the
+     hero's left column, competing with the headline and losing. They are
+     now one full-width object that straddles the hero's bottom edge.
+
+     Crossing a section boundary is the move: it breaks the fold, signals
+     there is more below, and stops the strip reading as a third feature
+     grid stacked on the two above it.
+
+     The hairline dividers are the `gap-px over a tinted parent` trick, so
+     they turn from vertical to horizontal for free when the row stacks on
+     a phone. */
+  .u-trust {
+    @apply grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-ink-100
+           bg-ink-100 shadow-lift sm:grid-cols-3;
+  }
+  .u-trust-item { @apply flex items-center gap-4 bg-paper px-5 py-5 sm:px-6; }
+  /* A filled rounded square, echoing a block dropped on the timetable
+     behind it, rather than the small tinted circle used for body proof. */
+  .u-trust-mark { @apply grid h-11 w-11 shrink-0 place-items-center rounded-xl; }
+  .u-trust-mark svg { @apply h-5 w-5; }
+  .u-trust-mark.tone-pine { @apply bg-pine-700 text-white; }
+  .u-trust-mark.tone-gold { @apply bg-marigold-500 text-ink-900; }
+  .u-trust-text { @apply text-[0.9375rem] font-semibold leading-snug text-ink-900; }
+  .u-trust-text em { @apply not-italic text-pine-700; }
+
   /* --- Chip sizes / variants used by the taxonomy picker --- */
   .u-chip-sm { @apply min-h-[40px] rounded-lg px-3.5 text-[0.875rem]; }
   .u-chip-ghost { @apply border-dashed text-ink-500; }

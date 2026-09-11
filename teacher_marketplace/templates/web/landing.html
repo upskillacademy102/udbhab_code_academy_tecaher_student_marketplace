@@ -79,15 +79,9 @@ Honesty constraints held throughout:
             We'll do the looking.
           </p>
 
-          <ul class="mt-8 flex flex-col gap-3.5">
-            <li class="u-proof"><span class="u-proof-mark">{% icon "shield" %}</span><span>We check every teacher ourselves</span></li>
-            <li class="u-proof"><span class="u-proof-mark">{% icon "globe" %}</span><span>Learn in Hindi, Tamil, Bengali — or any language you like</span></li>
-            <li class="u-proof"><span class="u-proof-mark">{% icon "check" %}</span><span>Always free for students</span></li>
-          </ul>
-
           {% comment %}Real numbers only, and only once they exist. An empty
           marketplace says nothing rather than inventing something.{% endcomment %}
-          <div class="mt-8 flex flex-wrap items-center gap-x-7 gap-y-3 border-t border-ink-100 pt-7" x-show="hasStats">
+          <div class="mt-9 flex flex-wrap items-center gap-x-7 gap-y-3 border-t border-ink-100 pt-7" x-show="hasStats">
             <template x-for="s in statLine" :key="s.label">
               <div class="flex items-baseline gap-2">
                 <span class="u-num font-display text-2xl font-bold text-ink-900" x-text="s.value"></span>
@@ -198,14 +192,37 @@ Honesty constraints held throughout:
           </p>
         </div>
       </div>
+
+      {% comment %}The three promises. Deliberately straddling the hero's
+      bottom edge so they read as their own object rather than a third
+      feature row — and so the page visibly continues past the fold.{% endcomment %}
+      <div class="u-shell relative z-10 -mb-12 sm:-mb-14">
+        <ul class="u-trust">
+          <li class="u-trust-item">
+            <span class="u-trust-mark tone-pine">{% icon "shield" %}</span>
+            <p class="u-trust-text">We check <em>every</em> teacher ourselves</p>
+          </li>
+          <li class="u-trust-item">
+            <span class="u-trust-mark tone-pine">{% icon "globe" %}</span>
+            <p class="u-trust-text">Learn in <em>Hindi, Tamil, Bengali</em> — or any language you like</p>
+          </li>
+          <li class="u-trust-item">
+            <span class="u-trust-mark tone-gold">{% icon "check" %}</span>
+            <p class="u-trust-text"><em>Always</em> free for students</p>
+          </li>
+        </ul>
+      </div>
     </section>
 
     {# ============ Why ============ #}
-    <section class="u-band-tint border-b border-ink-100 py-16 sm:py-20">
+    {% comment %}The strip above asserts the three promises; this section is
+    the explanation layer. Headings deliberately do not repeat the strip's
+    wording — saying the same sentence twice on one page reads as padding.{% endcomment %}
+    <section class="u-band-tint border-b border-ink-100 pb-16 pt-24 sm:pb-20 sm:pt-32">
       <div class="u-shell">
         <div class="max-w-prose">
           <span class="u-eyebrow">Why {{ SITE_NAME }}</span>
-          <h2 class="u-h2 mt-3">Three things we do differently</h2>
+          <h2 class="u-h2 mt-3">What that means for you</h2>
         </div>
         <div class="mt-10 grid gap-6 md:grid-cols-3">
           <div>
@@ -215,13 +232,13 @@ Honesty constraints held throughout:
           </div>
           <div>
             <span class="grid h-11 w-11 place-items-center rounded-xl bg-pine-100 text-pine-700">{% icon "globe" "h-5 w-5" %}</span>
-            <h3 class="u-h3 mt-5">Learn in your language</h3>
-            <p class="u-body mt-2 text-ink-600">Hindi, Tamil, Bengali — or whatever you pick. Things click faster in the language you think in.</p>
+            <h3 class="u-h3 mt-5">It clicks faster in your own words</h3>
+            <p class="u-body mt-2 text-ink-600">Hard ideas are hard enough without a second language on top. Pick the one you think in and we'll find someone who teaches in it.</p>
           </div>
           <div>
             <span class="grid h-11 w-11 place-items-center rounded-xl bg-pine-100 text-pine-700">{% icon "shield" "h-5 w-5" %}</span>
-            <h3 class="u-h3 mt-5">We check every teacher</h3>
-            <p class="u-body mt-2 text-ink-600">Someone here looks at their ID and qualifications before they ever reach you. Nobody gets in just by saying so.</p>
+            <h3 class="u-h3 mt-5">Checked before they reach you</h3>
+            <p class="u-body mt-2 text-ink-600">Someone here looks at their ID and qualifications first. Nobody gets in just by saying so.</p>
           </div>
         </div>
       </div>
