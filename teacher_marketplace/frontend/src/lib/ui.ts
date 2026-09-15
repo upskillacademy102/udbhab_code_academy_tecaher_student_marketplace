@@ -48,6 +48,21 @@ export function money(v: string | number | null | undefined): string | null {
   return "₹" + Math.round(n).toLocaleString("en-IN");
 }
 
+/**
+ * "₹600 – ₹1,000", or a single "₹600" when there's no upper end (or it's
+ * the same as the lower end) — most teachers' fees genuinely vary by
+ * class size/level rather than being one fixed number.
+ */
+export function moneyRange(
+  min: string | number | null | undefined,
+  max: string | number | null | undefined,
+): string | null {
+  const lo = money(min);
+  const hi = money(max);
+  if (lo && hi && hi !== lo) return `${lo} – ${hi}`;
+  return lo ?? hi;
+}
+
 export function titleCase(s: string | null | undefined): string {
   if (!s) return "";
   return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());

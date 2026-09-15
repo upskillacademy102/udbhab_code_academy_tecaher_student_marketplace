@@ -164,6 +164,51 @@ class NotificationService:
         )
 
     @staticmethod
+    def student_lead_unlocked(lead):
+        """
+        Student-facing: fires the moment a teacher unlocks THIS student's
+        requirement. The student never sees who unlocked it beforehand, so
+        this is their first signal that a teacher now has their contact
+        details and may reach out.
+        """
+        requirement = lead.student_requirement
+        teacher_name = lead.teacher_profile.teacher.user.get_full_name() or "A teacher"
+        subject_name = requirement.subject.name
+        return NotificationService.notify(
+            user=requirement.student,
+            event=NotificationEvent.STUDENT_LEAD_UNLOCKED,
+            title="A Teacher Unlocked Your Enquiry",
+            message=(
+                f"{teacher_name} unlocked your {subject_name} requirement and now "
+                f"has your contact details. They'll reach out to you very soon."
+            ),
+            reference_id=str(lead.id),
+        )
+
+    @staticmethod
+    def lead_review_pending(lead):
+        """
+        Teacher-facing nudge: they unlocked this lead's contact details but
+        haven't rated it yet. Fired at most once per lead - see
+        apps.lead_engine.views.PendingRatingsView, the sole caller, which
+        dedupes by checking for an existing Notification with this event and
+        this lead's id before calling this.
+        """
+        subject_name = lead.student_requirement.subject.name
+        return NotificationService.notify(
+            user=lead.teacher_profile.teacher.user,
+            event=NotificationEvent.LEAD_REVIEW_PENDING,
+            title="Please Review Your Unlocked Lead",
+            message=(
+                f"You unlocked contact details for a {subject_name} enquiry but "
+                f"haven't told us whether it was genuine yet. Every teacher is "
+                f"asked to rate the leads they unlock - it's the only way we "
+                f"catch fake ones."
+            ),
+            reference_id=str(lead.id),
+        )
+
+    @staticmethod
     def free_leads_exhausted(teacher):
         """
         The teacher has spent this cycle's plan allowance. Names the reset

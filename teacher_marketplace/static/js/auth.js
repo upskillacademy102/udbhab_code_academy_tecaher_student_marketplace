@@ -65,7 +65,7 @@ document.addEventListener("alpine:init", () => {
       this.conflict = false;
       try {
         const data = await api.login(this.email.trim(), this.password);
-        this._go(data && data.user ? data.user.role : null);
+        this._go(data && data.user);
       } catch (e) {
         if (e.status === 409) {
           this.conflict = true;
@@ -88,17 +88,32 @@ document.addEventListener("alpine:init", () => {
       await this.doLogin();
     },
 
-    _go(role) {
+    _go(user) {
+      const role = user ? user.role : null;
       let dest = ROLE_HOME[role] || "/";
       if (this.nextUrl && this.nextUrl.startsWith("/") && !this.nextUrl.startsWith("//")) {
         // only honour `next` when it's inside this user's area
         if (dest === "/" || this.nextUrl.startsWith(dest) || role === "superadmin") dest = this.nextUrl;
       }
-      if (this.portal && role && this.portal !== role && (role === "student" || role === "teacher")) {
-        this.notice = `Signing you in to the ${role} area.`;
-        setTimeout(() => location.assign(dest), 650);
+
+      // Dual-role: the portal page they logged in through (?as=) may not
+      // match their currently-active role. Rather than silently sending
+      // them wherever `role` says (the old behaviour), honour what they
+      // asked for — switch straight there if they already have that
+      // portal, or offer to set it up if they don't.
+      if (this.portal && role && this.portal !== role && (this.portal === "student" || this.portal === "teacher")) {
+        const hasPortal = this.portal === "teacher" ? !!(user && user.has_teacher_profile) : !!(user && user.has_student_profile);
+        if (hasPortal) {
+          this.notice = `Switching you to the ${this.portal} area.`;
+          api.post("/auth/switch-role/", { role: this.portal }, { silent: true })
+            .then(() => location.assign(ROLE_HOME[this.portal]))
+            .catch(() => location.assign(dest));
+          return;
+        }
+        location.assign(`/add-role/?as=${this.portal}`);
         return;
       }
+
       location.assign(dest);
     },
   }));
@@ -135,6 +150,11 @@ document.addEventListener("alpine:init", () => {
     "Undergraduate", "Postgraduate", "Competitive exam", "Adult learner",
   ];
 
+  // Shown instead of LEVELS when the chosen subject is skill-based (an
+  // instrument, a martial art, ...) — "Class 1–5" doesn't mean anything
+  // to a 40-year-old learning guitar, but their skill level does.
+  const SKILL_LEVELS = ["Novice", "Intermediate", "Expert"];
+
   const DAYS = [
     { n: 1, s: "M", full: "Monday" },
     { n: 2, s: "T", full: "Tuesday" },
@@ -169,7 +189,18 @@ document.addEventListener("alpine:init", () => {
       // subject / language selection, adaptive picker and combobox
       window.taxonomyMixin(tax || {}),
       Object.getOwnPropertyDescriptors({
-        LEVELS, DAYS, BANDS,
+        LEVELS, SKILL_LEVELS, DAYS, BANDS,
+        SKILL_SUBJECTS: Array.isArray(tax && tax.skillSubjects) ? tax.skillSubjects : [],
+
+        // Whether the chosen subject is learned as a skill (an instrument,
+        // a martial art, ...) rather than an academic grade — decides
+        // which set the "What level?" step offers.
+        get isSkillSubject() {
+          return !!this.resolvedSubject && this.SKILL_SUBJECTS.indexOf(this.resolvedSubject) !== -1;
+        },
+        get levelOptions() {
+          return this.isSkillSubject ? SKILL_LEVELS : LEVELS;
+        },
 
         role: portal === "student" || portal === "teacher" ? portal : "",
         nextUrl: nextUrl || "",
@@ -264,7 +295,17 @@ document.addEventListener("alpine:init", () => {
         // Forward and back both step OVER anything the landing page already
         // answered. Without this a visitor who picked their free hours on the
         // home page gets asked for them a second time here.
-        next() { this.stepIndex = this._skipForward(this.stepIndex); },
+        next() {
+          // A level picked for one subject category (e.g. "Novice" for
+          // guitar) is meaningless for the other (e.g. an academic grade
+          // for Mathematics) — drop it if the subject changed category
+          // since it was picked, rather than silently submitting a
+          // mismatched value.
+          if (this.step === "subject" && this.level && this.levelOptions.indexOf(this.level) === -1) {
+            this.level = null;
+          }
+          this.stepIndex = this._skipForward(this.stepIndex);
+        },
         back() {
           let i = this.stepIndex - 1;
           while (i > this.minIndex && this.prefilled.indexOf(this.steps[i]) !== -1) i--;

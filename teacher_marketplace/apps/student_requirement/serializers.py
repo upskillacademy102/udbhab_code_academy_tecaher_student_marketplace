@@ -11,6 +11,9 @@ Implements the spec's explicit validation requirements:
       rejected with a clean 400 before it ever reaches the database)
 """
 
+import logging
+import re
+
 from rest_framework import serializers
 
 from apps.languages.serializers import LanguageSerializer
@@ -23,6 +26,8 @@ from apps.student_requirement.models import (
 )
 from apps.subjects.serializers import SubjectSerializer
 from apps.teacher_profile.models import TeachingMode
+
+logger = logging.getLogger("apps.student_requirement")
 
 
 class SchedulePreferenceReadSerializer(serializers.ModelSerializer):
@@ -196,30 +201,111 @@ class StudentRequirementWriteSerializer(serializers.ModelSerializer):
         read_only_fields = ("id",)
 
     def validate_subject(self, value):
+        from django.db import IntegrityError, transaction
+
         from apps.matching.services.subject_matching_service import (
             SubjectMatchingService,
         )
+        from apps.subjects.models import Subject
+        from apps.utils.validators import validate_taxonomy_name
 
         result = SubjectMatchingService.match_by_text(value)
-        if not result.is_eligible or result.matched_subject is None:
+        if result.is_eligible and result.matched_subject is not None:
+            return result.matched_subject
+
+        # No existing/alias/fuzzy match: this is a genuinely new subject a
+        # student typed via the "Something else" escape, not a typo of an
+        # existing one (that's what the fuzzy tier above already catches).
+        # Add it to the taxonomy rather than bouncing the student - it's
+        # then real, active, and available to every future picker/search.
+        name = value.strip()
+        try:
+            validate_taxonomy_name(name)
+        except Exception:
             raise serializers.ValidationError(
                 f"Subject '{value}' not recognized. Please check the spelling or contact support."
             )
-        return result.matched_subject
+
+        try:
+            with transaction.atomic():
+                subject = Subject.objects.create(name=name, is_active=True)
+            logger.info("Subject auto-created from student requirement: %s", name)
+        except IntegrityError:
+            # Lost a race with a concurrent identical submission.
+            subject = Subject.objects.filter(name__iexact=name, is_active=True).first()
+            if subject is None:
+                raise serializers.ValidationError(
+                    f"Subject '{value}' not recognized. Please check the spelling or contact support."
+                )
+        return subject
 
     def validate_preferred_language(self, value):
         if not value:
             return None
+        from django.db import IntegrityError, transaction
+
+        from apps.languages.models import Language
         from apps.matching.services.language_matching_service import (
             LanguageMatchingService,
         )
+        from apps.utils.validators import validate_taxonomy_name
 
         result = LanguageMatchingService.match_by_text(value)
-        if not result.is_eligible or result.matched_subject is None:
+        if result.is_eligible and result.matched_subject is not None:
+            return result.matched_subject
+
+        # No existing/alias/fuzzy match: a genuinely new language, not a
+        # typo of one already on file - add it rather than bouncing the
+        # student, same as validate_subject above.
+        name = value.strip()
+        try:
+            validate_taxonomy_name(name)
+        except Exception:
             raise serializers.ValidationError(
                 f"Language '{value}' not recognized. Please check the spelling or contact support."
             )
-        return result.matched_subject
+
+        code = self._derive_language_code(name)
+        try:
+            with transaction.atomic():
+                language = Language.objects.create(name=name, code=code, is_active=True)
+            logger.info(
+                "Language auto-created from student requirement: %s (%s)", name, code
+            )
+        except IntegrityError:
+            # Lost a race with a concurrent identical submission.
+            language = Language.objects.filter(name__iexact=name, is_active=True).first()
+            if language is None:
+                raise serializers.ValidationError(
+                    f"Language '{value}' not recognized. Please check the spelling or contact support."
+                )
+        return language
+
+    @staticmethod
+    def _derive_language_code(name: str) -> str:
+        """
+        Build a Language.code candidate for a student-typed name: 2-10
+        lowercase letters/digits, starting with a letter, unique. This
+        code has no ISO meaning - it is just a stable short identifier
+        satisfying the schema; a Super Admin can replace it with the
+        real ISO code from /super-admin/languages/ any time.
+        """
+        from apps.languages.models import Language
+
+        base = re.sub(r"[^a-z0-9]", "", name.lower())
+        if not base or not base[0].isalpha():
+            base = "x" + base
+        base = base[:10] or "xx"
+        if len(base) < 2:
+            base = base + "x"
+
+        candidate = base
+        suffix = 1
+        while Language.all_objects.filter(code=candidate).exists() and suffix < 50:
+            suffix_str = str(suffix)
+            candidate = base[: 10 - len(suffix_str)] + suffix_str
+            suffix += 1
+        return candidate
 
     def validate_city(self, value):
         if not value:

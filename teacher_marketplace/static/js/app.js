@@ -82,6 +82,49 @@
       },
     }));
 
+    // Every teacher must rate every lead they unlock — this blocks the rest
+    // of the app (no backdrop-close, no Escape) behind a modal listing
+    // whatever they still owe a rating on, until nothing is left. Mounted
+    // once in base_app.html so it follows a teacher across every page,
+    // React SPA routes included (the shell that renders it wraps both).
+    window.Alpine.data("pendingReviewGate", () => ({
+      pending: [],
+      busy: false,
+      path: location.pathname,
+      get current() { return this.pending[0] || null; },
+      // Suppressed only on the exact lead page that lets them resolve it —
+      // everywhere else (including the enquiries list) it still nags them.
+      get suppressed() {
+        return !!this.current && this.path === "/teacher/leads/" + this.current.id + "/";
+      },
+      init() {
+        this.refresh();
+        setInterval(() => this.refresh(), 60000);
+        setInterval(() => { this.path = location.pathname; }, 1000);
+        window.addEventListener("focus", () => this.refresh());
+      },
+      async refresh() {
+        try {
+          const d = await api.get("/leads/pending-ratings/", { silent: true });
+          this.pending = (d && d.results) || [];
+        } catch (_) {}
+      },
+      async rate(verdict) {
+        if (this.busy || !this.current) return;
+        this.busy = true;
+        try {
+          await api.post(`/leads/${this.current.id}/rate/`, { verdict });
+          this.pending = this.pending.slice(1);
+          window.toast("success", "Thanks — that helps keep fake enquiries out.");
+          try { window.Alpine.store("badges").refresh(); } catch (_) {}
+        } catch (e) {
+          window.toast("error", e.message || "Couldn't save that.");
+        } finally {
+          this.busy = false;
+        }
+      },
+    }));
+
     window.Alpine.data("confirmDialog", () => ({
       open: false,
       title: "",
@@ -112,6 +155,14 @@
       if (v === null || v === undefined || v === "") return "—";
       const n = Number(v);
       return Number.isFinite(n) ? INR.format(n) : "—";
+    },
+    // "₹600 – ₹1,000" when there's a real range, else a single "₹600" —
+    // most teachers' fees genuinely vary by class size/level.
+    moneyRange(min, max) {
+      const lo = this.money(min);
+      const hi = this.money(max);
+      if (lo !== "—" && hi !== "—" && hi !== lo) return `${lo} – ${hi}`;
+      return lo !== "—" ? lo : hi;
     },
     number(v) {
       const n = Number(v);

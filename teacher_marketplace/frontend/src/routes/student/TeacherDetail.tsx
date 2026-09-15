@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { TeacherProfile, TeacherRef } from "@/lib/types";
 import { DAYS } from "@/lib/intent";
-import { confirmAction, initials, money, toast } from "@/lib/ui";
+import { confirmAction, initials, money, moneyRange, toast } from "@/lib/ui";
 
 /**
  * One teacher, in full.
@@ -115,7 +115,10 @@ export function TeacherDetail() {
   const years = t.years_of_experience ?? t.teacher?.experience_years ?? null;
   const city = t.cities?.[0]?.name ?? "";
   const qual = [t.teacher?.qualification_level, t.teacher?.qualification_detail].filter(Boolean).join(" — ");
-  const price = money(t.hourly_rate);
+  const hourlyPrice = money(t.hourly_rate);
+  const monthlyPrice = moneyRange(t.monthly_rate, t.monthly_rate_max);
+  const price = hourlyPrice ?? monthlyPrice;
+  const priceUnit = hourlyPrice ? "per hour" : "per month";
   const subjects = t.subjects ?? [];
   const languages = t.languages ?? [];
 
@@ -129,7 +132,7 @@ export function TeacherDetail() {
           <section className="u-card u-card-pad">
             <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
               {photo ? (
-                <img src={photo} alt="" className="h-24 w-24 shrink-0 rounded-2xl object-cover" />
+                <img src={photo} alt="" className="h-24 w-24 shrink-0 rounded-2xl object-cover object-top" />
               ) : (
                 <span className="grid h-24 w-24 shrink-0 place-items-center rounded-2xl bg-pine-100 text-2xl font-bold text-pine-800">
                   {initials(name)}
@@ -155,7 +158,10 @@ export function TeacherDetail() {
                   {price && (
                     <div className="shrink-0 text-right">
                       <p className="font-display text-2xl font-bold tabular-nums text-ink-900">{price}</p>
-                      <p className="u-fine">per hour</p>
+                      <p className="u-fine">{priceUnit}</p>
+                      {hourlyPrice && monthlyPrice && (
+                        <p className="u-fine mt-0.5">{monthlyPrice} / month</p>
+                      )}
                     </div>
                   )}
                 </div>

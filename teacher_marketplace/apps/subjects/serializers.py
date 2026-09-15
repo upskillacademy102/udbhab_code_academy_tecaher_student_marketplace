@@ -30,6 +30,7 @@ class SubjectSerializer(serializers.ModelSerializer):
             "description",
             "icon",
             "is_active",
+            "is_skill_based",
             "created_at",
             "updated_at",
         )

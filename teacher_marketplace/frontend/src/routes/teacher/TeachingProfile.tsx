@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "@/lib/api";
 import type { Named, TeacherProfile } from "@/lib/types";
 import { toast } from "@/lib/ui";
+import { PhotoCropModal } from "@/components/PhotoCropModal";
 
 /**
  * The teaching profile.
@@ -38,6 +39,8 @@ interface Listing {
   headline: string;
   teaching_mode: "online" | "offline" | "both";
   hourly_rate: string;
+  monthly_rate: string;
+  monthly_rate_max: string;
   subjects: string[];
   languages: string[];
   cities: string[];
@@ -99,11 +102,12 @@ export function TeachingProfile() {
   const b = base.data;
 
   const [listing, setListing] = useState<Listing>({
-    headline: "", teaching_mode: "online", hourly_rate: "", subjects: [], languages: [], cities: [],
+    headline: "", teaching_mode: "online", hourly_rate: "", monthly_rate: "", monthly_rate_max: "", subjects: [], languages: [], cities: [],
   });
   const [about, setAbout] = useState<About>({
     bio: "", experience_years: "", qualification_level: "", qualification_detail: "",
   });
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!p) return;
@@ -111,6 +115,8 @@ export function TeachingProfile() {
       headline: p.headline ?? "",
       teaching_mode: (p.teaching_mode as Listing["teaching_mode"]) ?? "online",
       hourly_rate: p.hourly_rate ?? "",
+      monthly_rate: p.monthly_rate ?? "",
+      monthly_rate_max: p.monthly_rate_max ?? "",
       subjects: (p.subjects ?? []).map((s) => s.id),
       languages: (p.languages ?? []).map((l) => l.id),
       cities: (p.cities ?? []).map((c) => c.id),
@@ -125,6 +131,7 @@ export function TeachingProfile() {
       qualification_level: String(b.qualification_level ?? ""),
       qualification_detail: String(b.qualification_detail ?? ""),
     });
+    setPhotoUrl((b.profile_photo as string) || null);
   }, [b]);
 
   const loading = profile.isLoading || base.isLoading;
@@ -132,9 +139,10 @@ export function TeachingProfile() {
 
   // What is missing, in the order it costs them reach.
   const gaps: string[] = [];
+  if (!photoUrl) gaps.push("a profile photo");
   if (!listing.subjects.length) gaps.push("subjects you teach");
   if (!listing.languages.length) gaps.push("languages you teach in");
-  if (!listing.hourly_rate) gaps.push("your rate");
+  if (!listing.hourly_rate && !listing.monthly_rate) gaps.push("your rate");
   if (!listing.headline) gaps.push("a headline");
   if (!about.bio) gaps.push("a short bio");
 
@@ -159,6 +167,12 @@ export function TeachingProfile() {
         </div>
       )}
 
+      <PhotoSection
+        photoUrl={photoUrl}
+        exists={Boolean(b)}
+        onSaved={(url) => { setPhotoUrl(url); qc.invalidateQueries({ queryKey: ["my-teacher-base"] }); }}
+      />
+
       <ListingSection
         value={listing}
         onChange={setListing}
@@ -176,6 +190,87 @@ export function TeachingProfile() {
         onSaved={() => qc.invalidateQueries({ queryKey: ["my-teacher-base"] })}
       />
     </div>
+  );
+}
+
+/* ---------------- photo: required for verification ---------------- */
+
+function PhotoSection({
+  photoUrl, exists, onSaved,
+}: {
+  photoUrl: string | null;
+  exists: boolean;
+  onSaved: (url: string) => void;
+}) {
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function upload(blob: Blob) {
+    setSaving(true);
+    setError("");
+    try {
+      const fd = new FormData();
+      fd.append("profile_photo", blob, "profile-photo.jpg");
+      const resp = exists
+        ? await api.patch<Record<string, unknown>>("/teachers/me/", fd, { silent: true })
+        : await api.post<Record<string, unknown>>("/teachers/me/", fd, { silent: true });
+      onSaved((resp?.profile_photo as string) ?? photoUrl ?? "");
+      toast("success", "Profile photo saved.");
+    } catch (e) {
+      const err = e as ApiError;
+      setError(err.fieldErrors?.profile_photo || err.message || "Couldn't upload that photo.");
+    } finally {
+      setSaving(false);
+      setPendingFile(null);
+    }
+  }
+
+  return (
+    <section className="u-card overflow-hidden">
+      <div className="border-b border-ink-200 px-5 py-4 sm:px-6">
+        <div className="flex items-center gap-2">
+          <h2 className="u-h3">Profile photo</h2>
+          {photoUrl ? (
+            <span className="rounded-full bg-pine-100 px-2 py-0.5 text-[0.6875rem] font-semibold text-pine-800">Added</span>
+          ) : (
+            <span className="rounded-full bg-marigold-100 px-2 py-0.5 text-[0.6875rem] font-semibold text-marigold-900">Required</span>
+          )}
+        </div>
+        <p className="u-fine mt-0.5">Students only see verified teachers, and a clear photo is required to be verified.</p>
+      </div>
+      <div className="flex items-center gap-4 p-5 sm:p-6">
+        <div className="h-20 w-20 shrink-0 overflow-hidden rounded-full border border-ink-200 bg-ink-100">
+          {photoUrl ? (
+            <img src={photoUrl} alt="" className="h-full w-full object-cover object-top" />
+          ) : (
+            <svg className="h-full w-full text-ink-300" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="8" r="4" fill="currentColor" />
+              <path d="M4 20c0-4 3.5-7 8-7s8 3 8 7" fill="currentColor" />
+            </svg>
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="u-btn-secondary u-btn-sm cursor-pointer" data-loading={saving || undefined}>
+              <span>{saving ? "Uploading…" : photoUrl ? "Change photo" : "Choose photo"}</span>
+              <input type="file" className="hidden" accept="image/jpeg,image/png,image/webp" disabled={saving}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) setPendingFile(f); setError(""); e.target.value = ""; }} />
+            </label>
+          </div>
+          {error && <p className="u-error mt-1.5">{error}</p>}
+        </div>
+      </div>
+
+      {pendingFile && (
+        <PhotoCropModal
+          file={pendingFile}
+          uploading={saving}
+          onCancel={() => setPendingFile(null)}
+          onConfirm={upload}
+        />
+      )}
+    </section>
   );
 }
 
@@ -212,6 +307,8 @@ function ListingSection({
         cities: value.teaching_mode === "online" ? [] : value.cities,
       };
       if (value.hourly_rate) payload.hourly_rate = Number(value.hourly_rate);
+      if (value.monthly_rate) payload.monthly_rate = Number(value.monthly_rate);
+      if (value.monthly_rate_max) payload.monthly_rate_max = Number(value.monthly_rate_max);
       // POST creates the marketplace profile the first time; PATCH after.
       if (exists) await api.patch("/teachers/profile/", payload, { silent: true });
       else await api.post("/teachers/profile/", payload, { silent: true });
@@ -255,11 +352,28 @@ function ListingSection({
       </div>
 
       <div className="u-field">
-        <label className="u-label" htmlFor="tp-rate">Your rate (₹ per hour)</label>
-        <input id="tp-rate" type="number" min={0} className="u-input" value={value.hourly_rate}
+        <label className="u-label" htmlFor="tp-rate">Hourly rate (₹)</label>
+        <input id="tp-rate" type="number" min={0} className="u-input" placeholder="Optional" value={value.hourly_rate}
           onChange={(e) => onChange({ ...value, hourly_rate: e.target.value })} />
         {errors.hourly_rate && <p className="u-error">{errors.hourly_rate}</p>}
       </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="u-field">
+          <label className="u-label" htmlFor="tp-monthly-rate">Monthly rate (₹)</label>
+          <input id="tp-monthly-rate" type="number" min={0} className="u-input" placeholder="e.g. 600" value={value.monthly_rate}
+            onChange={(e) => onChange({ ...value, monthly_rate: e.target.value })} />
+          {errors.monthly_rate && <p className="u-error">{errors.monthly_rate}</p>}
+        </div>
+        <div className="u-field">
+          <label className="u-label" htmlFor="tp-monthly-rate-max">Up to (₹)</label>
+          <input id="tp-monthly-rate-max" type="number" min={0} className="u-input" placeholder="e.g. 1000" value={value.monthly_rate_max}
+            onChange={(e) => onChange({ ...value, monthly_rate_max: e.target.value })} />
+          {errors.monthly_rate_max && <p className="u-error">{errors.monthly_rate_max}</p>}
+        </div>
+      </div>
+      <p className="u-hint -mt-2">
+        Give a range if your fee depends on class size or level (e.g. ₹600–₹1,000) — leave "Up to" blank for one fixed price. Share either rate, both, or neither.
+      </p>
 
       <Picker label="Subjects" options={subjects} selected={value.subjects} onToggle={(id) => toggle("subjects", id)}
         empty="No subjects have been added to the platform yet." error={errors.subjects} />

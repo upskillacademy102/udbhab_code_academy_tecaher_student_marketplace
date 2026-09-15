@@ -15,10 +15,12 @@ the moment you sign in.{% endblock %}
 {% block panel %}
 {{ subjects|json_script:"tax-subjects" }}
 {{ languages|json_script:"tax-languages" }}
+{{ skill_based_subjects|json_script:"tax-skill-subjects" }}
 
 <div x-data="registerFlow('{{ portal }}', '{{ next_url|escapejs }}', {
        subjects: JSON.parse(document.getElementById('tax-subjects').textContent),
-       languages: JSON.parse(document.getElementById('tax-languages').textContent)
+       languages: JSON.parse(document.getElementById('tax-languages').textContent),
+       skillSubjects: JSON.parse(document.getElementById('tax-skill-subjects').textContent)
      })" x-cloak>
 
   {% comment %}What the home page already answered. Shown rather than
@@ -251,13 +253,13 @@ the moment you sign in.{% endblock %}
         {% icon "arrow-left" "h-4 w-4" %} Back
       </button>
 
-      <h1 class="u-h2">What level?</h1>
+      <h1 class="u-h2" x-text="isSkillSubject ? 'What’s your level?' : 'What level?'"></h1>
       <p class="u-lede mt-2 text-[0.9375rem]">
         So we don't send you teachers who don't take your level.
       </p>
 
       <div class="mt-7 grid grid-cols-2 gap-2">
-        <template x-for="l in LEVELS" :key="l">
+        <template x-for="l in levelOptions" :key="l">
           <button type="button" class="u-chip justify-start px-3.5 text-left"
                   :aria-pressed="level === l" @click="level = (level === l ? null : l)">
             <span x-text="l"></span>

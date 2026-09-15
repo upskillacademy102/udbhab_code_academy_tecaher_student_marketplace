@@ -36,6 +36,12 @@ class LanguageListCreateView(generics.ListCreateAPIView):
     filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_fields = ["is_active"]
     search_fields = ["name", "code"]
+    # Language is a small, admin-curated reference table (dozens of rows,
+    # not thousands) driving a picker that needs every option at once -
+    # the project-wide DEFAULT_PAGINATION_CLASS (PAGE_SIZE=20) would
+    # silently truncate it, so it's opted out here rather than weakened
+    # globally for the genuinely large, user-generated endpoints.
+    pagination_class = None
 
     def list(self, request, *args, **kwargs):
         response = super().list(request, *args, **kwargs)

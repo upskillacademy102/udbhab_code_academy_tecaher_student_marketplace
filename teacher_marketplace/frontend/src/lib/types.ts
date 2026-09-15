@@ -51,6 +51,8 @@ export interface TeacherProfile {
   headline: string | null;
   teaching_mode: TeachingMode;
   hourly_rate: string | null;
+  monthly_rate: string | null;
+  monthly_rate_max: string | null;
   rating: string | null;
   verification_status: string;
   moderation_status: string;
@@ -82,6 +84,17 @@ export interface StudentProfile {
   bio: string | null;
 }
 
+export interface SchedulePreference {
+  id: string;
+  day_of_week: number;
+  day_of_week_label?: string;
+  start_time: string;
+  end_time: string;
+  timezone?: string;
+  flexibility?: "flexible" | "fixed";
+  priority?: string;
+}
+
 export interface StudentRequirement {
   id: string;
   student_name: string;
@@ -95,6 +108,9 @@ export interface StudentRequirement {
   preferred_timing: string | null;
   description: string | null;
   status: string;
+  lead_distribution_status?: string | null;
+  class_duration_minutes?: number | null;
+  schedule_preferences?: SchedulePreference[];
   created_at: string;
 }
 
@@ -190,8 +206,14 @@ export interface Intent {
   subject?: string | null;
   language?: string | null;
   level?: string | null;
+  // Legacy shape (still written by the pre-login sign-up flow in
+  // static/js/auth.js): several days sharing one time band.
   days?: number[];
   from?: string | null;
   to?: string | null;
+  // Current shape: a list of distinct day+time windows, each with its
+  // own time (Monday 7pm, Tuesday 8am, ...). Preferred over days/from/to
+  // when present - see Discover.tsx's useInitialFilters.
+  windows?: { day: number; start: string; end: string }[];
   savedAt?: number;
 }

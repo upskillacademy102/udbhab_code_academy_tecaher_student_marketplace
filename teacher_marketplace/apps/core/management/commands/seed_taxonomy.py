@@ -47,12 +47,24 @@ SUBJECTS = [
     ("Music", "Vocal and instrumental music, Indian and Western."),
     ("Spoken English", "Conversational fluency, pronunciation and confidence."),
     ("Test Prep", "Competitive and entrance exam preparation."),
+    ("Yoga", "Asanas, breathing (pranayama) and meditation, for all ages and levels."),
 ]
+
+# Subjects learned as a skill (an instrument, a martial art, ...) rather
+# than an academic grade - the sign-up "What level?" step offers
+# Novice/Intermediate/Expert for these instead of Class 1-5 /
+# Undergraduate / ..., which don't make sense for e.g. a 40-year-old
+# learning guitar. Anything not listed here defaults to the academic bands.
+SKILL_BASED_SUBJECTS = {"Music", "Yoga"}
 
 # Medium-of-instruction options. Regional-language teaching is the clearest
 # differentiator this marketplace has in Tier-2/Tier-3 markets, so the set
-# leads with the languages with the largest tutoring demand in India.
-# Codes are ISO 639-1 (Language.save() lowercases them anyway).
+# leads with the languages with the largest tutoring demand in India, then
+# covers the rest of the Eighth Schedule of the Indian Constitution - the
+# 22 languages officially recognized across Indian states - so every state's
+# primary language is offerable as a medium of instruction. Codes are ISO
+# 639-1 where one exists, else ISO 639-3 (Language.save() lowercases them
+# anyway).
 LANGUAGES = [
     ("English", "en"),
     ("Hindi", "hi"),
@@ -66,6 +78,18 @@ LANGUAGES = [
     ("Malayalam", "ml"),
     ("Punjabi", "pa"),
     ("Odia", "or"),
+    # Remaining Eighth Schedule languages (one per remaining state/region).
+    ("Assamese", "as"),  # Assam
+    ("Bodo", "brx"),  # Assam (Bodoland)
+    ("Dogri", "doi"),  # Jammu & Kashmir
+    ("Kashmiri", "ks"),  # Jammu & Kashmir
+    ("Konkani", "kok"),  # Goa
+    ("Maithili", "mai"),  # Bihar
+    ("Manipuri", "mni"),  # Manipur (Meitei)
+    ("Nepali", "ne"),  # Sikkim, West Bengal (Darjeeling)
+    ("Sanskrit", "sa"),  # Uttarakhand
+    ("Santali", "sat"),  # Jharkhand
+    ("Sindhi", "sd"),  # Sindhi-speaking communities (no majority state)
 ]
 
 
@@ -123,7 +147,10 @@ class Command(BaseCommand):
             if not dry:
                 # slug is derived in Subject.save()
                 Subject.objects.create(
-                    name=name, description=description, is_active=True
+                    name=name,
+                    description=description,
+                    is_active=True,
+                    is_skill_based=name in SKILL_BASED_SUBJECTS,
                 )
             made += 1
             self.stdout.write(self.style.SUCCESS(f"  + subject: {name}"))

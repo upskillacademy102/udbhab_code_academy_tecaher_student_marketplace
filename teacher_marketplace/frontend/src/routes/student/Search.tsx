@@ -2,9 +2,10 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { Named, TeacherProfile } from "@/lib/types";
-import { BANDS, DAYS, scheduleText } from "@/lib/intent";
+import { formatWindows, type TimeWindow } from "@/lib/intent";
 import { MatchCard, MatchCardSkeleton } from "@/components/MatchCard";
 import { FilterChips, type ActiveFilter } from "@/components/FilterChips";
+import { WindowPicker } from "@/components/WindowPicker";
 
 /**
  * Find teachers — the full search surface.
@@ -49,14 +50,22 @@ interface State {
   price: string | null;
   minRating: boolean;
   verifiedOnly: boolean;
-  days: number[];
-  band: string;
+  // A list of specific day+time windows (Monday 7-8pm, Tuesday 8-9am, ...)
+  // rather than several days sharing one coarse band — a student free at
+  // different times on different days needs each expressed separately.
+  windows: TimeWindow[];
+  // "I don't have a fixed time — match me to whatever the teacher offers."
+  // Mutually exclusive with windows: adding/editing a window turns this
+  // off, turning this on clears them. Without it, a student with no fixed
+  // schedule has no way to say so — an empty windows list looks like an
+  // unfinished filter rather than a deliberate "any time works" choice.
+  flexible: boolean;
   sort: string;
 }
 
 const EMPTY: State = {
   subject: null, language: null, mode: null, price: null,
-  minRating: false, verifiedOnly: false, days: [], band: "evening", sort: "",
+  minRating: false, verifiedOnly: false, windows: [], flexible: false, sort: "",
 };
 
 function useTaxonomy() {
@@ -81,8 +90,7 @@ export function Search() {
   const [panelOpen, setPanelOpen] = useState(false);
   const { subjects, languages } = useTaxonomy();
 
-  const band = BANDS.find((b) => b.id === s.band) ?? BANDS[2];
-  const hasSchedule = s.days.length > 0;
+  const hasSchedule = !s.flexible && s.windows.length > 0;
   const priceBand = PRICE_BANDS.find((p) => p.id === s.price);
 
   const params = useMemo(() => {
@@ -96,14 +104,14 @@ export function Search() {
     if (s.verifiedOnly) p.verified_only = "true";
     if (s.sort) p.ordering = s.sort;
     if (hasSchedule) {
-      p.preferred_day = String(s.days[0]);
-      p.preferred_start_time = band.from;
-      p.preferred_end_time = band.to;
+      p.preferred_slots = JSON.stringify(
+        s.windows.map((w) => ({ day: w.day, start_time: w.start, end_time: w.end }))
+      );
       p.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata";
       p.duration_minutes = "60";
     }
     return p;
-  }, [s, band, hasSchedule, priceBand]);
+  }, [s, hasSchedule, priceBand]);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["search", params],
@@ -112,8 +120,8 @@ export function Search() {
 
   const results = data?.items ?? [];
   const set = <K extends keyof State>(k: K, v: State[K]) => setS((p) => ({ ...p, [k]: v }));
-  const toggleDay = (n: number) =>
-    setS((p) => ({ ...p, days: p.days.includes(n) ? p.days.filter((d) => d !== n) : [...p.days, n].sort((a, b) => a - b) }));
+  const setWindows = (windows: TimeWindow[]) => setS((p) => ({ ...p, windows, flexible: false }));
+  const toggleFlexible = () => setS((p) => ({ ...p, flexible: !p.flexible, windows: [] }));
 
   const active: ActiveFilter[] = [];
   if (s.subject) active.push({ key: "subject", label: s.subject, onClear: () => set("subject", null) });
@@ -122,7 +130,8 @@ export function Search() {
   if (priceBand) active.push({ key: "price", label: priceBand.label, onClear: () => set("price", null) });
   if (s.minRating) active.push({ key: "rating", label: "4★ and up", onClear: () => set("minRating", false) });
   if (s.verifiedOnly) active.push({ key: "verified", label: "Verified only", onClear: () => set("verifiedOnly", false) });
-  if (hasSchedule) active.push({ key: "when", label: scheduleText(s.days, s.band), onClear: () => set("days", []) });
+  if (hasSchedule) active.push({ key: "when", label: formatWindows(s.windows), onClear: () => set("windows", []) });
+  if (s.flexible) active.push({ key: "flexible", label: "Flexible — any time works", onClear: () => set("flexible", false) });
 
   return (
     <div className="flex flex-col gap-5">
@@ -181,29 +190,7 @@ export function Search() {
           </Group>
 
           <Group label="When you're free">
-            <div className="grid max-w-sm grid-cols-7 gap-1.5">
-              {DAYS.map((d) => (
-                <button key={d.n} type="button" aria-pressed={s.days.includes(d.n)} aria-label={d.full}
-                  onClick={() => toggleDay(d.n)}
-                  className={
-                    "flex h-11 items-center justify-center rounded-lg border-[1.5px] text-[0.8125rem] font-semibold transition duration-150 ease-enter " +
-                    (s.days.includes(d.n)
-                      ? "border-pine-600 bg-pine-600 text-white"
-                      : "border-ink-300 bg-paper text-ink-600 hover:border-pine-400 hover:bg-pine-50")
-                  }>
-                  {d.s}
-                </button>
-              ))}
-            </div>
-            <div className="mt-2.5 grid max-w-sm grid-cols-3 gap-2">
-              {BANDS.map((b) => (
-                <button key={b.id} type="button" aria-pressed={s.band === b.id} onClick={() => set("band", b.id)}
-                  className="u-chip flex-col gap-0.5 px-2 py-2">
-                  <span className="text-[0.875rem]">{b.label}</span>
-                  <span className="text-[0.6875rem] font-normal tabular-nums text-ink-400">{b.hint}</span>
-                </button>
-              ))}
-            </div>
+            <WindowPicker windows={s.windows} flexible={s.flexible} onChange={setWindows} onToggleFlexible={toggleFlexible} />
           </Group>
 
           <Group label="Only show">

@@ -73,7 +73,7 @@ JavaScript array. Alpine only owns selection state and the filter.
     {% endif %}
   </div>
 
-  <div class="u-combo mt-3" @click.outside="cbClose()" @keydown.escape.stop="cbEscape()">
+  <div class="u-combo mt-3"{% if other %} x-show="subject !== '__other'"{% endif %} @click.outside="cbClose()" @keydown.escape.stop="cbEscape()">
     <input type="text" id="{{ pid }}-combo" class="u-input"
            role="combobox" aria-autocomplete="list"
            aria-controls="{{ pid }}-listbox"

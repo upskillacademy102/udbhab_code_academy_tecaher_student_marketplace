@@ -51,16 +51,35 @@ def _compute() -> dict:
             .values_list("name", flat=True)
         )
 
-    return {"subjects": ranked(Subject), "languages": ranked(Language)}
+    skill_based_subjects = list(
+        Subject.objects.filter(is_active=True, is_skill_based=True).values_list(
+            "name", flat=True
+        )
+    )
+
+    return {
+        "subjects": ranked(Subject),
+        "languages": ranked(Language),
+        "skill_based_subjects": skill_based_subjects,
+    }
 
 
 def public_taxonomy() -> dict:
-    """``{"subjects": [name, ...], "languages": [name, ...]}`` — never raises."""
+    """
+    ``{"subjects": [name, ...], "languages": [name, ...],
+    "skill_based_subjects": [name, ...]}`` — never raises.
+
+    `skill_based_subjects` names which of `subjects` are learned as a
+    skill (an instrument, a martial art, ...) rather than an academic
+    grade, so the sign-up "What level?" step can offer
+    Novice/Intermediate/Expert for these instead of the Class 1-5 /
+    Undergraduate / ... academic bands.
+    """
     data = cache.get(_CACHE_KEY)
     if data is None:
         try:
             data = _compute()
         except Exception:  # noqa: BLE001 - taxonomy must never break a public page
-            data = {"subjects": [], "languages": []}
+            data = {"subjects": [], "languages": [], "skill_based_subjects": []}
         cache.set(_CACHE_KEY, data, _CACHE_TTL)
     return data

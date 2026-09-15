@@ -4,21 +4,15 @@ import type { TeacherProfile } from "@/lib/types";
 /**
  * The Match Card.
  *
- * Superprof's card is a photograph with data underneath. Almost no teacher
- * here has uploaded a photo, so copying that produces a grid of initials in
- * circles — a page that looks broken. So the hierarchy is inverted: the
- * card's anchor is the thing we compute and they can't, the schedule fit.
+ * Superprof's card is a photograph with data underneath — and now that a
+ * profile photo is a required, verification-gated field (every verified
+ * teacher has one), copying that no longer produces a wall of broken-looking
+ * initials, so the photo leads. Unverified/incomplete profiles still fall
+ * back to a monogram tile instead of breaking the grid.
  *
- * Every card has a fit band, so every card has an anchor, and a missing photo
- * costs one 44px monogram instead of half the card.
- *
- * Three states:
- *   1. schedule known    -> teal fit band with the overlapping window
- *   2. no schedule       -> subject block, which doubles as the prompt to add
- *                           free hours (turning a data gap into the loop that
- *                           closes it)
- *   3. top result        -> a single marigold "Best match" ribbon, once per
- *                           grid, so the accent still means something
+ * The fit signal Superprof doesn't have — the schedule-overlap percentage
+ * this app actually computes — isn't dropped, just demoted to a badge over
+ * the photo, plus the "Best match" ribbon for the single top result.
  */
 
 const MONOGRAM_TONES = [
@@ -48,6 +42,20 @@ function money(v: string | null): string | null {
   const n = Number(v);
   if (!Number.isFinite(n)) return null;
   return "₹" + Math.round(n).toLocaleString("en-IN");
+}
+
+/** "₹600 – ₹1,000" when there's a real range, else a single "₹600". */
+function moneyRange(min: string | null, max: string | null): string | null {
+  const lo = money(min);
+  const hi = money(max);
+  if (lo && hi && hi !== lo) return `${lo} – ${hi}`;
+  return lo ?? hi;
+}
+
+/** "Bengaluru (online)" style location line, built only from real fields. */
+function locationLabel(city: string | undefined, mode: TeacherProfile["teaching_mode"]): string {
+  const modeLabel = mode === "online" ? "online" : mode === "both" ? "online or in person" : "in person";
+  return city ? `${city} (${modeLabel})` : modeLabel[0]!.toUpperCase() + modeLabel.slice(1);
 }
 
 function CheckSeal() {
@@ -107,14 +115,21 @@ function stash(t: TeacherProfile) {
 export function MatchCard({ teacher, isTopMatch = false, index = 0 }: MatchCardProps) {
   const name = teacher.teacher?.user?.full_name || "Teacher";
   const photo = teacher.teacher?.profile_photo;
+  const bio = teacher.teacher?.bio?.trim() || null;
   const fit = teacher.match_percentage;
   const hasFit = typeof fit === "number" && Number.isFinite(fit);
   const rating = Number(teacher.rating ?? 0);
   const hasRating = rating > 0;
   const years = teacher.years_of_experience ?? teacher.teacher?.experience_years ?? null;
-  const price = money(teacher.hourly_rate);
+  // A teacher may share either rate, both, or neither - hourly takes
+  // display priority (most students compare per-hour), monthly fills in
+  // when that's all that's set rather than showing nothing.
+  const hourlyPrice = money(teacher.hourly_rate);
+  const monthlyPrice = moneyRange(teacher.monthly_rate, teacher.monthly_rate_max);
+  const price = hourlyPrice ?? monthlyPrice;
+  const priceUnit = hourlyPrice ? "/hr" : monthlyPrice ? "/mo" : "";
   const subjects = teacher.subjects?.map((s) => s.name) ?? [];
-  const languages = teacher.languages?.map((l) => l.name) ?? [];
+  const location = locationLabel(teacher.cities?.[0]?.name, teacher.teaching_mode);
 
   return (
     <Link
@@ -123,91 +138,82 @@ export function MatchCard({ teacher, isTopMatch = false, index = 0 }: MatchCardP
       className="u-stagger-item group flex h-full flex-col overflow-hidden rounded-2xl border-[1.5px] border-ink-300 bg-paper shadow-lift transition duration-150 ease-enter hover:-translate-y-px hover:border-pine-400 hover:shadow-raise"
       style={{ "--d": `${Math.min(index, 7) * 30}ms` } as React.CSSProperties}
     >
-      {/* ---- The anchor: fit, or the subject fallback ---- */}
-      {hasFit ? (
-        <div className="relative border-b border-ink-200 bg-pine-50 px-4 py-3">
-          {isTopMatch && (
-            <span className="absolute right-3 top-3 rounded-full bg-marigold-500 px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-ink-900">
-              Best match
-            </span>
-          )}
-          <p className="font-display text-[1.6rem] font-bold leading-none tracking-tight text-pine-800">
-            {Math.round(fit as number)}%
-            <span className="ml-1.5 font-sans text-[0.6875rem] font-semibold uppercase tracking-wider text-pine-600">
-              fit
-            </span>
-          </p>
-          <p className="mt-1 text-[0.75rem] font-medium text-pine-800">
-            {teacher.best_matching_time || "Free when you are"}
-          </p>
-        </div>
-      ) : (
-        <div className="border-b border-ink-200 bg-paper-sunk px-4 py-3">
-          <p className="font-display text-[1.1rem] font-semibold leading-tight text-ink-900">
-            {subjects[0] ?? "Teacher"}
-          </p>
-          <p className="mt-0.5 text-[0.75rem] text-ink-500">Add your free hours to see fit</p>
-        </div>
-      )}
-
-      {/* ---- Who ---- */}
-      <div className="flex flex-1 flex-col gap-2.5 px-4 pt-3.5">
-        <div className="flex items-center gap-3">
-          {photo ? (
-            <img src={photo} alt="" className="h-11 w-11 shrink-0 rounded-full object-cover" />
-          ) : (
-            <span
-              className={`grid h-11 w-11 shrink-0 place-items-center rounded-full text-[0.8125rem] font-bold ${toneFor(teacher.id)}`}
-              aria-hidden="true"
-            >
-              {initials(name)}
-            </span>
-          )}
-          <div className="min-w-0">
-            <p className="truncate text-[0.9375rem] font-semibold leading-tight text-ink-900">{name}</p>
-            {teacher.is_fully_verified ? (
-              <span className="mt-0.5 inline-flex items-center gap-1 text-[0.6875rem] font-medium text-pine-700">
-                <CheckSeal /> ID &amp; qualifications checked
-              </span>
-            ) : teacher.is_verified ? (
-              <span className="mt-0.5 inline-flex items-center gap-1 text-[0.6875rem] font-medium text-pine-700">
-                <CheckSeal /> Verified
-              </span>
-            ) : null}
+      {/* ---- Photo hero: the card's anchor now that a photo is required ---- */}
+      <div className="relative aspect-[4/3] w-full shrink-0 overflow-hidden bg-paper-sunk">
+        {photo ? (
+          <img
+            src={photo}
+            alt=""
+            className="h-full w-full object-cover object-top transition duration-200 ease-enter group-hover:scale-[1.03]"
+          />
+        ) : (
+          <div className={`grid h-full w-full place-items-center text-[1.75rem] font-bold ${toneFor(teacher.id)}`} aria-hidden="true">
+            {initials(name)}
           </div>
-        </div>
+        )}
 
-        <div className="flex flex-col gap-1">
+        {isTopMatch && (
+          <span className="absolute left-3 top-3 rounded-full bg-marigold-500 px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-ink-900 shadow-sm">
+            Best match
+          </span>
+        )}
+        {hasFit && (
+          <span className="absolute right-3 top-3 rounded-full bg-pine-900/80 px-2 py-1 text-[11px] font-bold text-white backdrop-blur-sm">
+            {Math.round(fit as number)}% fit
+          </span>
+        )}
+
+        {/* Name + location, overlaid on a scrim so it reads on any photo */}
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent px-3 pb-2.5 pt-8">
+          <p className="truncate text-[0.9375rem] font-semibold leading-tight text-white">{name}</p>
+          <p className="truncate text-[0.75rem] text-white/85">{location}</p>
+        </div>
+      </div>
+
+      {/* ---- What they teach ---- */}
+      <div className="flex flex-1 flex-col gap-1.5 px-4 pt-3">
+        <div className="flex items-start justify-between gap-2">
           {subjects.length > 0 && (
-            <p className="truncate text-[0.8125rem] font-medium text-ink-800">
+            <p className="truncate text-[0.9375rem] font-semibold leading-tight text-ink-900">
               {subjects.slice(0, 2).join(" · ")}
               {subjects.length > 2 && ` +${subjects.length - 2}`}
             </p>
           )}
-          {languages.length > 0 && (
-            <p className="truncate text-[0.75rem] text-ink-500">Teaches in {languages.slice(0, 3).join(", ")}</p>
+          {(teacher.is_fully_verified || teacher.is_verified) && (
+            <span className="inline-flex shrink-0 items-center gap-1 text-[0.6875rem] font-medium text-pine-700">
+              <CheckSeal /> Verified
+            </span>
           )}
-          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.75rem] text-ink-500">
-            {hasRating ? (
-              <span className="inline-flex items-center gap-1">
-                <Star />
-                <b className="font-semibold tabular-nums text-ink-900">{rating.toFixed(1)}</b>
-              </span>
-            ) : (
-              <span className="rounded-full border border-ink-200 bg-paper-sunk px-2 py-px text-[0.6875rem] font-semibold uppercase tracking-wide text-ink-500">
-                New
-              </span>
-            )}
-            {years != null && <span>{years} yr{years === 1 ? "" : "s"} teaching</span>}
-          </p>
         </div>
+
+        {bio ? (
+          <p className="line-clamp-2 text-[0.8125rem] leading-snug text-ink-600">{bio}</p>
+        ) : hasFit ? (
+          <p className="text-[0.8125rem] text-ink-500">{teacher.best_matching_time || "Free when you are"}</p>
+        ) : (
+          <p className="text-[0.8125rem] text-ink-500">Add your free hours to see fit</p>
+        )}
+
+        <p className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1 pt-1.5 text-[0.75rem] text-ink-500">
+          {hasRating ? (
+            <span className="inline-flex items-center gap-1">
+              <Star />
+              <b className="font-semibold tabular-nums text-ink-900">{rating.toFixed(1)}</b>
+            </span>
+          ) : (
+            <span className="rounded-full border border-ink-200 bg-paper-sunk px-2 py-px text-[0.6875rem] font-semibold uppercase tracking-wide text-ink-500">
+              New
+            </span>
+          )}
+          {years != null && <span>{years} yr{years === 1 ? "" : "s"} teaching</span>}
+        </p>
       </div>
 
       {/* ---- Price last: judged after the value is established ---- */}
       <div className="mt-3 flex items-center justify-between gap-2 border-t border-ink-200 px-4 py-3">
         <span className="text-[0.9375rem] font-bold tabular-nums text-ink-900">
           {price ?? "—"}
-          {price && <span className="ml-0.5 text-[0.6875rem] font-medium text-ink-500">/hr</span>}
+          {price && <span className="ml-0.5 text-[0.6875rem] font-medium text-ink-500">{priceUnit}</span>}
         </span>
         <span className="inline-flex items-center gap-1 text-[0.8125rem] font-semibold text-pine-700">
           See profile
@@ -222,15 +228,9 @@ export function MatchCard({ teacher, isTopMatch = false, index = 0 }: MatchCardP
 export function MatchCardSkeleton() {
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-2xl border-[1.5px] border-ink-200 bg-paper">
-      <div className="h-[74px] border-b border-ink-200 bg-paper-sunk" />
+      <div className="aspect-[4/3] w-full animate-pulse bg-ink-100" />
       <div className="flex flex-1 flex-col gap-2.5 p-4">
-        <div className="flex items-center gap-3">
-          <div className="h-11 w-11 shrink-0 animate-pulse rounded-full bg-ink-100" />
-          <div className="flex-1 space-y-1.5">
-            <div className="h-3 w-2/3 animate-pulse rounded bg-ink-100" />
-            <div className="h-2.5 w-1/2 animate-pulse rounded bg-ink-100" />
-          </div>
-        </div>
+        <div className="h-3 w-2/3 animate-pulse rounded bg-ink-100" />
         <div className="h-2.5 w-3/4 animate-pulse rounded bg-ink-100" />
         <div className="h-2.5 w-1/2 animate-pulse rounded bg-ink-100" />
       </div>

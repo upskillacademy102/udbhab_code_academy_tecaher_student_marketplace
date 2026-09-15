@@ -77,6 +77,8 @@ class TeacherProfileSerializer(serializers.ModelSerializer):
             "headline",
             "teaching_mode",
             "hourly_rate",
+            "monthly_rate",
+            "monthly_rate_max",
             "rating",
             "verification_status",
             "moderation_status",
@@ -136,6 +138,8 @@ class TeacherProfileWriteSerializer(serializers.ModelSerializer):
             "headline",
             "teaching_mode",
             "hourly_rate",
+            "monthly_rate",
+            "monthly_rate_max",
             "subjects",
             "languages",
             "cities",
@@ -146,6 +150,33 @@ class TeacherProfileWriteSerializer(serializers.ModelSerializer):
         if value is not None and value < 0:
             raise serializers.ValidationError("Hourly rate cannot be negative.")
         return value
+
+    def validate_monthly_rate(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError("Monthly rate cannot be negative.")
+        return value
+
+    def validate_monthly_rate_max(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError("Monthly rate cannot be negative.")
+        return value
+
+    def validate(self, attrs):
+        # Fall back to the existing instance's value for whichever side of
+        # the range wasn't included in a partial update, so a PATCH that
+        # only sends one of the two fields still gets checked against the
+        # other's current value.
+        rate_min = attrs.get(
+            "monthly_rate", getattr(self.instance, "monthly_rate", None)
+        )
+        rate_max = attrs.get(
+            "monthly_rate_max", getattr(self.instance, "monthly_rate_max", None)
+        )
+        if rate_min is not None and rate_max is not None and rate_max < rate_min:
+            raise serializers.ValidationError(
+                {"monthly_rate_max": "The upper end can't be below the lower end."}
+            )
+        return attrs
 
     def validate_headline(self, value):
         if isinstance(value, str):

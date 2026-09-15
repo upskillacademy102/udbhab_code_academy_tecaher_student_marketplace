@@ -194,13 +194,16 @@ class TeacherSearchView(generics.ListAPIView):
     (route ``search:teacher-search``): Student + Admin + Super Admin only.
     Teachers may not use marketplace teacher-search.
 
-    Schedule-aware query params (all optional, but must be supplied
-    TOGETHER to activate time scoring):
-        preferred_day (1-7, ISO weekday)
-        preferred_start_time (HH:MM)
-        preferred_end_time (HH:MM)
-        timezone (IANA name)
-        duration_minutes (default 60)
+    Schedule-aware query params (all optional; activates time scoring).
+    Two forms - see _parse_schedule_params:
+        preferred_slots - JSON array of {"day","start_time","end_time"}
+            for a student free at more than one distinct day+time
+            (e.g. Monday 7pm AND Tuesday 8am - each with its own
+            time, not one time applied to every day).
+        preferred_day / preferred_start_time / preferred_end_time -
+            legacy single-slot form, must be supplied TOGETHER.
+        timezone (IANA name), duration_minutes (default 60) - shared
+        across every slot in one request either way.
     """
 
     serializer_class = TeacherProfileSerializer
@@ -246,15 +249,87 @@ class TeacherSearchView(generics.ListAPIView):
 
     def _parse_schedule_params(self, request):
         """
-        Returns a TimeSlot for the requested preference if ALL
-        required schedule params are present and valid, else None
-        (meaning: fall back to non-schedule-aware search). Partial/
-        malformed schedule params raise a clean 400 rather than
-        silently ignoring them, since a caller who supplied SOME
-        schedule params almost certainly intended schedule-aware
-        search and would want to know it didn't activate.
+        Returns a list of TimeSlots for the requested preference(s) if
+        valid schedule params are present, else None (meaning: fall
+        back to non-schedule-aware search). Partial/malformed schedule
+        params raise a clean 400 rather than silently ignoring them,
+        since a caller who supplied SOME schedule params almost
+        certainly intended schedule-aware search and would want to
+        know it didn't activate.
+
+        Two ways to specify slots, checked in this order:
+
+        1. `preferred_slots` - a JSON array of {"day", "start_time",
+           "end_time"} objects, for a student free at more than one
+           distinct day+time (e.g. "Monday 7pm AND Tuesday 8am" - two
+           slots with different times, not one time applied to both
+           days). `TimeCompatibilityService.find_best_overlap` already
+           compares every (student_slot, teacher_slot) combination and
+           keeps the best, so this is a thin parsing layer over
+           capability that already existed - the single-slot view
+           below just never passed more than one element through it.
+
+        2. The legacy single-slot params (`preferred_day`,
+           `preferred_start_time`, `preferred_end_time`) - kept
+           working exactly as before for existing callers (the
+           per-teacher "Can they do your time?" checker, older
+           clients), producing a one-element list.
+
+        `timezone` and `duration_minutes` are shared across every slot
+        in one request - one student, one clock.
         """
         params = request.query_params
+        from datetime import time as time_cls
+
+        from apps.lead_engine.services.time_compatibility_service import TimeSlot
+
+        def _validated_timezone() -> str:
+            tz = params.get("timezone", "UTC")
+            try:
+                from zoneinfo import ZoneInfo
+
+                ZoneInfo(tz)
+            except Exception:
+                raise ValidationException(
+                    detail=f"'{tz}' is not a valid IANA timezone name."
+                )
+            return tz
+
+        raw_slots = params.get("preferred_slots")
+        if raw_slots:
+            import json
+
+            try:
+                parsed = json.loads(raw_slots)
+                if not isinstance(parsed, list) or not parsed:
+                    raise ValueError
+            except (ValueError, TypeError):
+                raise ValidationException(
+                    detail="preferred_slots must be a non-empty JSON array."
+                )
+
+            tz = _validated_timezone()
+            slots = []
+            for entry in parsed:
+                try:
+                    day = int(entry["day"])
+                    start_time = time_cls.fromisoformat(entry["start_time"])
+                    end_time = time_cls.fromisoformat(entry["end_time"])
+                except (KeyError, ValueError, TypeError):
+                    raise ValidationException(
+                        detail="Each preferred_slots entry needs day (1-7), "
+                        "start_time and end_time (HH:MM)."
+                    )
+                slots.append(
+                    TimeSlot(
+                        day_of_week=day,
+                        start_time=start_time,
+                        end_time=end_time,
+                        timezone=tz,
+                    )
+                )
+            return slots
+
         provided = [
             params.get("preferred_day"),
             params.get("preferred_start_time"),
@@ -270,10 +345,6 @@ class TeacherSearchView(generics.ListAPIView):
                 )
             )
 
-        from datetime import time as time_cls
-
-        from apps.lead_engine.services.time_compatibility_service import TimeSlot
-
         try:
             day = int(params["preferred_day"])
             start_time = time_cls.fromisoformat(params["preferred_start_time"])
@@ -283,36 +354,29 @@ class TeacherSearchView(generics.ListAPIView):
                 detail="preferred_day must be 1-7, and times must be in HH:MM format."
             )
 
-        tz = params.get("timezone", "UTC")
-        try:
-            from zoneinfo import ZoneInfo
-
-            ZoneInfo(tz)
-        except Exception:
-            raise ValidationException(
-                detail=f"'{tz}' is not a valid IANA timezone name."
+        tz = _validated_timezone()
+        return [
+            TimeSlot(
+                day_of_week=day, start_time=start_time, end_time=end_time, timezone=tz
             )
-
-        return TimeSlot(
-            day_of_week=day, start_time=start_time, end_time=end_time, timezone=tz
-        )
+        ]
 
     def list(self, request, *args, **kwargs):
-        student_slot = self._parse_schedule_params(request)
+        student_slots = self._parse_schedule_params(request)
 
         queryset = self.filter_queryset(self.get_queryset())
         page = self.paginate_queryset(queryset)
         candidates = page if page is not None else list(queryset)
 
-        if student_slot is not None:
+        if student_slots is not None:
             candidates = self._annotate_and_sort_by_time(
-                candidates, request, student_slot
+                candidates, request, student_slots
             )
 
         serializer = self.get_serializer(candidates, many=True)
         data = serializer.data
 
-        if student_slot is not None:
+        if student_slots is not None:
             for item, candidate in zip(data, candidates):
                 item["match_percentage"] = candidate._match_percentage
                 item["best_matching_time"] = candidate._best_matching_time
@@ -328,21 +392,24 @@ class TeacherSearchView(generics.ListAPIView):
             )
         return APIResponse.success(data=data)
 
-    def _annotate_and_sort_by_time(self, candidates, request, student_slot):
+    def _annotate_and_sort_by_time(self, candidates, request, student_slots):
         """
         For each candidate (already a small, paginated page - not
         the full table, per the two-phase performance strategy),
-        computes time compatibility against the requested slot and
-        attaches the result as transient attributes for the
-        response to read. Sorts the page by this score, highest
-        first - this only re-orders WITHIN the current page (the
-        underlying SQL ordering already applied rating/price
-        sorting before pagination), which is an accepted, documented
-        tradeoff: true global sort-by-time-score across the entire
-        result set before pagination would require computing time
-        scores for every matching teacher up front, which is exactly
-        the "expensive full scan" this architecture's two-phase
-        strategy is designed to avoid at search-browse scale.
+        computes time compatibility against every requested slot
+        (find_best_overlap compares all student_slot x teacher_slot
+        combinations and keeps the best - a teacher matching ANY one
+        of the student's slots scores on that best combination, not
+        an average across all of them) and attaches the result as
+        transient attributes for the response to read. Sorts the page
+        by this score, highest first - this only re-orders WITHIN the
+        current page (the underlying SQL ordering already applied
+        rating/price sorting before pagination), which is an accepted,
+        documented tradeoff: true global sort-by-time-score across the
+        entire result set before pagination would require computing
+        time scores for every matching teacher up front, which is
+        exactly the "expensive full scan" this architecture's
+        two-phase strategy is designed to avoid at search-browse scale.
         """
         from apps.lead_engine.services.time_compatibility_service import (
             TimeCompatibilityService,
@@ -350,6 +417,7 @@ class TeacherSearchView(generics.ListAPIView):
         )
 
         duration = int(request.query_params.get("duration_minutes", 60))
+        display_tz = student_slots[0].timezone
 
         for profile in candidates:
             teacher_slots = [
@@ -363,7 +431,7 @@ class TeacherSearchView(generics.ListAPIView):
                 if w.is_active
             ]
             result = TimeCompatibilityService.find_best_overlap(
-                student_slots=[student_slot],
+                student_slots=student_slots,
                 teacher_slots=teacher_slots,
                 required_duration_minutes=duration,
             )
@@ -371,10 +439,10 @@ class TeacherSearchView(generics.ListAPIView):
 
             if result["best_start_utc"] is not None:
                 start_local = TimeCompatibilityService.convert_utc_to_timezone(
-                    result["best_start_utc"], student_slot.timezone
+                    result["best_start_utc"], display_tz
                 )
                 end_local = TimeCompatibilityService.convert_utc_to_timezone(
-                    result["best_end_utc"], student_slot.timezone
+                    result["best_end_utc"], display_tz
                 )
                 profile._best_matching_time = f"{start_local.strftime('%A %I:%M %p')} - {end_local.strftime('%I:%M %p')}"
             else:

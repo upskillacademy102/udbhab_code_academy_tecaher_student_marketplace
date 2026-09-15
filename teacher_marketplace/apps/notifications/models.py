@@ -41,14 +41,21 @@ class NotificationEvent(models.TextChoices):
     SUBSCRIPTION_EXPIRY_REMINDER = "subscription_expiry_reminder", _(
         "Subscription Expiry Reminder"
     )
+    # Student-facing (the one event in this list NOT aimed at a teacher -
+    # see the class docstring): fired the moment a teacher unlocks a
+    # student's own requirement, so the student knows to expect contact.
+    STUDENT_LEAD_UNLOCKED = "student_lead_unlocked", _("Teacher Unlocked Your Lead")
+    # Fired once per lead, the first time PendingRatingsView sees a teacher
+    # still hasn't rated a lead they unlocked - see that view and
+    # NotificationService.lead_review_pending.
+    LEAD_REVIEW_PENDING = "lead_review_pending", _("Lead Review Pending")
 
 
 class Notification(BaseModel):
     """
-    A single notification instance for one user (always a Teacher
-    in Phase 3's event list - every event type listed in the spec
-    is teacher-facing; Students currently generate no notification
-    events of their own).
+    A single notification instance for one user - usually a Teacher
+    (every Phase 3 spec event is teacher-facing), but also a Student
+    for STUDENT_LEAD_UNLOCKED (see NotificationEvent above).
     """
 
     user = models.ForeignKey(

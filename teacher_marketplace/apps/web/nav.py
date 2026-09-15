@@ -25,14 +25,14 @@ _STUDENT = [
         "label": None,
         "items": [
             {
-                "label": "Discover",
+                "label": "Learn Something New",
                 "url": "/student/",
                 "icon": "sparkles",
                 "match": "/student/$",
             },
-            {"label": "Find teachers", "url": "/student/teachers/", "icon": "search"},
+            {"label": "Find Verified Teachers", "url": "/student/teachers/", "icon": "search"},
             {
-                "label": "What you need",
+                "label": "Posted Requirements",
                 "url": "/student/requirements/",
                 "icon": "clipboard",
             },

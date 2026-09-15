@@ -57,9 +57,10 @@
                 </div>
               </div>
               {# Price — bold and standalone, like a product page's price #}
-              <div class="shrink-0 text-right" x-show="t.hourly_rate">
-                <p class="text-xl font-bold text-slate-900" x-text="fmt.money(t.hourly_rate)"></p>
-                <p class="text-xs text-slate-400">per hour</p>
+              <div class="shrink-0 text-right" x-show="t.hourly_rate || t.monthly_rate">
+                <p class="text-xl font-bold text-slate-900" x-text="t.hourly_rate ? fmt.money(t.hourly_rate) : fmt.moneyRange(t.monthly_rate, t.monthly_rate_max)"></p>
+                <p class="text-xs text-slate-400" x-text="t.hourly_rate ? 'per hour' : 'per month'"></p>
+                <p class="mt-0.5 text-xs text-slate-400" x-show="t.hourly_rate && t.monthly_rate" x-text="fmt.moneyRange(t.monthly_rate, t.monthly_rate_max) + ' / month'"></p>
               </div>
             </div>
             <p class="mt-2 text-sm text-slate-500" x-text="t.headline || fmt.list(t.subjects, 'name') || subjectsText()"></p>

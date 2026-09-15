@@ -48,6 +48,8 @@ class UserSerializer(serializers.ModelSerializer):
     """
 
     full_name = serializers.CharField(source="get_full_name", read_only=True)
+    has_student_profile = serializers.BooleanField(read_only=True)
+    has_teacher_profile = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = User
@@ -59,6 +61,8 @@ class UserSerializer(serializers.ModelSerializer):
             "last_name",
             "full_name",
             "role",
+            "has_student_profile",
+            "has_teacher_profile",
             "is_active",
             "is_email_verified",
             "is_mobile_verified",

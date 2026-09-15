@@ -70,6 +70,18 @@ class Subject(BaseModel):
             "requirements that reference them."
         ),
     )
+    is_skill_based = models.BooleanField(
+        _("is skill based"),
+        default=False,
+        db_index=True,
+        help_text=_(
+            "True for subjects learned as a skill rather than an academic "
+            "grade (e.g. Music, an instrument, Karate) - the sign-up 'What "
+            "level?' step offers Novice/Intermediate/Expert for these "
+            "instead of the Class 1-5 / Undergraduate / ... academic bands, "
+            "which don't make sense for e.g. a 40-year-old learning guitar."
+        ),
+    )
 
     class Meta:
         verbose_name = _("Subject")

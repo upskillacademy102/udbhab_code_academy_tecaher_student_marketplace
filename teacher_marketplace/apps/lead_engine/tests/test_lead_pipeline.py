@@ -130,7 +130,11 @@ class PipelineFixtureMixin:
             last_name="T",
             is_active=active,
         )
-        teacher = Teacher.objects.create(user=user, experience_years=experience)
+        teacher = Teacher.objects.create(
+            user=user,
+            experience_years=experience,
+            profile_photo="teachers/profile_photos/test.jpg",
+        )
         if pincode is not None:
             teacher.pincode_location = pincode
             teacher.save(update_fields=["pincode_location"])
@@ -756,7 +760,14 @@ class EmptyAndInvalidInputTests(PipelineFixtureMixin, APITestCase):
         leads, assignments = self.run_pipeline(req)
         self.assertEqual((leads, assignments), ([], []))
 
-    def test_unknown_subject_text_is_rejected_with_400(self):
+    def test_unknown_subject_text_is_auto_created_not_rejected(self):
+        # Subject text that matches nothing existing (exact/alias/fuzzy) is
+        # no longer rejected - it's added to the taxonomy and the
+        # requirement proceeds, same as the "Something else" escape on the
+        # sign-up/Discover pickers. See StudentRequirementWriteSerializer
+        # .validate_subject.
+        from apps.subjects.models import Subject
+
         student = make_user(role=UserRole.STUDENT)
         login(self.client, student)
         resp = self.client.post(
@@ -764,7 +775,12 @@ class EmptyAndInvalidInputTests(PipelineFixtureMixin, APITestCase):
             {"subject": "Astrophysics of Kryptonian Botany", "teaching_mode": "online"},
             format="json",
         )
-        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.status_code, 202)
+        self.assertTrue(
+            Subject.objects.filter(
+                name="Astrophysics of Kryptonian Botany", is_active=True
+            ).exists()
+        )
 
     def test_bad_schedule_preference_is_rejected_with_400_not_500(self):
         self.make_teacher("Anita", plan=self.elite_plan)
@@ -1264,6 +1280,10 @@ class AsyncDistributionTests(PipelineFixtureMixin, APITestCase):
         self.assertEqual(req.lead_distribution_status, LeadDistributionStatus.QUEUED)
 
     def test_task_not_queued_when_requirement_validation_fails(self):
+        # Unknown subject text is no longer a validation failure (it's
+        # auto-created - see test_unknown_subject_text_is_auto_created_not_
+        # rejected), so this needs a payload that's still genuinely invalid:
+        # subject is required and missing here.
         student = make_user(role=UserRole.STUDENT)
         login(self.client, student)
         with mock.patch(
@@ -1271,7 +1291,7 @@ class AsyncDistributionTests(PipelineFixtureMixin, APITestCase):
         ) as delayed:
             resp = self.client.post(
                 "/api/v1/student-requirements/",
-                {"subject": "Totally Unknown Subject", "teaching_mode": "online"},
+                {"teaching_mode": "online"},
                 format="json",
             )
         self.assertEqual(resp.status_code, 400)

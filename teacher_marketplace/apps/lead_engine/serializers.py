@@ -44,8 +44,8 @@ class LeadStudentRequirementSerializer(StudentRequirementSerializer):
 class LeadSerializer(serializers.ModelSerializer):
     """
     Read-only representation of a Lead for the teacher-facing Lead
-    Dashboard. Nests the (contact-masked) StudentRequirement and
-    exposes explicit masked_contact fields, per the spec's example:
+    Dashboard detail view. Nests the (contact-masked) StudentRequirement
+    and exposes explicit masked_contact fields, per the spec's example:
 
         Student Name  ********
         Phone          ********
@@ -56,26 +56,97 @@ class LeadSerializer(serializers.ModelSerializer):
     Phase 3 can populate real values there without restructuring
     this serializer, but that branch is currently unreachable since
     nothing in this codebase ever sets contact_unlocked to True.
+
+    ALSO exposes the same flat convenience fields as LeadListSerializer
+    (subject_name, teaching_mode, city_name, budget_min, budget_max,
+    description, preferred_timing) plus flat student_name/student_mobile/
+    student_email (populated only once contact_unlocked, else null) - so
+    the detail endpoint's top-level shape is a superset of the list
+    endpoint's, never a DIFFERENT one. This was previously not the case:
+    the detail endpoint only nested this data under student_requirement/
+    masked_contact, while a consumer coded against the list endpoint's
+    flat contract (a reasonable assumption for "the same resource, more
+    detail") silently got nothing back for every one of these fields -
+    including, worst of all, the unlocked contact details themselves.
+    Both shapes are kept so nothing that already reads the nested one
+    (e.g. the legacy Django lead-detail page) breaks.
     """
 
     student_requirement = LeadStudentRequirementSerializer(read_only=True)
     masked_contact = serializers.SerializerMethodField()
     my_rating = serializers.SerializerMethodField()
 
+    subject_name = serializers.CharField(
+        source="student_requirement.subject.name", read_only=True
+    )
+    teaching_mode = serializers.CharField(
+        source="student_requirement.teaching_mode", read_only=True
+    )
+    city_name = serializers.CharField(
+        source="student_requirement.city.name", read_only=True, default=None
+    )
+    budget_min = serializers.DecimalField(
+        source="student_requirement.budget_min",
+        max_digits=10,
+        decimal_places=2,
+        read_only=True,
+    )
+    budget_max = serializers.DecimalField(
+        source="student_requirement.budget_max",
+        max_digits=10,
+        decimal_places=2,
+        read_only=True,
+    )
+    description = serializers.CharField(
+        source="student_requirement.description", read_only=True, default=None
+    )
+    preferred_timing = serializers.CharField(
+        source="student_requirement.preferred_timing", read_only=True, default=None
+    )
+    student_name = serializers.SerializerMethodField()
+    student_mobile = serializers.SerializerMethodField()
+    student_email = serializers.SerializerMethodField()
+
     class Meta:
         model = Lead
         fields = (
             "id",
             "student_requirement",
+            "subject_name",
+            "teaching_mode",
+            "city_name",
+            "budget_min",
+            "budget_max",
+            "description",
+            "preferred_timing",
             "status",
             "is_viewed",
             "viewed_at",
             "contact_unlocked",
             "masked_contact",
+            "student_name",
+            "student_mobile",
+            "student_email",
             "my_rating",
             "created_at",
         )
         read_only_fields = fields
+
+    def get_student_name(self, lead) -> str | None:
+        """Flat, unlock-gated counterpart to masked_contact['student_name']."""
+        if not lead.contact_unlocked:
+            return None
+        return lead.student_requirement.student.get_full_name()
+
+    def get_student_mobile(self, lead) -> str | None:
+        if not lead.contact_unlocked:
+            return None
+        return lead.student_requirement.student.mobile
+
+    def get_student_email(self, lead) -> str | None:
+        if not lead.contact_unlocked:
+            return None
+        return lead.student_requirement.student.email
 
     def get_my_rating(self, lead) -> str | None:
         """The requesting teacher's quality verdict on this lead, or null."""
@@ -128,7 +199,13 @@ class LeadListSerializer(serializers.ModelSerializer):
     LeadSerializer's fuller detail view) - avoids nesting the full
     StudentRequirement (with its own nested subject/language/city
     objects) on every row of a potentially long lead list, keeping
-    list responses smaller. Still fully masks contact info.
+    list responses smaller.
+
+    student_name/student_mobile stay masked until contact_unlocked - same
+    unlock-gated rule as LeadSerializer's flat contact fields, so a
+    dashboard/list row can show the real name and number for a lead this
+    teacher has already paid to unlock, without a second request to the
+    detail endpoint.
     """
 
     subject_name = serializers.CharField(
@@ -152,7 +229,14 @@ class LeadListSerializer(serializers.ModelSerializer):
         decimal_places=2,
         read_only=True,
     )
+    description = serializers.CharField(
+        source="student_requirement.description", read_only=True, default=None
+    )
+    preferred_timing = serializers.CharField(
+        source="student_requirement.preferred_timing", read_only=True, default=None
+    )
     student_name = serializers.SerializerMethodField()
+    student_mobile = serializers.SerializerMethodField()
     my_rating = serializers.SerializerMethodField()
 
     class Meta:
@@ -164,7 +248,10 @@ class LeadListSerializer(serializers.ModelSerializer):
             "city_name",
             "budget_min",
             "budget_max",
+            "description",
+            "preferred_timing",
             "student_name",
+            "student_mobile",
             "status",
             "is_viewed",
             "contact_unlocked",
@@ -174,7 +261,14 @@ class LeadListSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_student_name(self, obj) -> str:
-        return MASKED_VALUE
+        if not obj.contact_unlocked:
+            return MASKED_VALUE
+        return obj.student_requirement.student.get_full_name()
+
+    def get_student_mobile(self, obj) -> str | None:
+        if not obj.contact_unlocked:
+            return None
+        return obj.student_requirement.student.mobile
 
     def get_my_rating(self, obj) -> str | None:
         """This teacher's quality verdict on the lead, or null if unrated.

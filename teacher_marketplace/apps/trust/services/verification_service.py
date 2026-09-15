@@ -9,6 +9,9 @@ Ten checklist items, split in two:
     met the teacher clears the *floor* - the minimum to receive any leads
     once ``TRUST_TEACHER_FLOOR_FOR_LEADS`` is on - and their marketplace
     ``verification_status`` is auto-upgraded PENDING -> VERIFIED.
+    ``profile_basics`` itself requires a profile photo plus bio,
+    experience, and qualification level - a teacher without a photo can
+    never clear the floor.
 
   * REVIEWED (submitted by the teacher, decided by a provider or an
     admin, weight 40):  gov_id (20), selfie_liveness (10), address_proof
@@ -139,7 +142,8 @@ class VerificationService:
             return bool(user.is_mobile_verified)
         if key == K.PROFILE_BASICS:
             return bool(
-                (teacher.bio or "").strip()
+                teacher.profile_photo
+                and (teacher.bio or "").strip()
                 and teacher.experience_years is not None
                 and (teacher.qualification_level or "").strip()
             )
@@ -515,4 +519,5 @@ class VerificationService:
             & Q(**{f"{p}teacher__experience_years__isnull": False})
             & Q(**{f"{p}teacher__bio__gt": ""})
             & Q(**{f"{p}teacher__qualification_level__gt": ""})
+            & Q(**{f"{p}teacher__profile_photo__gt": ""})
         )

@@ -398,6 +398,58 @@ class StopImpersonationView(APIView):
 
 
 # ==========================================================
+# DUAL-ROLE ACCOUNTS: SWITCH ACTIVE PORTAL
+# ==========================================================
+@extend_schema(
+    tags=["Authentication"],
+    summary="Switch which portal (student/teacher) is active for this account",
+    request=None,
+    responses={
+        200: OpenApiResponse(
+            description="Portal switched; auth cookies re-issued for the new role."
+        )
+    },
+)
+class SwitchRoleView(APIView):
+    """
+    Lets an authenticated Student become a Teacher too (or vice versa)
+    on the SAME account, and switch between them afterwards. Never
+    creates a new User - see apps.accounts.role_switch for why that
+    matters (keeps this entirely out of the duplicate-account fraud
+    detection, which only runs on new registrations).
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        from apps.accounts.role_switch import switch_active_role
+
+        target_role = request.data.get("role")
+        created = switch_active_role(request.user, target_role)
+
+        session = UserSession.start(
+            request.user, device_info=request.META.get("HTTP_USER_AGENT")
+        )
+        access, refresh = issue_pair(request.user, sid=session.session_id)
+
+        resp = APIResponse.success(
+            data={
+                "access": access,
+                "refresh": refresh,
+                "user": UserSerializer(request.user).data,
+                "profile_created": created,
+            },
+            message=(
+                f"Your {target_role} account is set up."
+                if created
+                else f"Switched to {target_role}."
+            ),
+        )
+        set_auth_cookies(resp, access, refresh)
+        return resp
+
+
+# ==========================================================
 # CHANGE PASSWORD (authenticated)
 # ==========================================================
 @extend_schema(

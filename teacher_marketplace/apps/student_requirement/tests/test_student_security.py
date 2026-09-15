@@ -200,9 +200,15 @@ class StudentIsolationSecurityTests(APITestCase):
             ).status_code,
             400,
         )
+        # Unknown subject/language text is no longer a validation failure -
+        # it's auto-created into the taxonomy (see
+        # StudentRequirementWriteSerializer.validate_subject /
+        # validate_preferred_language) - so this checks a value that's
+        # still genuinely invalid: teaching_mode isn't in the model's
+        # choices at all.
         self.assertEqual(
             self.client.post(
-                REQS, {**base, "subject": "Wizardry101"}, format="json"
+                REQS, {**base, "teaching_mode": "hybrid"}, format="json"
             ).status_code,
             400,
         )

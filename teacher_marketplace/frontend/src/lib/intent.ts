@@ -36,6 +36,21 @@ export function clearIntent(): void {
   }
 }
 
+/**
+ * Carry a search forward into "Post what you need" so a student who just
+ * typed a subject/language/schedule into Discover and found nobody isn't
+ * asked to type the same thing again a screen later. Same storage key and
+ * shape auth.js writes pre-login — Requirements reads and clears it once,
+ * the same way Discover already does.
+ */
+export function saveIntent(partial: Omit<Intent, "savedAt">): void {
+  try {
+    localStorage.setItem(KEY, JSON.stringify({ ...partial, savedAt: Date.now() }));
+  } catch {
+    /* private mode / storage disabled - the click still navigates */
+  }
+}
+
 /** The three time bands the landing page and sign-up offer. */
 export const BANDS = [
   { id: "morning", label: "Morning", hint: "6–12", from: "06:00", to: "12:00" },
@@ -77,4 +92,38 @@ export function scheduleText(days: number[], bandId: string): string {
 /** Which band a stored "from" time belongs to. */
 export function bandFromTime(from?: string | null): string {
   return BANDS.find((b) => b.from === from)?.id ?? "evening";
+}
+
+/**
+ * One specific day + time range — "Monday 7-8pm" as its own thing,
+ * distinct from "Tuesday 8-9am", rather than several days sharing one
+ * coarse band. A student picks a list of these instead of days[] + a
+ * single shared band when their free time genuinely varies by day.
+ */
+export interface TimeWindow {
+  day: number;
+  start: string;
+  end: string;
+}
+
+export const blankTimeWindow = (): TimeWindow => ({ day: 1, start: "18:00", end: "19:00" });
+
+function formatClock(hhmm: string): string {
+  const parts = hhmm.split(":").map(Number);
+  const h = parts[0] ?? NaN;
+  const m = parts[1] ?? NaN;
+  if (Number.isNaN(h) || Number.isNaN(m)) return hhmm;
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return m === 0 ? `${h12} ${period}` : `${h12}:${String(m).padStart(2, "0")} ${period}`;
+}
+
+/** "Mon 7 PM, Tue 8 AM" — compact, for active-filter chips and summary pills. */
+export function formatWindows(windows: TimeWindow[]): string {
+  return windows
+    .map((w) => {
+      const day = DAYS.find((d) => d.n === w.day);
+      return `${day ? day.full.slice(0, 3) : "?"} ${formatClock(w.start)}`;
+    })
+    .join(", ");
 }

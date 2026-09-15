@@ -45,6 +45,8 @@ from apps.utils.validators import validate_no_control_characters
 
 # An hourly rate above this is a data-entry error, not a real price.
 MAX_HOURLY_RATE = Decimal("1000000.00")
+# Same reasoning, scaled for a monthly figure rather than per-hour.
+MAX_MONTHLY_RATE = Decimal("10000000.00")
 
 
 class TeachingMode(models.TextChoices):
@@ -134,7 +136,43 @@ class TeacherProfile(BaseModel):
             MinValueValidator(Decimal("0.00")),
             MaxValueValidator(MAX_HOURLY_RATE),
         ],
-        help_text=_("Hourly rate in the platform's base currency."),
+        help_text=_(
+            "Hourly rate in the platform's base currency. Optional - a "
+            "teacher may share this, a monthly_rate, both, or neither."
+        ),
+    )
+    monthly_rate = models.DecimalField(
+        _("monthly rate"),
+        max_digits=11,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[
+            MinValueValidator(Decimal("0.00")),
+            MaxValueValidator(MAX_MONTHLY_RATE),
+        ],
+        help_text=_(
+            "Monthly rate in the platform's base currency - the low end of "
+            "the range when monthly_rate_max is also set (fees genuinely "
+            "vary by class size/level for most teachers), or a single fixed "
+            "price when monthly_rate_max is left blank. Optional - a "
+            "teacher may share this, an hourly_rate, both, or neither."
+        ),
+    )
+    monthly_rate_max = models.DecimalField(
+        _("monthly rate (up to)"),
+        max_digits=11,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[
+            MinValueValidator(Decimal("0.00")),
+            MaxValueValidator(MAX_MONTHLY_RATE),
+        ],
+        help_text=_(
+            "The high end of the monthly rate range. Meaningless without "
+            "monthly_rate also set - see that field's help text."
+        ),
     )
     rating = models.DecimalField(
         _("rating"),
@@ -220,6 +258,28 @@ class TeacherProfile(BaseModel):
                     models.Q(hourly_rate__gte=Decimal("0.00"))
                     & models.Q(hourly_rate__lte=MAX_HOURLY_RATE)
                 ),
+            ),
+            models.CheckConstraint(
+                name="teacher_profile_monthly_rate_range",
+                check=models.Q(monthly_rate__isnull=True)
+                | (
+                    models.Q(monthly_rate__gte=Decimal("0.00"))
+                    & models.Q(monthly_rate__lte=MAX_MONTHLY_RATE)
+                ),
+            ),
+            models.CheckConstraint(
+                name="teacher_profile_monthly_rate_max_range",
+                check=models.Q(monthly_rate_max__isnull=True)
+                | (
+                    models.Q(monthly_rate_max__gte=Decimal("0.00"))
+                    & models.Q(monthly_rate_max__lte=MAX_MONTHLY_RATE)
+                ),
+            ),
+            models.CheckConstraint(
+                name="teacher_profile_monthly_rate_max_gte_min",
+                check=models.Q(monthly_rate_max__isnull=True)
+                | models.Q(monthly_rate__isnull=True)
+                | models.Q(monthly_rate_max__gte=models.F("monthly_rate")),
             ),
         ]
 

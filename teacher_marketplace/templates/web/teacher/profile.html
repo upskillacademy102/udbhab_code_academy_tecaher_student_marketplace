@@ -16,6 +16,32 @@
         will be restored automatically. Our team may also review it.</p>
     </div>
 
+    {# Profile photo — required for verification #}
+    <div class="card card-pad">
+      <div class="flex items-center gap-4">
+        <div class="h-20 w-20 shrink-0 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
+          <img x-show="photoUrl" :src="photoUrl" class="h-full w-full object-cover" alt="">
+          <span x-show="!photoUrl" class="grid h-full w-full place-items-center text-slate-300">{% icon "user" "h-8 w-8" %}</span>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-1.5">
+            <p class="card-title">Profile photo</p>
+            <span class="badge badge-amber" x-show="!photoUrl">Required</span>
+            <span class="badge badge-green" x-show="photoUrl">{% icon "check" "h-3 w-3" %} Added</span>
+          </div>
+          <p class="mt-1 text-sm text-slate-500">Students only see verified teachers, and a clear photo is required to be verified.</p>
+          <div class="mt-2.5 flex flex-wrap items-center gap-2">
+            <label class="btn-secondary btn-sm shrink-0 cursor-pointer">
+              <span x-text="photoFile ? photoFile.name : (photoUrl ? 'Change photo' : 'Choose photo')"></span>
+              <input type="file" class="hidden" accept="image/jpeg,image/png,image/webp" @change="pickPhoto($event)">
+            </label>
+            <button type="button" class="btn-primary btn-sm shrink-0" x-show="photoFile" @click="uploadPhoto()" :data-loading="photoBusy">Save photo</button>
+          </div>
+          <p class="field-error mt-1.5" x-show="photoError" x-text="photoError"></p>
+        </div>
+      </div>
+    </div>
+
     {# Verification progress #}
     <div class="card" x-show="vr">
       <div class="card-header">
@@ -183,8 +209,19 @@
           </div>
           <div class="field">
             <label class="label" for="tp-rate">Hourly rate (₹)</label>
-            <input id="tp-rate" type="number" min="0" class="input" x-model.number="pf.model.hourly_rate" :aria-invalid="pf.hasError('hourly_rate')">
+            <input id="tp-rate" type="number" min="0" class="input" placeholder="Optional" x-model.number="pf.model.hourly_rate" :aria-invalid="pf.hasError('hourly_rate')">
             <p class="field-error" x-show="pf.hasError('hourly_rate')" x-text="pf.fieldError('hourly_rate')"></p>
+          </div>
+          <div class="field">
+            <label class="label" for="tp-monthly-rate">Monthly rate (₹)</label>
+            <input id="tp-monthly-rate" type="number" min="0" class="input" placeholder="e.g. 600" x-model.number="pf.model.monthly_rate" :aria-invalid="pf.hasError('monthly_rate')">
+            <p class="field-error" x-show="pf.hasError('monthly_rate')" x-text="pf.fieldError('monthly_rate')"></p>
+          </div>
+          <div class="field">
+            <label class="label" for="tp-monthly-rate-max">Up to (₹)</label>
+            <input id="tp-monthly-rate-max" type="number" min="0" class="input" placeholder="e.g. 1000" x-model.number="pf.model.monthly_rate_max" :aria-invalid="pf.hasError('monthly_rate_max')">
+            <p class="field-error" x-show="pf.hasError('monthly_rate_max')" x-text="pf.fieldError('monthly_rate_max')"></p>
+            <p class="field-hint" x-show="!pf.hasError('monthly_rate_max')">Give a range if your fee depends on class size (e.g. ₹600–₹1,000) — leave blank for one fixed price.</p>
           </div>
         </div>
 
@@ -316,6 +353,7 @@
     Alpine.data("teacherProfile", () => ({
       loading: true, verification: "pending", moderation: "clear",
       vr: null,
+      photoUrl: "", photoFile: null, photoBusy: false, photoError: "",
       docFiles: { gov_id: { front: null, back: null }, address_proof: { document: null } },
       busy: {}, rowError: {},
       scan: {
@@ -331,7 +369,7 @@
       },
       QUALIFICATIONS,
       subjects: [], languages: [], cities: [],
-      pf: mk.apiForm({ endpoint: "/teachers/profile/", initial: { headline: "", teaching_mode: "online", hourly_rate: null, subjects: [], languages: [], cities: [] }, successMessage: "Marketplace profile saved.", transform: nullifyEmpty }),
+      pf: mk.apiForm({ endpoint: "/teachers/profile/", initial: { headline: "", teaching_mode: "online", hourly_rate: null, monthly_rate: null, monthly_rate_max: null, subjects: [], languages: [], cities: [] }, successMessage: "Marketplace profile saved.", transform: nullifyEmpty }),
       bf: mk.apiForm({ endpoint: "/teachers/me/", initial: { bio: "", experience_years: null, qualification_level: "", qualification_detail: "", city: "", state: "", country: "" }, successMessage: "Details saved.", transform: nullifyEmpty }),
       _pfExists: false, _bfExists: false,
 
@@ -343,15 +381,38 @@
           api.get("/teachers/profile/", { silent: true }).then((p) => {
             this._pfExists = true; this.verification = p.verification_status || "pending";
             this.moderation = p.moderation_status || "clear";
-            this.pf.setModel({ headline: p.headline || "", teaching_mode: p.teaching_mode || "online", hourly_rate: p.hourly_rate,
+            this.pf.setModel({ headline: p.headline || "", teaching_mode: p.teaching_mode || "online", hourly_rate: p.hourly_rate, monthly_rate: p.monthly_rate, monthly_rate_max: p.monthly_rate_max,
               subjects: (p.subjects || []).map((x) => x.id), languages: (p.languages || []).map((x) => x.id), cities: (p.cities || []).map((x) => x.id) });
           }).catch((e) => { if (e.status !== 404) window.toast("error", e.message); }),
-          api.get("/teachers/me/", { silent: true }).then((b) => { this._bfExists = true; this.bf.setModel(b); }).catch((e) => { if (e.status !== 404) window.toast("error", e.message); }),
+          api.get("/teachers/me/", { silent: true }).then((b) => { this._bfExists = true; this.bf.setModel(b); this.photoUrl = b.profile_photo || ""; }).catch((e) => { if (e.status !== 404) window.toast("error", e.message); }),
           api.get("/teachers/profile/verification/", { silent: true }).then((v) => this.vr = v).catch(() => {}),
         ]).finally(() => (this.loading = false));
       },
       async refreshVerification() {
         try { this.vr = await api.get("/teachers/profile/verification/", { silent: true }); } catch (e) {}
+      },
+      pickPhoto(ev) {
+        this.photoFile = ev.target.files[0] || null;
+        this.photoError = "";
+      },
+      async uploadPhoto() {
+        if (!this.photoFile || this.photoBusy) return;
+        this.photoBusy = true;
+        this.photoError = "";
+        try {
+          const fd = new FormData();
+          fd.append("profile_photo", this.photoFile);
+          const resp = await api[this._bfExists ? "patch" : "post"]("/teachers/me/", fd);
+          this._bfExists = true;
+          this.photoUrl = (resp && resp.profile_photo) || this.photoUrl;
+          this.photoFile = null;
+          window.toast("success", "Profile photo saved.");
+          this.refreshVerification();
+        } catch (e) {
+          this.photoError = e.message || "Couldn't upload that photo.";
+        } finally {
+          this.photoBusy = false;
+        }
       },
       pickFile(itemKey, field, ev) {
         this.docFiles[itemKey][field] = ev.target.files[0] || null;

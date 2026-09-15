@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { StudentRequirement } from "@/lib/types";
 import { DAYS } from "@/lib/intent";
 import { confirmAction, money, titleCase, toast } from "@/lib/ui";
+import { RequirementForm, draftFromRequirement } from "@/components/RequirementForm";
 
 /**
  * One request, and what has happened to it since.
@@ -13,21 +15,6 @@ import { confirmAction, money, titleCase, toast } from "@/lib/ui";
  * distribution state as plain English is the difference between "posted into
  * a void" and "it's working".
  */
-
-interface SchedulePref {
-  id: string;
-  day_of_week: number;
-  day_of_week_label?: string;
-  start_time: string;
-  end_time: string;
-  flexibility?: string;
-}
-
-type Detail = StudentRequirement & {
-  schedule_preferences?: SchedulePref[];
-  lead_distribution_status?: string | null;
-  class_duration_minutes?: number | null;
-};
 
 function distributionLine(status: string | null | undefined): { text: string; tone: "working" | "done" | "problem" } {
   switch (status) {
@@ -46,10 +33,11 @@ function distributionLine(status: string | null | undefined): { text: string; to
 export function RequirementDetail() {
   const { id = "" } = useParams();
   const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
 
-  const { data: r, isLoading, isError, error } = useQuery<Detail>({
+  const { data: r, isLoading, isError, error } = useQuery<StudentRequirement>({
     queryKey: ["requirement", id],
-    queryFn: () => api.get<Detail>(`/student-requirements/${id}/`),
+    queryFn: () => api.get<StudentRequirement>(`/student-requirements/${id}/`),
   });
 
   async function close() {
@@ -157,11 +145,27 @@ export function RequirementDetail() {
       </section>
 
       {open && (
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          <button type="button" className="u-btn-secondary" onClick={() => setEditing(true)}>
+            Edit
+          </button>
           <button type="button" className="u-btn-secondary" onClick={close}>
             Close this request
           </button>
         </div>
+      )}
+
+      {editing && (
+        <RequirementForm
+          requirementId={r.id}
+          initial={draftFromRequirement(r)}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            qc.invalidateQueries({ queryKey: ["requirement", id] });
+            qc.invalidateQueries({ queryKey: ["requirements"] });
+          }}
+        />
       )}
     </div>
   );

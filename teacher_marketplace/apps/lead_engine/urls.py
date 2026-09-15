@@ -27,6 +27,7 @@ from django.urls import path
 
 from apps.lead_engine.views import (
     LeadDetailView,
+    LeadExportView,
     LeadListView,
     LeadMatchDetailView,
     LeadRateView,
@@ -49,6 +50,7 @@ urlpatterns = [
         PendingRatingsView.as_view(),
         name="pending-ratings",
     ),
+    path("export/", LeadExportView.as_view(), name="lead-export"),
     path("<uuid:id>/matches/", LeadMatchDetailView.as_view(), name="lead-matches"),
     path("<uuid:id>/rate/", LeadRateView.as_view(), name="lead-rate"),
     path("<uuid:id>/", LeadDetailView.as_view(), name="lead-detail"),

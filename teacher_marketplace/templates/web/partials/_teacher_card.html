@@ -76,8 +76,10 @@
     <div class="mt-auto flex items-center justify-between border-t border-slate-100 pt-3">
       <span class="text-base font-bold text-slate-900">
         <template x-if="t.hourly_rate"><span x-text="fmt.money(t.hourly_rate)"></span></template>
-        <template x-if="!t.hourly_rate">—</template>
+        <template x-if="!t.hourly_rate && t.monthly_rate"><span x-text="fmt.moneyRange(t.monthly_rate, t.monthly_rate_max)"></span></template>
+        <template x-if="!t.hourly_rate && !t.monthly_rate">—</template>
         <span class="text-xs font-medium text-slate-400" x-show="t.hourly_rate">/hr</span>
+        <span class="text-xs font-medium text-slate-400" x-show="!t.hourly_rate && t.monthly_rate">/mo</span>
       </span>
       <span class="inline-flex items-center gap-1 text-sm font-medium text-brand-600">
         View profile {% icon "chevron-right" "h-4 w-4 transition group-hover:translate-x-0.5" %}

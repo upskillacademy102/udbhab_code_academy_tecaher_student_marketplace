@@ -214,6 +214,20 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
         """
         return self.role in (UserRole.ADMIN, UserRole.SUPERADMIN)
 
+    @property
+    def has_student_profile(self) -> bool:
+        """
+        Whether a Student row exists for this user, independent of
+        `role` - `role` is which portal is currently active, this is
+        which profiles actually exist. A user can hold both a Student
+        and a Teacher row at once (see apps.accounts.role_switch).
+        """
+        return hasattr(self, "student_profile")
+
+    @property
+    def has_teacher_profile(self) -> bool:
+        return hasattr(self, "teacher_profile")
+
 
 class UserSession(BaseModel):
     """

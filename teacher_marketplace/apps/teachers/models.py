@@ -67,6 +67,10 @@ class Teacher(BaseModel):
         null=True,
         blank=True,
         validators=[validate_image_upload],
+        help_text=_(
+            "Required to pass verification (see VerificationService.PROFILE_BASICS) - "
+            "a teacher without one can never clear the floor that unlocks leads/search."
+        ),
     )
     bio = models.CharField(
         _("bio"),

@@ -92,6 +92,26 @@ export function AllowanceBar({ compact = false }: { compact?: boolean }) {
           Spend them on your strongest matches below.
         </p>
       )}
+
+      {!compact && total > 0 && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-4 border-t border-ink-200 pt-3.5">
+          <div className="min-w-[11rem] flex-1">
+            <div className="flex items-center justify-between text-[0.75rem] font-medium text-ink-500">
+              <span>Usage</span>
+              <span className="font-semibold text-ink-800">{Math.round(((total - left) / total) * 100)}% used</span>
+            </div>
+            <div className="mt-1.5 flex gap-1">
+              {Array.from({ length: total }).map((_, i) => (
+                <span
+                  key={i}
+                  className={`h-1.5 flex-1 rounded-full ${i < total - left ? "bg-pine-600" : "bg-ink-200"}`}
+                />
+              ))}
+            </div>
+          </div>
+          <a href="/teacher/plan/" className="u-btn-secondary u-btn-sm shrink-0">Manage plan</a>
+        </div>
+      )}
     </section>
   );
 }

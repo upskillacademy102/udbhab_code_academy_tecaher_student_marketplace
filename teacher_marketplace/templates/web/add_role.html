@@ -1,0 +1,56 @@
+{% extends "web/base_public.html" %}
+{% load web_extras %}
+
+{% block title %}Set up your {{ portal|capfirst }} account · {{ SITE_NAME }}{% endblock %}
+
+{% block promo_title %}One account, both sides.{% endblock %}
+{% block promo_body %}Keep the same login and add the other side whenever you're ready.{% endblock %}
+
+{% block panel %}
+<div x-data="addRoleForm('{{ portal }}', '{{ web_home }}')">
+  <h1 class="u-h2">
+    {% if portal == 'teacher' %}Set up a Teacher account too?{% else %}Set up a Student account too?{% endif %}
+  </h1>
+  <p class="u-lede mt-2 text-[0.9375rem]">
+    You're signed in as <strong>{{ web_user.get_full_name }}</strong> ({{ web_user.email }}).
+    {% if portal == 'teacher' %}
+      This adds a Teacher profile to the same account — you'll keep your Student side exactly as it is, and can switch between them any time.
+    {% else %}
+      This adds a Student profile to the same account — you'll keep your Teacher side exactly as it is, and can switch between them any time.
+    {% endif %}
+  </p>
+
+  <div class="u-alert u-alert-error mt-6" x-show="error" x-cloak>
+    {% icon "x-circle" %}<span x-text="error"></span>
+  </div>
+
+  <div class="mt-8 flex flex-col gap-3">
+    <button type="button" class="u-btn-primary u-btn-lg" @click="confirm()" :disabled="busy" :data-loading="busy">
+      {% if portal == 'teacher' %}Yes, set up my Teacher account{% else %}Yes, set up my Student account{% endif %}
+    </button>
+    <a href="{{ web_home }}" class="u-btn-secondary u-btn-lg text-center">Not now</a>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("addRoleForm", (portal, currentHome) => ({
+      busy: false,
+      error: "",
+      async confirm() {
+        this.busy = true;
+        this.error = "";
+        try {
+          await api.post("/auth/switch-role/", { role: portal }, { silent: true });
+          window.toast("success", "Your " + portal + " account is set up.");
+          location.assign(portal === "teacher" ? "/teacher/" : "/student/");
+        } catch (e) {
+          this.error = e.message || "Couldn't set that up. Please try again.";
+        } finally {
+          this.busy = false;
+        }
+      },
+    }));
+  });
+</script>
+{% endblock %}

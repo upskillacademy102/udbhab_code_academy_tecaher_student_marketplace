@@ -54,7 +54,8 @@ class TriggerTests(TestCase):
         teachers = [self._teacher() for _ in range(3)]
         for t in teachers:
             t.bio, t.experience_years, t.qualification_level = "b", 3, "diploma"
-            t.save(update_fields=["bio", "experience_years", "qualification_level"])
+            t.profile_photo = "teachers/profile_photos/test.jpg"
+            t.save(update_fields=["bio", "experience_years", "qualification_level", "profile_photo"])
             t.user.is_email_verified = t.user.is_mobile_verified = True
             t.user.save(update_fields=["is_email_verified", "is_mobile_verified"])
             mp = TeacherProfile.objects.create(teacher=t)

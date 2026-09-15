@@ -5,10 +5,13 @@ view is role-guarded so a user never sees a page they can't use — the
 DRF API remains the real authorisation boundary.
 """
 
+from urllib.parse import quote
+
 from django.conf import settings
 from django.shortcuts import redirect, render
 
 from apps.web.guards import (
+    ROLE_HOME,
     home_url_for,
     login_required_web,
     resolve_web_user,
@@ -41,10 +44,39 @@ def _portal(request):
     return portal if portal in ("student", "teacher") else None
 
 
+def _redirect_authenticated(request, user):
+    """
+    Where an already-authenticated user lands when they hit /login/ or
+    /register/ (with or without ?as=<portal>). If the requested portal
+    differs from their current one:
+      - they already have that portal's profile -> switch to it right
+        away (dual-role accounts should move between portals with no
+        friction once both exist).
+      - they don't have it yet -> send them to the add-role
+        confirmation screen instead of silently creating anything.
+    No portal requested, or it matches their current role: unchanged,
+    straight to their own home.
+    """
+    portal = _portal(request)
+    if not portal or portal == user.role:
+        return redirect(home_url_for(user))
+
+    has_profile = (
+        user.has_teacher_profile if portal == "teacher" else user.has_student_profile
+    )
+    if not has_profile:
+        return redirect(f"/add-role/?as={portal}")
+
+    from apps.accounts.role_switch import switch_active_role
+
+    switch_active_role(user, portal)
+    return redirect(ROLE_HOME[portal])
+
+
 def login_page(request):
     user = resolve_web_user(request)
     if user is not None:
-        return redirect(home_url_for(user))
+        return _redirect_authenticated(request, user)
     return render(
         request,
         "web/login.html",
@@ -62,7 +94,7 @@ def register_page(request):
     """Public self-registration — Student or Teacher only."""
     user = resolve_web_user(request)
     if user is not None:
-        return redirect(home_url_for(user))
+        return _redirect_authenticated(request, user)
     return render(
         request,
         "web/register.html",
@@ -72,6 +104,33 @@ def register_page(request):
             **public_taxonomy(),
         },
     )
+
+
+def add_role_page(request):
+    """
+    Confirmation screen for adding a second role (Student and/or
+    Teacher) to an already-authenticated account. See
+    apps.accounts.role_switch for why this never creates a new User.
+    """
+    user = resolve_web_user(request)
+    if user is None:
+        return redirect(f"/login/?next={quote(request.get_full_path())}")
+    request.web_user = user
+
+    portal = _portal(request)
+    if portal is None:
+        return redirect(home_url_for(user))
+
+    has_profile = (
+        user.has_teacher_profile if portal == "teacher" else user.has_student_profile
+    )
+    if has_profile or portal == user.role:
+        # Nothing to confirm - either they already have it (an old
+        # bookmarked link) or they're asking for the portal they're
+        # already on.
+        return redirect(ROLE_HOME[portal])
+
+    return render(request, "web/add_role.html", {"portal": portal})
 
 
 def staff_login_page(request):

@@ -110,6 +110,7 @@ class LeadListView(generics.ListAPIView):
             "student_requirement",
             "student_requirement__subject",
             "student_requirement__city",
+            "student_requirement__student",
         )
 
     def list(self, request, *args, **kwargs):
@@ -153,16 +154,101 @@ class PendingRatingsView(generics.ListAPIView):
                 "student_requirement",
                 "student_requirement__subject",
                 "student_requirement__city",
+                "student_requirement__student",
             )
             .order_by("-created_at")
         )
 
     def list(self, request, *args, **kwargs):
         queryset = list(self.get_queryset())
+        self._ensure_reminders(queryset)
         serializer = LeadListSerializer(queryset, many=True)
         return APIResponse.success(
             data={"count": len(queryset), "results": serializer.data}
         )
+
+    @staticmethod
+    def _ensure_reminders(leads):
+        """
+        Fires the LEAD_REVIEW_PENDING notification (in-app + email) for any
+        of these still-unrated leads that hasn't already gotten one - so a
+        teacher who unlocks a lead and leaves without rating it gets an
+        actual notification, not just a page they can scroll past. Runs as
+        a side effect of every pending-ratings check (this view is what
+        both the SPA-wide review gate and the enquiries list poll), so it
+        fires as soon as anything asks "does this teacher owe a rating?" -
+        not tied to one specific call site that could be skipped or
+        refactored away.
+        """
+        if not leads:
+            return
+        from apps.notifications.models import Notification, NotificationEvent
+        from apps.notifications.services import NotificationService
+
+        lead_ids = [str(lead_obj.id) for lead_obj in leads]
+        already_notified = set(
+            Notification.objects.filter(
+                event=NotificationEvent.LEAD_REVIEW_PENDING,
+                reference_id__in=lead_ids,
+            ).values_list("reference_id", flat=True)
+        )
+        for lead_obj in leads:
+            if str(lead_obj.id) not in already_notified:
+                NotificationService.lead_review_pending(lead_obj)
+
+
+@extend_schema(
+    tags=["Leads"],
+    summary="CSV export of this teacher's unlocked leads",
+    responses={200: OpenApiResponse(description="text/csv attachment")},
+)
+class LeadExportView(APIView):
+    """
+    GET: streams a CSV of every lead this teacher has unlocked, contact
+    details included - the same unlock-gated data already shown on their
+    dashboard/enquiries list, just downloadable. Never includes a lead
+    that isn't contact_unlocked, for the same reason every other surface
+    in this app withholds it: unlocking is what pays for that visibility.
+    """
+
+    def get(self, request):
+        import csv
+
+        from django.http import HttpResponse
+
+        profile = _get_teacher_profile_or_raise(request)
+        leads = (
+            Lead.objects.filter(teacher_profile=profile, contact_unlocked=True)
+            .select_related(
+                "student_requirement",
+                "student_requirement__subject",
+                "student_requirement__city",
+                "student_requirement__student",
+            )
+            .order_by("-created_at")
+        )
+
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="enquiries.csv"'
+        writer = csv.writer(response)
+        writer.writerow(
+            ["Subject", "Mode", "City", "Student name", "Phone", "Email", "Status", "Unlocked at"]
+        )
+        for lead in leads:
+            req = lead.student_requirement
+            writer.writerow(
+                [
+                    req.subject.name,
+                    req.teaching_mode,
+                    req.city.name if req.city else "",
+                    req.student.get_full_name(),
+                    req.student.mobile,
+                    req.student.email,
+                    lead.status,
+                    lead.created_at.isoformat(),
+                ]
+            )
+        return response
 
 
 @extend_schema(tags=["Leads"], responses=LeadSerializer)

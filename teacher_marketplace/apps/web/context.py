@@ -15,4 +15,6 @@ def site(request):
         "web_user": web_user,
         "web_role": role,
         "web_home": ROLE_HOME.get(role, "/"),
+        "web_has_student_profile": bool(getattr(web_user, "has_student_profile", False)),
+        "web_has_teacher_profile": bool(getattr(web_user, "has_teacher_profile", False)),
     }

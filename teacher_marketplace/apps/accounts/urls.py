@@ -45,6 +45,7 @@ from apps.accounts.views import (
     SensitiveChangeCancelView,
     SensitiveChangeListView,
     StopImpersonationView,
+    SwitchRoleView,
 )
 
 app_name = "accounts"
@@ -60,6 +61,7 @@ urlpatterns = [
         StopImpersonationView.as_view(),
         name="stop-impersonation",
     ),
+    path("switch-role/", SwitchRoleView.as_view(), name="switch-role"),
     path("change-password/", ChangePasswordView.as_view(), name="change-password"),
     path(
         "change-password/confirm/",

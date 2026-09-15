@@ -22,8 +22,18 @@ import { confirmAction, money, titleCase, toast } from "@/lib/ui";
 const VERDICTS = [
   { id: "genuine", label: "Genuine enquiry", tone: "good" },
   { id: "fake", label: "Fake or spam", tone: "bad" },
-  { id: "unreachable", label: "Couldn't reach them", tone: "bad" },
+  { id: "unreachable", label: "Couldn't reach them", tone: "neutral" },
 ] as const;
+
+// Traffic-light colors, deliberately louder than this design system's usual
+// one-accent-per-screen rule (see static/src/app.css) — this decision feeds
+// fake-lead detection and refunds, so it needs to read at a glance, not blend
+// into the page like a routine chip.
+const VERDICT_TONE: Record<string, string> = {
+  good: "border-emerald-500 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 aria-pressed:bg-emerald-500 aria-pressed:text-white",
+  bad: "border-rose-500 bg-rose-50 text-rose-800 hover:bg-rose-100 aria-pressed:bg-rose-500 aria-pressed:text-white",
+  neutral: "border-ink-300 bg-ink-100 text-ink-700 hover:bg-ink-200 aria-pressed:bg-ink-500 aria-pressed:text-white",
+};
 
 export function LeadDetail() {
   const { id = "" } = useParams();
@@ -210,17 +220,18 @@ function RateLead({ leadId, existing }: { leadId: string; existing: string | nul
   }
 
   return (
-    <section className="u-card u-card-pad">
+    <section className="u-card u-card-pad border-2 border-marigold-400 bg-marigold-50">
       <h2 className="u-h3">Was this a real enquiry?</h2>
       <p className="u-body mt-1.5 text-ink-600">
         Every teacher is asked. It's the only way we catch fake enquiries — and you don't pay for the ones we catch.
+        You must rate every lead you unlock before you can keep browsing.
       </p>
       <div className="mt-4 flex flex-wrap gap-2">
         {VERDICTS.map((v) => (
           <button
             key={v.id}
             type="button"
-            className="u-chip u-chip-sm"
+            className={`min-h-[44px] flex-1 rounded-xl border-2 px-4 text-[0.9375rem] font-semibold shadow-soft transition ${VERDICT_TONE[v.tone]}`}
             aria-pressed={verdict === v.id}
             disabled={saving}
             onClick={() => send(v.id)}

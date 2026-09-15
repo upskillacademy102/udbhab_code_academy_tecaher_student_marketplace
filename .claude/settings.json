@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Select-String *)",
+      "PowerShell(Get-Content *)",
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(Test-Path *)",
+      "PowerShell(Get-NetTCPConnection*)",
+      "PowerShell(Get-Item *)",
+      "PowerShell(Get-Process*)",
+      "PowerShell(Get-CimInstance *)",
+      "PowerShell(Get-Date*)",
+      "PowerShell(Get-Command *)",
+      "PowerShell(git status*)"
+    ]
+  }
+}

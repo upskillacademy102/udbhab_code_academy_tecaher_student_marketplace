@@ -22,6 +22,49 @@
             @click="stop()" :disabled="busy">Return to your account</button>
   </div>
 
+  {% if web_role == 'teacher' %}
+  {# ============ Pending-review gate — blocks the app until every unlocked lead is rated ============ #}
+  <div x-data="pendingReviewGate()" x-show="pending.length > 0 && !suppressed" x-cloak
+       class="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/60 p-4">
+    <div class="w-full max-w-sm rounded-2xl border-2 border-amber-400 bg-white p-6 shadow-lg">
+      <div class="flex items-center gap-2">
+        {% icon "alert-triangle" "h-5 w-5 text-amber-500" %}
+        <h2 class="text-base font-semibold text-slate-900">Review your unlocked lead<span x-show="pending.length > 1">s</span></h2>
+      </div>
+      <p class="mt-2 text-sm text-slate-600">
+        <span x-text="pending.length"></span>
+        <span x-text="pending.length === 1 ? 'enquiry needs' : 'enquiries need'"></span>
+        your rating before you can keep browsing — it's the only way we catch fake enquiries, and you don't pay for the ones we catch.
+      </p>
+
+      <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3" x-show="current">
+        <p class="text-sm font-medium text-slate-900" x-text="current && current.subject_name"></p>
+        <p class="text-xs text-slate-500" x-text="current && ('Unlocked ' + fmt.relative(current.created_at))"></p>
+      </div>
+
+      <div class="mt-4 flex flex-col gap-2">
+        <button type="button" :disabled="busy" @click="rate('genuine')"
+                class="rounded-xl border-2 border-emerald-500 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100">
+          Genuine enquiry
+        </button>
+        <button type="button" :disabled="busy" @click="rate('fake')"
+                class="rounded-xl border-2 border-rose-500 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-800 transition hover:bg-rose-100">
+          Fake or spam
+        </button>
+        <button type="button" :disabled="busy" @click="rate('unreachable')"
+                class="rounded-xl border-2 border-slate-300 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-200">
+          Couldn't reach them
+        </button>
+      </div>
+
+      <a :href="current && ('/teacher/leads/' + current.id + '/')"
+         class="mt-3 block text-center text-xs text-slate-400 hover:text-slate-600 hover:underline">
+        View the full enquiry first
+      </a>
+    </div>
+  </div>
+  {% endif %}
+
   {# ============ Mobile drawer backdrop ============ #}
   <div x-show="sidebarOpen" x-transition.opacity x-cloak
        class="fixed inset-0 z-40 bg-slate-900/40 lg:hidden" @click="sidebarOpen = false"></div>
@@ -35,7 +78,12 @@
     <div class="flex h-16 items-center justify-between gap-2 px-5">
       <a href="{{ web_home }}" class="flex items-center gap-2.5 rounded-lg">
         <span class="grid h-8 w-8 place-items-center rounded-lg bg-brand-600 text-sm font-bold text-white">{{ SITE_NAME|first }}</span>
-        <span class="text-[15px] font-semibold tracking-tight text-slate-900">{{ SITE_NAME }}</span>
+        <span class="leading-tight">
+          <span class="block text-[15px] font-semibold tracking-tight text-slate-900">{{ SITE_NAME }}</span>
+          {% if web_role == 'teacher' %}
+            <span class="block text-[10px] font-semibold uppercase tracking-wider text-brand-600">Instructor Hub</span>
+          {% endif %}
+        </span>
       </a>
       <button class="btn-ghost -mr-2 p-2 lg:hidden" @click="sidebarOpen = false" aria-label="Close menu">
         {% icon "x" "h-5 w-5" %}
@@ -108,7 +156,21 @@
               x-text="$store.badges.notifications > 9 ? '9+' : $store.badges.notifications"></span>
       </a>
 
-      <div x-data="{ open: false }" class="relative" @keydown.escape="open = false">
+      <div x-data="{
+             open: false,
+             switching: false,
+             async switchRole(role) {
+               if (this.switching) return;
+               this.switching = true;
+               try {
+                 await api.post('/auth/switch-role/', { role }, { silent: true });
+                 location.assign(role === 'teacher' ? '/teacher/' : '/student/');
+               } catch (e) {
+                 window.toast('error', e.message || 'Could not switch accounts.');
+                 this.switching = false;
+               }
+             },
+           }" class="relative" @keydown.escape="open = false">
         <button class="flex items-center gap-2 rounded-lg p-1 pr-2 transition hover:bg-slate-100" @click="open = !open"
                 :aria-expanded="open" aria-haspopup="menu">
           <span class="avatar h-8 w-8 text-xs">{{ web_user.get_full_name|initials }}</span>
@@ -129,6 +191,23 @@
           <a href="{{ web_home }}settings/" class="menu-item" role="menuitem">{% icon "cog" %} Settings</a>
           {% if web_role == 'student' or web_role == 'teacher' %}
             <a href="{{ web_home }}connect-admin/" class="menu-item" role="menuitem">{% icon "alert-triangle" %} Report an issue</a>
+          {% endif %}
+          {% comment %}Dual-role: exactly one of "Switch to X" (already
+          has that profile) or "Register as X too" (doesn't yet) shows
+          per role, mirroring apps.web.views.add_role_page /
+          switch_active_role.{% endcomment %}
+          {% if web_role == 'student' %}
+            {% if web_has_teacher_profile %}
+              <button class="menu-item w-full" role="menuitem" @click="switchRole('teacher')" :disabled="switching">{% icon "switch" %} Switch to Teacher</button>
+            {% else %}
+              <a href="/add-role/?as=teacher" class="menu-item" role="menuitem">{% icon "academic" %} Register as Teacher too</a>
+            {% endif %}
+          {% elif web_role == 'teacher' %}
+            {% if web_has_student_profile %}
+              <button class="menu-item w-full" role="menuitem" @click="switchRole('student')" :disabled="switching">{% icon "switch" %} Switch to Student</button>
+            {% else %}
+              <a href="/add-role/?as=student" class="menu-item" role="menuitem">{% icon "user" %} Register as Student too</a>
+            {% endif %}
           {% endif %}
           <div class="menu-sep"></div>
           <button class="menu-item w-full text-rose-600 hover:bg-rose-50" role="menuitem"

@@ -277,15 +277,32 @@ def can_spend_purchased_unlocks(teacher) -> bool:
 
 
 def _mark_unlocked(teacher, lead: Lead, *, is_free_unlock: bool, cost: int):
-    """Flip the lead and write its history row. Callers hold the txn."""
+    """
+    Flip the lead and write its history row. Callers hold the txn.
+
+    This is the ONE place a lead is ever marked unlocked (both the free-
+    allowance and purchased-balance paths in _unlock_lead_contact_txn route
+    through here), so it is also the one place the two unlock notifications
+    fire - the teacher's own "Lead Unlocked" receipt, and the student's
+    "A teacher unlocked your enquiry" heads-up. Hooking notifications here
+    rather than in the API view guarantees both fire for every unlock
+    regardless of caller (the view, the admin action, a direct service
+    call from a test) - a view-layer hook is one refactor away from being
+    silently skipped.
+    """
     lead.contact_unlocked = True
     lead.save(update_fields=["contact_unlocked"])
-    LeadUnlockHistory.objects.create(
+    history = LeadUnlockHistory.objects.create(
         teacher=teacher,
         lead=lead,
         is_free_unlock=is_free_unlock,
         tokens_deducted=cost,
     )
+
+    from apps.notifications.services import NotificationService
+
+    NotificationService.lead_unlocked(history)
+    NotificationService.student_lead_unlocked(lead)
 
 
 def _exhausted_error(teacher, cost: int, could_spend_balance: bool):

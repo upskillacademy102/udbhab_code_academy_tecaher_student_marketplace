@@ -436,7 +436,7 @@ class DuplicateSignal(BaseModel):
 
 class TeacherVerificationKey(models.TextChoices):
     # --- the "floor" (auto-derived, no submission) ------------------
-    PROFILE_BASICS = "profile_basics", _("Basic profile completed")
+    PROFILE_BASICS = "profile_basics", _("Profile photo, bio & qualification")
     SUBJECTS_SET = "subjects_set", _("Subjects selected")
     AVAILABILITY_SET = "availability_set", _("Availability added")
     EMAIL_VERIFIED = "email_verified", _("Email verified")

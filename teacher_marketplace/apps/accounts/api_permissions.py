@@ -120,6 +120,10 @@ _RULES: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
     ("appeals:suspension-withdraw", ("POST",), _ANY_AUTHED),
     # stop-impersonation is called *as the impersonated user* (any role)
     ("accounts:stop-impersonation", ("POST",), _ANY_AUTHED),
+    # Dual-role: a Student/Teacher adding or switching to their other
+    # portal. switch_active_role() itself rejects any target other than
+    # student/teacher, so _ANY_AUTHED here is safe (mirrors stop-impersonation).
+    ("accounts:switch-role", ("POST",), _ANY_AUTHED),
     # ===== User directory - Admin gets read-only; write/impersonate = Super Admin only ==
     ("admin_users:list", ("GET",), _ADMIN),
     ("admin_users:detail", ("GET",), _ADMIN),
@@ -204,6 +208,7 @@ _RULES: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
     ("lead_engine:unlock-lead", ("POST",), _TEACHER),
     ("lead_engine:lead-rate", ("POST",), _TEACHER),
     ("lead_engine:pending-ratings", ("GET",), _TEACHER),
+    ("lead_engine:lead-export", ("GET",), _TEACHER),
     ("lead_engine:my-unlock-history", ("GET",), _TEACHER),
     # Reviews (Phase 8c) - students write/withdraw; anyone authed can read
     ("reviews:my-reviews", ("GET", "POST"), _STUDENT),

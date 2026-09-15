@@ -23,6 +23,7 @@ urlpatterns = [
     path("register/", views.register_page, name="register"),
     path("login/staff/", views.staff_login_page, name="staff-login"),
     path("suspended/", views.suspended_page, name="suspended"),
+    path("add-role/", views.add_role_page, name="add-role"),
     # ============ STUDENT ============
     # Stage B: the student home is the React Discover page. Every other
     # student route is still a Django template and moves across in stage C.
@@ -30,7 +31,7 @@ urlpatterns = [
         "student/",
         spa(
             roles=S,
-            title="Discover",
+            title="Learn Something New",
             desc="Teachers who teach what you want, in your language, when you're free.",
         ),
         name="student-home",
@@ -39,7 +40,7 @@ urlpatterns = [
         "student/teachers/",
         spa(
             roles=S,
-            title="Find Teachers",
+            title="Find Verified Teachers",
             desc="Search verified teachers by subject, language, price and when you're free.",
         ),
         name="student-teachers",
@@ -53,7 +54,7 @@ urlpatterns = [
         "student/requirements/",
         spa(
             roles=S,
-            title="What you need",
+            title="Posted Requirements",
             desc="Post it once. Matching teachers get in touch with you.",
         ),
         name="student-requirements",
@@ -95,7 +96,11 @@ urlpatterns = [
     # ============ TEACHER ============
     path(
         "teacher/",
-        spa(roles=T, title="Your enquiries"),
+        spa(
+            roles=T,
+            title="Your enquiries",
+            desc="Monitor lead requests, unlocked contacts, and conversion status.",
+        ),
         name="teacher-home",
     ),
     path(

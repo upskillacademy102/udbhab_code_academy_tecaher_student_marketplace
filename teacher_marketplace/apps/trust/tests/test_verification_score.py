@@ -63,7 +63,8 @@ class VerificationScoreTests(APITestCase):
         t.bio = "10 years teaching physics."
         t.experience_years = 10
         t.qualification_level = "masters"
-        t.save(update_fields=["bio", "experience_years", "qualification_level"])
+        t.profile_photo = "teachers/profile_photos/test.jpg"
+        t.save(update_fields=["bio", "experience_years", "qualification_level", "profile_photo"])
         t.user.is_email_verified = t.user.is_mobile_verified = True
         t.user.save(update_fields=["is_email_verified", "is_mobile_verified"])
 
@@ -91,7 +92,8 @@ class VerificationScoreTests(APITestCase):
     def test_full_verification_awards_the_badge(self):
         t = self._teacher()
         t.bio, t.experience_years, t.qualification_level = "bio", 5, "bachelors"
-        t.save(update_fields=["bio", "experience_years", "qualification_level"])
+        t.profile_photo = "teachers/profile_photos/test.jpg"
+        t.save(update_fields=["bio", "experience_years", "qualification_level", "profile_photo"])
         t.user.is_email_verified = t.user.is_mobile_verified = True
         t.user.save(update_fields=["is_email_verified", "is_mobile_verified"])
         mp = TeacherProfile.objects.create(teacher=t, teaching_mode=TeachingMode.ONLINE)
