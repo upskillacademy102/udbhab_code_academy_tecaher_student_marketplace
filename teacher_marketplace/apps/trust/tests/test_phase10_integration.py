@@ -57,7 +57,7 @@ ALL_ON = {
 _RQ = "/api/v1/student-requirements/"
 _PAYLOAD = {
     "subject": "Mathematics",
-    "preferred_language": "English",
+    "preferred_languages": ["English"],
     "teaching_mode": "online",
     "class_duration_minutes": 60,
     "schedule_preferences": [

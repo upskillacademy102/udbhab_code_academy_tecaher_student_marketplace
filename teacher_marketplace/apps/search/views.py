@@ -35,7 +35,10 @@ from rest_framework.filters import OrderingFilter
 from apps.core.exceptions.custom_exceptions import ValidationException
 from apps.core.responses import APIResponse
 from apps.teacher_profile.models import TeacherProfile, TeachingMode, VerificationStatus
-from apps.teacher_profile.serializers import TeacherProfileSerializer
+from apps.teacher_profile.serializers import (
+    PublicTeacherMarketplaceProfileSerializer,
+    TeacherProfileSerializer,
+)
 
 
 class TeacherSearchOrderingFilter(OrderingFilter):
@@ -150,7 +153,38 @@ class TeacherSearchFilterSet(django_filters.FilterSet):
             return queryset.filter(cities__id=result.city.id)
         return queryset  # pincode-only match not applicable to this browse-search's city M2M
 
-    teaching_mode = django_filters.ChoiceFilter(choices=TeachingMode.choices)
+    teaching_mode = django_filters.CharFilter(method="filter_teaching_mode")
+
+    def filter_teaching_mode(self, queryset, name, value):
+        """
+        ``?teaching_mode=`` is a comma-separated subset of {"online",
+        "offline"} - the "How you'd like to learn" filter is two
+        independently-toggleable checkboxes, not one 3-way choice, per
+        explicit product decision:
+
+          - ONE mode checked   -> that mode OR a BOTH-mode teacher (a
+            teacher who covers both clearly covers just one of them too).
+          - BOTH modes checked -> ONLY a BOTH-mode teacher. A teacher who
+            only does Online (or only Offline) does NOT satisfy a student
+            who checked both boxes - checking both means "I need someone
+            who can do either, on my terms", not "show me everyone".
+          - neither checked (empty/absent) -> no filter, show everyone.
+
+        This replaces an even older exact `teaching_mode = value` match,
+        which silently hid every BOTH-mode teacher from a single-mode
+        search entirely (see git history) - the one-mode case above still
+        needs to include BOTH-mode teachers for the same reason that fix
+        addressed, this just generalizes it to a real multi-select.
+        """
+        requested = {m.strip() for m in value.split(",") if m.strip()}
+        valid = {TeachingMode.ONLINE, TeachingMode.OFFLINE}
+        requested &= valid
+        if not requested:
+            return queryset
+        if requested == valid:
+            return queryset.filter(teaching_mode=TeachingMode.BOTH)
+        (mode,) = requested
+        return queryset.filter(teaching_mode__in=[mode, TeachingMode.BOTH])
 
     min_experience = django_filters.NumberFilter(
         field_name="teacher__experience_years", lookup_expr="gte"
@@ -449,3 +483,43 @@ class TeacherSearchView(generics.ListAPIView):
                 profile._best_matching_time = None
 
         return sorted(candidates, key=lambda p: -p._match_percentage)
+
+
+@extend_schema(tags=["Search"], responses=PublicTeacherMarketplaceProfileSerializer)
+class PublicTeacherMarketplaceProfileView(generics.RetrieveAPIView):
+    """
+    GET /api/v1/search/teachers/{teacher_id}/
+
+    A single teacher's own public marketplace profile (subjects,
+    languages, active weekly availability, rating) - the piece
+    /teachers/{id}/ (Phase 1's TeacherSerializer) never exposed, and
+    that TeacherDetail.tsx previously had to fake by carrying a
+    search-result card over in sessionStorage (broken on a cold/deep
+    link). Backs the "Learn with this teacher" direct-offer flow's
+    scoped subject/language/time picker - same Student+Admin
+    audience as TeacherSearchView, same eligibility gates (blocked/
+    hidden teachers excluded) since this is just as public.
+
+    Looked up by teacher_id (apps.teachers.Teacher.id), not
+    TeacherProfile.id - that's the id already used throughout the
+    student-facing surface (search results, /teachers/{id}/).
+    """
+
+    serializer_class = PublicTeacherMarketplaceProfileSerializer
+    lookup_url_kwarg = "teacher_id"
+    lookup_field = "teacher_id"
+
+    def get_queryset(self):
+        from apps.trust.matching_support import (
+            apply_teacher_gate,
+            exclude_blocked_teachers,
+        )
+
+        return (
+            exclude_blocked_teachers(
+                apply_teacher_gate(TeacherProfile.objects.all()),
+                getattr(self.request, "user", None),
+            )
+            .select_related("teacher", "teacher__user")
+            .prefetch_related("subjects", "languages", "weekly_availability")
+        )

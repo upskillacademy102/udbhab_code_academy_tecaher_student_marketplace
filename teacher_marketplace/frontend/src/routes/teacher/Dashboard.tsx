@@ -122,7 +122,7 @@ export function TeacherDashboard() {
           {pendingRatings > 0 && (
             <Banner tone="info"
               title={`Rate ${pendingRatings} ${pendingRatings === 1 ? "lead" : "leads"} you unlocked`}
-              body="Telling us which enquiries were genuine is how we keep fake ones out of your list."
+              body="Telling us which leads were genuine is how we keep fake ones out of your list."
               action={{ label: "Rate them", href: "/teacher/leads/" }} />
           )}
         </div>
@@ -137,7 +137,7 @@ export function TeacherDashboard() {
       <section className="u-card overflow-hidden">
         <div className="flex items-center justify-between gap-3 border-b border-ink-200 px-5 py-4">
           <div className="flex items-center gap-2">
-            <h2 className="u-h3">Latest enquiries</h2>
+            <h2 className="u-h3">Latest leads</h2>
             {items.length > 0 && <span className="u-badge u-badge-pine">{items.length} active</span>}
           </div>
           <Link to="/teacher/leads/" className="u-link text-[0.875rem]">See all →</Link>
@@ -170,7 +170,7 @@ export function TeacherDashboard() {
                   <li key={l.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <p className="truncate text-[0.9375rem] font-semibold text-ink-900">{l.subject_name ?? "Enquiry"}</p>
+                        <p className="truncate text-[0.9375rem] font-semibold text-ink-900">{l.subject_name ?? "Lead"}</p>
                         {l.contact_unlocked ? (
                           <span className="u-badge u-badge-pine shrink-0">Unlocked</span>
                         ) : (
@@ -201,7 +201,7 @@ export function TeacherDashboard() {
               })}
             </ul>
             <p className="border-t border-ink-200 px-5 py-3 text-[0.75rem] text-ink-400">
-              Unlocked enquiries retain contact visibility indefinitely in your account history.
+              Unlocked leads retain contact visibility indefinitely in your account history.
               <a href="/api/v1/leads/export/" className="u-link ml-1">Download CSV report</a>
             </p>
           </>

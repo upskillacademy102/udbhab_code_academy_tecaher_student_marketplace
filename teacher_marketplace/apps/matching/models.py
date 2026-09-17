@@ -322,6 +322,24 @@ class LeadAssignment(BaseModel):
         null=True,
         blank=True,
     )
+    is_direct = models.BooleanField(
+        _("is direct offer"),
+        default=False,
+        db_index=True,
+        help_text=_(
+            "True only for a student's direct 'Learn with this teacher' "
+            "offer - never part of the general subscription/distance "
+            "cascade, and excluded from the teacher's ordinary Leads list."
+        ),
+    )
+    never_expires = models.BooleanField(
+        _("never expires"),
+        default=False,
+        help_text=_(
+            "True for a direct offer: no response window, so the expiry "
+            "sweep skips it entirely."
+        ),
+    )
 
     class Meta:
         verbose_name = _("Lead Assignment")
@@ -334,9 +352,11 @@ class LeadAssignment(BaseModel):
         ]
         indexes = [
             # Hot path for the Celery expiry task: "find all ASSIGNED
-            # rows whose expires_at has passed."
+            # rows whose expires_at has passed" - never_expires rows are
+            # excluded from that scan entirely, so it's part of the index.
             models.Index(
-                fields=["status", "expires_at"], name="idx_assignment_expiry_scan"
+                fields=["status", "never_expires", "expires_at"],
+                name="idx_assignment_expiry_scan",
             ),
             # Hot path for "what's the current stage of this lead's
             # distribution" and "does this teacher have an open offer."
@@ -395,10 +415,35 @@ class MatchingConfig(BaseModel):
         default=20,
         validators=[MinValueValidator(1), MaxValueValidator(MAX_RADIUS_KM)],
     )
-    lead_response_window_hours = models.PositiveSmallIntegerField(
-        _("lead response window (hours)"),
+    offline_response_window_hours = models.PositiveSmallIntegerField(
+        _("offline response window (hours)"),
         default=24,
         validators=[MinValueValidator(1), MaxValueValidator(MAX_RESPONSE_WINDOW_HOURS)],
+        help_text=_(
+            "How long an offline/both lead stays offered to one teacher "
+            "(or a tied group at the same distance) before cascading to "
+            "the next-nearest untried teacher."
+        ),
+    )
+    online_tier_window_hours = models.PositiveSmallIntegerField(
+        _("online tier window (hours)"),
+        default=8,
+        validators=[MinValueValidator(1), MaxValueValidator(MAX_RESPONSE_WINDOW_HOURS)],
+        help_text=_(
+            "How long each subscription tier gets before an online lead "
+            "reveals to the next tier down - on a fixed clock, "
+            "independent of whether anyone in an earlier tier unlocked it."
+        ),
+    )
+    lead_visibility_window_hours = models.PositiveSmallIntegerField(
+        _("lead visibility window (hours)"),
+        default=24,
+        validators=[MinValueValidator(1), MaxValueValidator(MAX_RESPONSE_WINDOW_HOURS)],
+        help_text=_(
+            "How long an online lead stays visible to one teacher, "
+            "counted from when it was first shown to them - separate "
+            "from the tier-reveal clock above."
+        ),
     )
     subscription_priority_order = models.JSONField(
         _("subscription priority order"),
@@ -427,9 +472,17 @@ class MatchingConfig(BaseModel):
                     & models.Q(location_radius_increment_km__lte=MAX_RADIUS_KM)
                     & models.Q(max_location_radius_km__gte=1)
                     & models.Q(max_location_radius_km__lte=MAX_RADIUS_KM)
-                    & models.Q(lead_response_window_hours__gte=1)
+                    & models.Q(offline_response_window_hours__gte=1)
                     & models.Q(
-                        lead_response_window_hours__lte=MAX_RESPONSE_WINDOW_HOURS
+                        offline_response_window_hours__lte=MAX_RESPONSE_WINDOW_HOURS
+                    )
+                    & models.Q(online_tier_window_hours__gte=1)
+                    & models.Q(
+                        online_tier_window_hours__lte=MAX_RESPONSE_WINDOW_HOURS
+                    )
+                    & models.Q(lead_visibility_window_hours__gte=1)
+                    & models.Q(
+                        lead_visibility_window_hours__lte=MAX_RESPONSE_WINDOW_HOURS
                     )
                     & models.Q(
                         initial_location_radius_km__lte=models.F(

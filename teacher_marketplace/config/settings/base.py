@@ -616,6 +616,13 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.matching.tasks.expire_lead_assignments",
         "schedule": 300.0,  # seconds = 5 minutes
     },
+    # Time-based subscription-tier reveal for ONLINE leads - brings in the
+    # next tier on a fixed clock (online_tier_window_hours), independent of
+    # whether the current tier's assignment was unlocked/rejected/expired.
+    "reveal-online-lead-tiers": {
+        "task": "apps.matching.tasks.reveal_online_lead_tiers",
+        "schedule": 300.0,  # every 5 minutes
+    },
     # Safety net: re-queue any requirement whose async lead distribution
     # never completed (broker outage at creation time, worker killed
     # mid-task, lost result). The task it re-queues is idempotent.
@@ -670,7 +677,9 @@ TIME_MATCH_THRESHOLD = 1  # any actual overlap > 0 minutes counts as time-eligib
 INITIAL_LOCATION_RADIUS_KM = 1
 LOCATION_RADIUS_INCREMENT_KM = 3
 MAX_LOCATION_RADIUS_KM = 20
-LEAD_RESPONSE_WINDOW_HOURS = 24
+OFFLINE_RESPONSE_WINDOW_HOURS = 24
+ONLINE_TIER_WINDOW_HOURS = 8
+LEAD_VISIBILITY_WINDOW_HOURS = 24
 SUBSCRIPTION_PRIORITY_ORDER = [
     "Elite",
     "Professional",

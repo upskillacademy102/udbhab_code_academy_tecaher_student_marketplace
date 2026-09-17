@@ -23,6 +23,7 @@ from apps.common.models import BaseModel
 from apps.utils.validators import (
     validate_image_upload,
     validate_no_control_characters,
+    validate_pincode,
     validate_place_name,
 )
 
@@ -132,6 +133,36 @@ class Teacher(BaseModel):
         blank=True,
         validators=[validate_place_name],
     )
+    address_line1 = models.CharField(
+        _("address line 1"),
+        max_length=255,
+        null=True,
+        blank=True,
+        validators=[validate_no_control_characters],
+        help_text=_(
+            "House/flat no., building, street - required once teaching_mode "
+            "is Offline or Both (see TeacherCreateUpdateSerializer.validate)."
+        ),
+    )
+    address_line2 = models.CharField(
+        _("address line 2"),
+        max_length=255,
+        null=True,
+        blank=True,
+        validators=[validate_no_control_characters],
+        help_text=_("Area, landmark - optional."),
+    )
+    pincode = models.CharField(
+        _("PIN code"),
+        max_length=6,
+        null=True,
+        blank=True,
+        validators=[validate_pincode],
+        help_text=_(
+            "6-digit PIN code, resolved to pincode_location below on save "
+            "(see TeacherCreateUpdateSerializer._resolve_pincode)."
+        ),
+    )
     pincode_location = models.ForeignKey(
         "matching.PincodeLocation",
         related_name="teachers",
@@ -171,6 +202,14 @@ class Teacher(BaseModel):
                     & (
                         models.Q(country__isnull=True)
                         | ~models.Q(country__regex=r"^\s*$")
+                    )
+                    & (
+                        models.Q(address_line1__isnull=True)
+                        | ~models.Q(address_line1__regex=r"^\s*$")
+                    )
+                    & (
+                        models.Q(address_line2__isnull=True)
+                        | ~models.Q(address_line2__regex=r"^\s*$")
                     )
                 ),
             ),

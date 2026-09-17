@@ -49,6 +49,17 @@ class NotificationEvent(models.TextChoices):
     # still hasn't rated a lead they unlocked - see that view and
     # NotificationService.lead_review_pending.
     LEAD_REVIEW_PENDING = "lead_review_pending", _("Lead Review Pending")
+    # Teacher-facing: a student picked THIS teacher directly ("Learn with
+    # this teacher") rather than going through the general matching pool.
+    # Drives the gold nav-glow on the Offers tab until unlocked/rejected.
+    DIRECT_OFFER_RECEIVED = "direct_offer_received", _("Direct Offer Received")
+    # Student-facing: the teacher they picked directly rejected the offer.
+    DIRECT_OFFER_DECLINED = "direct_offer_declined", _("Direct Offer Declined")
+    # Teacher-facing: newly offered a lead via the general cascade (initial
+    # distribution, offline cascade advance, or an online tier reveal) -
+    # fills the previous gap where nothing notified a teacher they'd been
+    # offered/cascaded a lead at all.
+    LEAD_OFFERED = "lead_offered", _("Lead Offered")
 
 
 class Notification(BaseModel):

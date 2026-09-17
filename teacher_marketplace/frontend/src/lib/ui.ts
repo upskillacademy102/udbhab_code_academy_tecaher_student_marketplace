@@ -63,6 +63,20 @@ export function moneyRange(
   return lo ?? hi;
 }
 
+/**
+ * A requirement's ranked language list as one line, most preferred first -
+ * shared by Requirements.tsx and RequirementDetail.tsx so the two list/
+ * detail views describe the same requirement the same way.
+ */
+export function languageLabel(
+  noLanguagePreference: boolean | undefined,
+  preferredLanguages: { name: string }[] | undefined,
+): string {
+  if (noLanguagePreference) return "Any";
+  if (!preferredLanguages?.length) return "Any";
+  return preferredLanguages.map((l) => l.name).join(" › ");
+}
+
 export function titleCase(s: string | null | undefined): string {
   if (!s) return "";
   return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());

@@ -1,37 +1,62 @@
 """
 Lead distribution service for the Teacher Marketplace Platform.
 
-Implements Sections 19-24 exactly:
-    1. Determine eligible teachers via EligibilityService (SAME hard
-       gate as search - Section 19: "Do NOT distribute the lead to
-       ineligible teachers").
-    2. Group eligible teachers by subscription tier (Section 20),
-       using the same SubscriptionPriorityService ordinal ranking
-       used for search ranking - NOT duplicated logic.
-    3. Offer the highest tier's teachers SIMULTANEOUSLY (Section 21)
-       - all get a LeadAssignment row with the same assigned_at/
-       expires_at in one transaction.
-    4. On accept: stop the cascade (Section 22/23).
-    5. On reject/expiry of an ENTIRE tier: activate the next tier.
-    6. Free teachers (Section 24): ranked by rating+experience,
-       same-ranked free teachers grouped and offered simultaneously
-       too - implemented by treating "Free" as just another tier in
-       the SAME grouping mechanism, with an additional within-tier
-       rating/experience sub-grouping for simultaneity ties.
+Two entirely separate distribution modes, dispatched on
+requirement.teaching_mode:
 
-CONCURRENCY (Section 27): every state-mutating operation
-(accept_assignment, reject_assignment, expire) runs inside
-transaction.atomic() with select_for_update() on the relevant
-LeadAssignment row(s), preventing double-acceptance and race
-conditions when a lead expires at nearly the same moment a teacher
-responds. Uses the SAME select_for_update pattern already
-established by WalletService/LeadQuotaService in this codebase.
+ONLINE (_distribute_online / _maybe_advance_online_stage):
+    1. Determine eligible teachers via EligibilityService (SAME hard
+       gate as search - subject/language/time; location is skipped
+       for online).
+    2. Group eligible teachers by subscription tier, using
+       SubscriptionPriorityService's ordinal ranking (Elite before
+       Professional before Free).
+    3. Offer the highest tier's teachers SIMULTANEOUSLY: all get a
+       LeadAssignment row, expires_at set to their own personal
+       lead_visibility_window_hours (default 24h) from when THEY were
+       shown it.
+    4. Unlocking a lead now doubles as "accept" (see on_unlocked,
+       called from apps.lead_engine.unlock_service). For ONLINE this
+       is shared/pooled: accepting/unlocking does NOT stop the
+       cascade or cancel other teachers' assignments.
+    5. Lower tiers are revealed on a FIXED time-based clock
+       (online_tier_window_hours, default 8h per tier), via
+       reveal_next_online_stage - run periodically by the
+       reveal_online_lead_tiers Celery beat task. This is completely
+       independent of whether an earlier tier's assignment was
+       unlocked, rejected, or expired: reject_assignment/
+       expire_assignment do NOT cascade for online at all (see
+       _maybe_advance_stage).
+
+OFFLINE/BOTH (_distribute_offline / _maybe_advance_offline_stage):
+    Subscription tier plays NO role at all - pure distance ordering.
+    1. Same EligibilityService gate, but location is a hard
+       requirement here (must resolve to a real distance within
+       max_location_radius_km).
+    2. Group eligible teachers by exact distance_km, ascending -
+       teachers tied at the same distance are offered simultaneously
+       regardless of plan.
+    3. Offer only the nearest distance band.
+    4. On accept: stop the cascade, same as online.
+    5. On reject/expiry of the WHOLE nearest band: activate the
+       next-nearest not-yet-offered band, expanding outward up to
+       max_location_radius_km (LocationMatchingService's existing
+       expanding-radius search already bounds candidates to this).
+
+CONCURRENCY: every state-mutating operation (accept_assignment,
+reject_assignment, expire) runs inside transaction.atomic() with
+select_for_update() on the relevant LeadAssignment row(s), preventing
+double-acceptance and race conditions when a lead expires at nearly
+the same moment a teacher responds. Uses the SAME select_for_update
+pattern already established by WalletService/LeadQuotaService in
+this codebase.
 """
 
 import logging
 from collections import defaultdict
 
 from django.db import IntegrityError, transaction
+from django.db.models import Max
 from django.utils import timezone
 
 from apps.core.exceptions.custom_exceptions import ValidationException
@@ -65,7 +90,15 @@ class LeadDistributionService:
             exclude_blocked_teachers,
         )
 
+        from django.db.models import prefetch_related_objects
+
         config = get_config()
+
+        # EligibilityService reads requirement.preferred_language_ids once
+        # per candidate below - without this, that's one query per
+        # candidate teacher (the same N+1 shape lead_generation_service
+        # prefetches schedule_preferences/preferred_languages against).
+        prefetch_related_objects([requirement], "preferred_languages")
 
         candidates = (
             exclude_blocked_teachers(
@@ -81,8 +114,10 @@ class LeadDistributionService:
             .prefetch_related("weekly_availability", "languages", "subjects")
             .distinct()
         )
-        if requirement.preferred_language_id:
-            candidates = candidates.filter(languages=requirement.preferred_language)
+        if not requirement.no_language_preference:
+            language_ids = requirement.preferred_language_ids
+            if language_ids:
+                candidates = candidates.filter(languages__id__in=language_ids)
 
         student_slots = [
             TimeSlot(
@@ -142,10 +177,13 @@ class LeadDistributionService:
     @staticmethod
     def _group_by_tier(eligible_teachers: list, plan_by_teacher_id: dict) -> dict:
         """
-        Groups eligible teachers by subscription_rank (0=highest
-        tier). Within each tier, sorted by rating desc then
-        experience desc (Section 24 - applies uniformly, since Free
-        is just the last tier in this same grouping).
+        ONLINE ONLY (see _distribute_offline for OFFLINE/BOTH, which
+        does not use subscription tier at all). Groups eligible
+        teachers by subscription_rank (0=highest tier) - Elite before
+        Professional before Free - each whole tier offered
+        simultaneously (Section 21/24). Within a tier: a more-
+        verified teacher is offered first (flag-gated), then rating
+        desc, then experience desc.
 
         ``plan_by_teacher_id`` is precomputed once by the caller
         (LeadDistributionService._plans_for) so tier grouping does not
@@ -161,8 +199,6 @@ class LeadDistributionService:
             rank = SubscriptionPriorityService.rank_for_plan_name(plan.name, order)
             groups[rank].append(entry)
 
-        # Within a tier, a more-verified teacher is offered first (flag-gated).
-        # Subscription tier still gates the stage cascade above this.
         vscore = (
             verification_score_map(
                 e["teacher_profile"].teacher_id for e in eligible_teachers
@@ -182,6 +218,24 @@ class LeadDistributionService:
         return dict(sorted(groups.items()))
 
     @staticmethod
+    def _group_offline_by_distance(eligible_teachers: list) -> dict:
+        """
+        OFFLINE/BOTH ONLY. Buckets eligible candidates by their exact
+        distance_km (every eligible offline/both entry has a real
+        one - EligibilityService only marks such a teacher eligible
+        once location_precomputed.is_eligible is True), ascending -
+        subscription tier plays NO role in offline/both ordering at
+        all, unlike online. Two candidates at the same distance are
+        grouped together so they get offered simultaneously,
+        regardless of subscription plan.
+        """
+        groups = defaultdict(list)
+        for entry in eligible_teachers:
+            distance = entry["eligibility"].location_result.distance_km
+            groups[distance].append(entry)
+        return dict(sorted(groups.items()))
+
+    @staticmethod
     def _create_assignments(
         lead, group, plan_by_teacher_id, *, stage, now, expires_at
     ) -> list:
@@ -190,6 +244,17 @@ class LeadDistributionService:
         is guarded against the unique (lead, teacher) constraint so a
         concurrent writer that beat us to a row is a skip, not a crash
         (defence-in-depth behind the requirement row lock).
+
+        Deliberately does NOT fire a per-teacher LEAD_OFFERED
+        notification here even though NotificationService.lead_offered
+        exists for that purpose - NotificationService.notify() is 2
+        synchronous queries (create + email-status save), and this
+        method's caller can offer an entire subscription tier at once,
+        so a per-teacher call here would turn the whole cascade linear
+        in candidate count - exactly the N+1 shape
+        test_distribution_query_count_is_sublinear_in_teacher_count
+        exists to catch. Sending it would need a genuinely batched
+        (bulk_create) or async (Celery) path, not a loop.
         """
         created = []
         for entry in group:
@@ -225,14 +290,91 @@ class LeadDistributionService:
         return created
 
     @staticmethod
+    def _distribute_online(lead, eligible: list) -> list:
+        """
+        ONLINE: activates STAGE 1 (the highest subscription tier)
+        immediately. expires_at is this stage's PERSONAL visibility
+        window (lead_visibility_window_hours) - each teacher who gets
+        shown the lead keeps seeing it for this long from when they
+        were first shown it, independent of the separate tier-reveal
+        clock (online_tier_window_hours) that brings in lower tiers -
+        see reveal_next_online_stage, which runs on that clock alone
+        and does not wait for this stage to resolve or expire.
+        """
+        config = get_config()
+        plan_by_teacher_id = LeadDistributionService._plans_for(eligible)
+        tiers = LeadDistributionService._group_by_tier(eligible, plan_by_teacher_id)
+        first_stage_rank = next(iter(tiers))
+        first_group = tiers[first_stage_rank]
+
+        now = timezone.now()
+        expires_at = now + timezone.timedelta(
+            hours=config.lead_visibility_window_hours
+        )
+        assignments = LeadDistributionService._create_assignments(
+            lead,
+            first_group,
+            plan_by_teacher_id,
+            stage=1,
+            now=now,
+            expires_at=expires_at,
+        )
+        logger.info(
+            "Lead %s distributed online: stage 1 (%d teacher(s), tier rank %d) assigned, visible until %s",
+            lead.id,
+            len(assignments),
+            first_stage_rank,
+            expires_at,
+        )
+        return assignments
+
+    @staticmethod
+    def _distribute_offline(lead, eligible: list) -> list:
+        """
+        OFFLINE/BOTH: activates only the single nearest distance band
+        (which may hold more than one teacher, if tied) - subscription
+        tier plays no role in this ordering at all. Farther bands are
+        not offered yet; see _maybe_advance_offline_stage for how they
+        eventually get their turn, on reject/expiry rather than tier
+        resolution.
+        """
+        config = get_config()
+        plan_by_teacher_id = LeadDistributionService._plans_for(eligible)
+        bands = LeadDistributionService._group_offline_by_distance(eligible)
+        nearest_distance = next(iter(bands))
+        nearest_group = bands[nearest_distance]
+
+        now = timezone.now()
+        expires_at = now + timezone.timedelta(
+            hours=config.offline_response_window_hours
+        )
+        assignments = LeadDistributionService._create_assignments(
+            lead,
+            nearest_group,
+            plan_by_teacher_id,
+            stage=1,
+            now=now,
+            expires_at=expires_at,
+        )
+        logger.info(
+            "Lead %s distributed offline: stage 1 (%d teacher(s) at %.2fkm) assigned, expires %s",
+            lead.id,
+            len(assignments),
+            nearest_distance,
+            expires_at,
+        )
+        return assignments
+
+    @staticmethod
     @transaction.atomic
     def distribute_lead(lead) -> list:
         """
         Entry point, called once when a Lead is created (from
         apps.lead_engine's requirement-submission flow). Determines
-        eligible teachers, groups by tier, and activates STAGE 1
-        (the highest tier group) by creating LeadAssignment rows for
-        all of them simultaneously - same assigned_at/expires_at.
+        eligible teachers, then dispatches to _distribute_online
+        (subscription-tier ordering) or _distribute_offline
+        (pure-distance ordering, no tier) depending on the
+        requirement's teaching_mode.
 
         Returns the list of newly created LeadAssignment rows for
         stage 1. If NO teachers are eligible at all, returns an
@@ -242,7 +384,6 @@ class LeadDistributionService:
         """
         from apps.student_requirement.models import StudentRequirement
 
-        config = get_config()
         requirement = lead.student_requirement
 
         # Concurrency gate: lock the requirement row so two workers
@@ -271,38 +412,77 @@ class LeadDistributionService:
             )
             return []
 
-        plan_by_teacher_id = LeadDistributionService._plans_for(eligible)
-        tiers = LeadDistributionService._group_by_tier(eligible, plan_by_teacher_id)
-        first_stage_rank = next(iter(tiers))
-        first_group = tiers[first_stage_rank]
+        if requirement.teaching_mode == TeachingMode.ONLINE:
+            return LeadDistributionService._distribute_online(lead, eligible)
+        return LeadDistributionService._distribute_offline(lead, eligible)
+
+    @staticmethod
+    @transaction.atomic
+    def on_unlocked(lead, teacher) -> None:
+        """
+        Called once, right after a teacher unlocks a lead's contact
+        details (apps.lead_engine.unlock_service._mark_unlocked).
+        Unlocking now doubles as "accept" on the underlying
+        LeadAssignment - there is no separate accept step for the
+        general cascade any more, and a direct offer (is_direct)
+        works the same way here since it only ever has one assignment.
+
+        OFFLINE/BOTH: exclusive - marks this assignment ACCEPTED and
+        cancels every other open assignment for the lead (including
+        any tied-distance siblings), since a student only wants one
+        offline tutor.
+
+        ONLINE (and any is_direct assignment): shared/pooled - marks
+        this assignment ACCEPTED for audit only; other tiers keep
+        their scheduled reveal and can still unlock the same lead
+        later (see reveal_next_online_stage).
+
+        Looked up via lead__student_requirement, not lead= directly:
+        every LeadAssignment for this requirement shares one
+        canonical `lead` FK (see distribute_lead's docstring), which
+        for a non-canonical teacher is a DIFFERENT Lead row than the
+        one passed in here (their own).
+        """
+        assignment = (
+            LeadAssignment.objects.select_for_update()
+            .filter(lead__student_requirement=lead.student_requirement, teacher=teacher)
+            .first()
+        )
+        if assignment is None or not assignment.can_transition_to(
+            AssignmentStatus.ACCEPTED
+        ):
+            return  # nothing to reconcile - e.g. a stale/expired assignment
 
         now = timezone.now()
-        expires_at = now + timezone.timedelta(hours=config.lead_response_window_hours)
+        assignment.status = AssignmentStatus.ACCEPTED
+        assignment.response = AssignmentResponse.ACCEPT
+        assignment.responded_at = now
+        assignment.save(update_fields=["status", "response", "responded_at"])
 
-        assignments = LeadDistributionService._create_assignments(
-            lead,
-            first_group,
-            plan_by_teacher_id,
-            stage=1,
-            now=now,
-            expires_at=expires_at,
+        if (
+            assignment.is_direct
+            or lead.student_requirement.teaching_mode == TeachingMode.ONLINE
+        ):
+            return  # shared/pooled - no cascade stop
+
+        other_open = (
+            LeadAssignment.objects.select_for_update()
+            .filter(
+                lead=assignment.lead,  # the shared canonical lead, not the
+                # (possibly non-canonical) `lead` param - see above.
+                status__in=[AssignmentStatus.ASSIGNED, AssignmentStatus.VIEWED],
+            )
+            .exclude(id=assignment.id)
         )
-
-        logger.info(
-            "Lead %s distributed: stage 1 (%d teacher(s), tier rank %d) assigned, expires %s",
-            lead.id,
-            len(assignments),
-            first_stage_rank,
-            expires_at,
-        )
-
-        # Store the full tier plan on the Lead's requirement context
-        # via a fresh per-call computation next time advance_stage is
-        # called, rather than persisting the whole tier structure -
-        # see advance_stage()'s docstring for why re-computing
-        # eligibility at cascade time (not caching the original
-        # groups) is the correct, safer approach.
-        return assignments
+        cancelled_count = other_open.update(status=AssignmentStatus.CANCELLED)
+        if cancelled_count:
+            logger.info(
+                "Lead %s ACCEPTED (via unlock) by teacher %s - %d other open "
+                "assignment(s) cancelled.",
+                lead.id,
+                teacher.user.email,
+                cancelled_count,
+            )
 
     @staticmethod
     @transaction.atomic
@@ -408,28 +588,155 @@ class LeadDistributionService:
     @staticmethod
     def _maybe_advance_stage(lead, current_stage: int) -> None:
         """
-        Checks whether every assignment in `current_stage` is now
-        resolved (not ASSIGNED/VIEWED). If so, re-runs eligibility
-        fresh (rather than reusing a cached tier list from
-        distribute_lead time) and activates the next tier rank up.
-
-        RE-COMPUTING ELIGIBILITY AT CASCADE TIME, NOT CACHING: a
-        teacher's availability, verification status, or subject list
-        could genuinely change in the time between initial
-        distribution and a later stage's cascade (hours later, per
-        the 24-hour window) - re-running EligibilityService here
-        ensures stage 2/3 offers reflect CURRENT reality, not a
-        stale snapshot from when the lead was first created. This is
-        a deliberate correctness choice over a (cheaper but
-        potentially wrong) cached-plan approach.
+        OFFLINE/BOTH only: cascades to the next-nearest distance band
+        once the current one is fully resolved (reject/expire).
+        ONLINE no longer cascades on reject/expiry at all - a
+        rejection or personal-visibility expiry just stops for that
+        one teacher; reveal_next_online_stage runs on its own fixed
+        time-based schedule instead, independent of resolution
+        (see the module docstring).
         """
+        requirement = lead.student_requirement
+        if requirement.teaching_mode == TeachingMode.ONLINE:
+            return
+        LeadDistributionService._maybe_advance_offline_stage(lead, current_stage)
+
+    @staticmethod
+    @transaction.atomic
+    def reveal_next_online_stage(lead, *, force: bool = False) -> list:
+        """
+        Time-based subscription-tier reveal for ONLINE leads only.
+        Runs independently of whether the current stage has been
+        unlocked, accepted, or rejected - a lower tier gets its
+        scheduled turn regardless, since online leads are shared/
+        pooled rather than exclusive (that's the whole point of this
+        function existing separately from the offline cascade, which
+        IS resolution-gated).
+
+        Called by the reveal_online_lead_tiers beat task every few
+        minutes; `force=True` skips the time check for exactly ONE
+        reveal (the next due tier), then reverts to normal time
+        gating for the rest of this call - used only by the
+        `force_reveal_online_tier` management command, so a human can
+        step through tiers one at a time for manual QA rather than
+        jumping straight to the end in one call.
+
+        Re-runs eligibility fresh every call (never caches the
+        original tier plan, same reasoning as the offline cascade).
+        Otherwise loops so a single (non-forced) call catches up more
+        than one tier if several are simultaneously overdue (e.g. the
+        beat task missed a cycle), stopping once the next tier isn't
+        due yet or every eligible tier has already been offered.
+        """
+        requirement = lead.student_requirement
+        if requirement.teaching_mode != TeachingMode.ONLINE:
+            return []
+
+        # lead__student_requirement, not lead= - any lead for this
+        # requirement (canonical or not, e.g. one a management command
+        # was pointed at) resolves the same underlying cascade.
+        stage_one = (
+            LeadAssignment.objects.filter(
+                lead__student_requirement=requirement,
+                assignment_stage=1,
+                is_direct=False,
+            )
+            .order_by("assigned_at")
+            .first()
+        )
+        if stage_one is None:
+            return []  # never distributed - e.g. no eligible teachers at all
+
+        # The true canonical lead every assignment for this requirement is
+        # actually anchored to - not necessarily the `lead` passed in
+        # (e.g. force_reveal_online_tier may be pointed at any teacher's
+        # own Lead row for this requirement).
+        canonical_lead = stage_one.lead
+
+        config = get_config()
+        revealed = []
+        force_remaining = force
+        while True:
+            latest_stage = (
+                LeadAssignment.objects.filter(
+                    lead__student_requirement=requirement, is_direct=False
+                ).aggregate(Max("assignment_stage"))["assignment_stage__max"]
+                or 1
+            )
+            due_at = stage_one.assigned_at + timezone.timedelta(
+                hours=config.online_tier_window_hours * latest_stage
+            )
+            if not force_remaining and timezone.now() < due_at:
+                break
+            force_remaining = False  # force only ever skips ONE reveal per call
+
+            eligible = LeadDistributionService._get_eligible_teachers_with_scores(
+                requirement
+            )
+            if not eligible:
+                break
+
+            plan_by_teacher_id = LeadDistributionService._plans_for(eligible)
+            tiers = LeadDistributionService._group_by_tier(eligible, plan_by_teacher_id)
+            already_offered_teacher_ids = set(
+                LeadAssignment.objects.filter(
+                    lead__student_requirement_id=requirement.id
+                ).values_list("teacher_id", flat=True)
+            )
+
+            created_this_round = []
+            for rank in tiers:
+                candidates = [
+                    e
+                    for e in tiers[rank]
+                    if e["teacher_profile"].teacher_id
+                    not in already_offered_teacher_ids
+                ]
+                if not candidates:
+                    continue
+                now = timezone.now()
+                expires_at = now + timezone.timedelta(
+                    hours=config.lead_visibility_window_hours
+                )
+                created_this_round = LeadDistributionService._create_assignments(
+                    canonical_lead,
+                    candidates,
+                    plan_by_teacher_id,
+                    stage=latest_stage + 1,
+                    now=now,
+                    expires_at=expires_at,
+                )
+                logger.info(
+                    "Lead %s revealed online stage %d (%d teacher(s), tier rank %d).",
+                    canonical_lead.id,
+                    latest_stage + 1,
+                    len(created_this_round),
+                    rank,
+                )
+                break
+
+            if not created_this_round:
+                break  # nothing left to reveal at any tier
+            revealed.extend(created_this_round)
+
+        return revealed
+
+    @staticmethod
+    def _maybe_advance_offline_stage(lead, current_stage: int) -> None:
+        """
+        Checks whether every assignment in `current_stage` (one
+        distance band) is now resolved. If so, re-runs eligibility
+        fresh and activates the next-nearest not-yet-offered distance
+        band - subscription tier is never consulted for offline/both.
+        """
+        requirement = lead.student_requirement
         still_open = LeadAssignment.objects.filter(
             lead=lead,
             assignment_stage=current_stage,
             status__in=[AssignmentStatus.ASSIGNED, AssignmentStatus.VIEWED],
         ).exists()
         if still_open:
-            return  # this stage isn't fully resolved yet
+            return  # this band isn't fully resolved yet
 
         already_accepted = LeadAssignment.objects.filter(
             lead=lead, status=AssignmentStatus.ACCEPTED
@@ -439,7 +746,7 @@ class LeadDistributionService:
 
         config = get_config()
         eligible = LeadDistributionService._get_eligible_teachers_with_scores(
-            lead.student_requirement
+            requirement
         )
         if not eligible:
             logger.info(
@@ -448,7 +755,7 @@ class LeadDistributionService:
             return
 
         plan_by_teacher_id = LeadDistributionService._plans_for(eligible)
-        tiers = LeadDistributionService._group_by_tier(eligible, plan_by_teacher_id)
+        bands = LeadDistributionService._group_offline_by_distance(eligible)
         already_offered_teacher_ids = set(
             LeadAssignment.objects.filter(
                 lead__student_requirement_id=lead.student_requirement_id
@@ -456,10 +763,10 @@ class LeadDistributionService:
         )
 
         next_stage = current_stage + 1
-        for rank in tiers:
+        for distance in bands:
             candidates = [
                 e
-                for e in tiers[rank]
+                for e in bands[distance]
                 if e["teacher_profile"].teacher_id not in already_offered_teacher_ids
             ]
             if not candidates:
@@ -467,7 +774,7 @@ class LeadDistributionService:
 
             now = timezone.now()
             expires_at = now + timezone.timedelta(
-                hours=config.lead_response_window_hours
+                hours=config.offline_response_window_hours
             )
             created = LeadDistributionService._create_assignments(
                 lead,
@@ -479,14 +786,15 @@ class LeadDistributionService:
             )
 
             logger.info(
-                "Lead %s advanced to stage %d (%d teacher(s), tier rank %d).",
+                "Lead %s advanced to offline stage %d (%d teacher(s) at %.2fkm).",
                 lead.id,
                 next_stage,
                 len(created),
-                rank,
+                distance,
             )
             return
 
         logger.info(
-            "Lead %s: all tiers exhausted, no further teachers to offer.", lead.id
+            "Lead %s: all distance bands exhausted, no further teachers to offer.",
+            lead.id,
         )

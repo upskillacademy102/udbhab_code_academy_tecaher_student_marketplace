@@ -177,7 +177,7 @@ class NotificationService:
         return NotificationService.notify(
             user=requirement.student,
             event=NotificationEvent.STUDENT_LEAD_UNLOCKED,
-            title="A Teacher Unlocked Your Enquiry",
+            title="A Teacher Unlocked Your Lead",
             message=(
                 f"{teacher_name} unlocked your {subject_name} requirement and now "
                 f"has your contact details. They'll reach out to you very soon."
@@ -200,12 +200,71 @@ class NotificationService:
             event=NotificationEvent.LEAD_REVIEW_PENDING,
             title="Please Review Your Unlocked Lead",
             message=(
-                f"You unlocked contact details for a {subject_name} enquiry but "
+                f"You unlocked contact details for a {subject_name} lead but "
                 f"haven't told us whether it was genuine yet. Every teacher is "
                 f"asked to rate the leads they unlock - it's the only way we "
                 f"catch fake ones."
             ),
             reference_id=str(lead.id),
+        )
+
+    @staticmethod
+    def direct_offer_received(lead):
+        """
+        Teacher-facing: a student picked them directly via "Learn with
+        this teacher." Fired once, when apps.student_requirement.
+        direct_offer_views.DirectOfferCreateView creates the offer -
+        drives the gold nav-glow on the Offers tab until the teacher
+        unlocks or rejects it.
+        """
+        subject_name = lead.student_requirement.subject.name
+        return NotificationService.notify(
+            user=lead.teacher_profile.teacher.user,
+            event=NotificationEvent.DIRECT_OFFER_RECEIVED,
+            title="A Student Wants to Learn With You",
+            message=(
+                f"A student chose you directly for {subject_name}. Unlock it to "
+                f"see their details, or pass if it's not a fit."
+            ),
+            reference_id=str(lead.id),
+        )
+
+    @staticmethod
+    def direct_offer_declined(lead):
+        """
+        Student-facing: the teacher they picked directly rejected the
+        offer. Fired from LeadRejectView when the underlying assignment
+        is_direct.
+        """
+        requirement = lead.student_requirement
+        teacher_name = lead.teacher_profile.teacher.user.get_full_name() or "The teacher"
+        return NotificationService.notify(
+            user=requirement.student,
+            event=NotificationEvent.DIRECT_OFFER_DECLINED,
+            title="Your Direct Offer Was Declined",
+            message=(
+                f"{teacher_name} isn't able to take your {requirement.subject.name} "
+                f"request right now. You can post a new request or pick another teacher."
+            ),
+            reference_id=str(lead.id),
+        )
+
+    @staticmethod
+    def lead_offered(assignment):
+        """
+        Teacher-facing: newly offered a lead - initial distribution, an
+        offline cascade advance, or an online tier reveal. Fired from
+        LeadDistributionService wherever a fresh LeadAssignment is
+        created, so a teacher gets an actual notification the moment
+        it's their turn, not just a page they'd have to happen to check.
+        """
+        subject_name = assignment.lead.student_requirement.subject.name
+        return NotificationService.notify(
+            user=assignment.teacher.user,
+            event=NotificationEvent.LEAD_OFFERED,
+            title="You Have a New Lead",
+            message=f"A student is looking for help with {subject_name}. Take a look.",
+            reference_id=str(assignment.lead_id),
         )
 
     @staticmethod

@@ -61,7 +61,7 @@ _TEACHER = [
                 "match": "/teacher/$",
             },
             {
-                "label": "Enquiries",
+                "label": "Leads",
                 "url": "/teacher/leads/",
                 "icon": "inbox",
                 "badge": "leads",
@@ -70,6 +70,8 @@ _TEACHER = [
                 "label": "Offers",
                 "url": "/teacher/assignments/",
                 "icon": "target",
+                "badge": "offers",
+                "glow": True,
             },
             {
                 "label": "Your hours",

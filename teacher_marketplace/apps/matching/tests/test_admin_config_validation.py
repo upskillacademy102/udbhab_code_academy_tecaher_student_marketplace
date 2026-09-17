@@ -30,7 +30,9 @@ GOOD_CFG = {
     "initial_location_radius_km": 5,
     "location_radius_increment_km": 5,
     "max_location_radius_km": 50,
-    "lead_response_window_hours": 24,
+    "offline_response_window_hours": 24,
+    "online_tier_window_hours": 8,
+    "lead_visibility_window_hours": 24,
     "is_active": True,
 }
 
@@ -54,7 +56,9 @@ class MatchingConfigValidationTests(APITestCase):
         self._post(400, time_match_threshold_minutes=99999)
         self._post(400, max_location_radius_km=99999)
         self._post(400, initial_location_radius_km=80, max_location_radius_km=50)
-        self._post(400, lead_response_window_hours=5000)
+        self._post(400, offline_response_window_hours=5000)
+        self._post(400, online_tier_window_hours=5000)
+        self._post(400, lead_visibility_window_hours=5000)
 
     def test_priority_order(self):
         self._post(400, subscription_priority_order=["Elite", 123])
@@ -71,7 +75,9 @@ class MatchingConfigValidationTests(APITestCase):
                 initial_location_radius_km=999,
                 location_radius_increment_km=3,
                 max_location_radius_km=10,  # initial > max
-                lead_response_window_hours=24,
+                offline_response_window_hours=24,
+                online_tier_window_hours=8,
+                lead_visibility_window_hours=24,
             )
 
 

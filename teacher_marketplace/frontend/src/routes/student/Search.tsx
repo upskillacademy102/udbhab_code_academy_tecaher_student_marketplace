@@ -6,6 +6,7 @@ import { formatWindows, type TimeWindow } from "@/lib/intent";
 import { MatchCard, MatchCardSkeleton } from "@/components/MatchCard";
 import { FilterChips, type ActiveFilter } from "@/components/FilterChips";
 import { WindowPicker } from "@/components/WindowPicker";
+import { TaxonomyCombobox } from "@/components/TaxonomyCombobox";
 
 /**
  * Find teachers — the full search surface.
@@ -31,7 +32,6 @@ const PRICE_BANDS = [
 const MODES = [
   { id: "online", label: "Online" },
   { id: "offline", label: "In person" },
-  { id: "both", label: "Either" },
 ] as const;
 
 const SORTS = [
@@ -46,7 +46,11 @@ const SORTS = [
 interface State {
   subject: string | null;
   language: string | null;
-  mode: string | null;
+  // Two independently-toggleable checkboxes (Online / In person), not one
+  // 3-way choice - see the backend's TeacherSearchFilterSet.
+  // filter_teaching_mode for the exact rule: one checked -> that mode OR a
+  // teacher who does both; both checked -> ONLY a teacher who does both.
+  modes: ("online" | "offline")[];
   price: string | null;
   minRating: boolean;
   verifiedOnly: boolean;
@@ -64,7 +68,7 @@ interface State {
 }
 
 const EMPTY: State = {
-  subject: null, language: null, mode: null, price: null,
+  subject: null, language: null, modes: [], price: null,
   minRating: false, verifiedOnly: false, windows: [], flexible: false, sort: "",
 };
 
@@ -97,7 +101,7 @@ export function Search() {
     const p: Record<string, string> = {};
     if (s.subject) p.subject = s.subject;
     if (s.language) p.language = s.language;
-    if (s.mode) p.teaching_mode = s.mode;
+    if (s.modes.length) p.teaching_mode = s.modes.join(",");
     if (priceBand?.min) p.min_price = priceBand.min;
     if (priceBand?.max) p.max_price = priceBand.max;
     if (s.minRating) p.min_rating = "4";
@@ -122,11 +126,28 @@ export function Search() {
   const set = <K extends keyof State>(k: K, v: State[K]) => setS((p) => ({ ...p, [k]: v }));
   const setWindows = (windows: TimeWindow[]) => setS((p) => ({ ...p, windows, flexible: false }));
   const toggleFlexible = () => setS((p) => ({ ...p, flexible: !p.flexible, windows: [] }));
+  const toggleModeFilter = (id: "online" | "offline") =>
+    setS((p) => ({
+      ...p,
+      modes: p.modes.includes(id) ? p.modes.filter((m) => m !== id) : [...p.modes, id],
+    }));
+
+  // "Online or in person" when both boxes are checked - matches the tag
+  // shown on a Both-mode teacher's own card (see MatchCard's
+  // teachingModeLabel), since that's exactly who this combination matches.
+  const modeLabel =
+    s.modes.length === 2
+      ? "Online or in person"
+      : s.modes[0] === "online"
+        ? "Online"
+        : s.modes[0] === "offline"
+          ? "In person"
+          : null;
 
   const active: ActiveFilter[] = [];
   if (s.subject) active.push({ key: "subject", label: s.subject, onClear: () => set("subject", null) });
   if (s.language) active.push({ key: "language", label: `in ${s.language}`, onClear: () => set("language", null) });
-  if (s.mode) active.push({ key: "mode", label: MODES.find((m) => m.id === s.mode)!.label, onClear: () => set("mode", null) });
+  if (modeLabel) active.push({ key: "mode", label: modeLabel, onClear: () => set("modes", []) });
   if (priceBand) active.push({ key: "price", label: priceBand.label, onClear: () => set("price", null) });
   if (s.minRating) active.push({ key: "rating", label: "4★ and up", onClear: () => set("minRating", false) });
   if (s.verifiedOnly) active.push({ key: "verified", label: "Verified only", onClear: () => set("verifiedOnly", false) });
@@ -162,26 +183,39 @@ export function Search() {
       {panelOpen && (
         <section className="u-card u-card-pad flex flex-col gap-6">
           <Group label="Subject">
-            <ChipRow
-              options={subjects.map((x) => x.name)}
+            <TaxonomyCombobox
+              id="search-subject"
+              items={subjects.map((x) => x.name)}
               value={s.subject}
-              onPick={(v) => set("subject", v)}
+              onChange={(v) => set("subject", v)}
+              placeholder="Search subjects — e.g. Mathematics"
               emptyHint="No subjects have been added yet."
             />
           </Group>
 
           <Group label="Language">
-            <ChipRow
-              options={languages.map((x) => x.name)}
+            <TaxonomyCombobox
+              id="search-language"
+              items={languages.map((x) => x.name)}
               value={s.language}
-              onPick={(v) => set("language", v)}
+              onChange={(v) => set("language", v)}
+              placeholder="Search languages — e.g. Hindi"
               emptyHint="No languages have been added yet."
             />
           </Group>
 
           <Group label="How you'd like to learn">
-            <ChipRow options={MODES.map((m) => m.label)} value={MODES.find((m) => m.id === s.mode)?.label ?? null}
-              onPick={(label) => set("mode", label ? (MODES.find((m) => m.label === label)?.id ?? null) : null)} />
+            <div className="flex flex-wrap gap-2">
+              {MODES.map((m) => (
+                <button key={m.id} type="button" className="u-chip u-chip-sm" aria-pressed={s.modes.includes(m.id)}
+                  onClick={() => toggleModeFilter(m.id)}>
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            {s.modes.length === 2 && (
+              <p className="u-hint mt-1.5">Showing only teachers who offer both.</p>
+            )}
           </Group>
 
           <Group label="Price per hour">

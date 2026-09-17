@@ -117,6 +117,165 @@ class TeacherMarketplaceProfileValidationTests(APITestCase):
             p.save(update_fields=["headline"])
 
 
+class TeacherAddressValidationTests(APITestCase):
+    """
+    A teacher's address (apps.teachers.Teacher.address_line1/city/pincode)
+    becomes mandatory the moment their marketplace listing
+    (TeacherProfile.teaching_mode) says Offline or Both - a purely Online
+    teacher has nothing to deliver an in-person lesson to. Mirrors
+    StudentRequirement's "city required when teaching_mode is offline/both"
+    rule, cross-referencing a related model instead of a field on the same
+    one (see TeacherCreateUpdateSerializer.validate).
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.math = Subject.objects.create(name="Mathematics")
+
+    def setUp(self):
+        self.user = make_user(role=UserRole.TEACHER)
+        Teacher.objects.create(user=self.user)
+        login(self.client, self.user)
+
+    def _set_mode(self, mode):
+        r = self.client.post(
+            "/api/v1/teachers/profile/",
+            {"teaching_mode": mode, "subjects": [self.math.id]},
+            format="json",
+        )
+        self.assertIn(r.status_code, (200, 201), r.content)
+
+    def _patch_me(self, expect, **fields):
+        r = self.client.patch("/api/v1/teachers/me/", fields, format="json")
+        self.assertEqual(r.status_code, expect, r.content)
+        return r
+
+    def test_address_not_required_while_online(self):
+        self._set_mode("online")
+        self._patch_me(200, bio="hi")
+
+    def test_address_required_once_offline_or_both(self):
+        for mode in ("offline", "both"):
+            with self.subTest(mode=mode):
+                self._set_mode(mode)
+                self._patch_me(400, bio="hi")
+
+    def test_full_address_satisfies_the_requirement_and_resolves_pincode(self):
+        from unittest.mock import patch as _patch
+
+        from django.contrib.gis.geos import Point
+
+        from apps.matching.models import PincodeLocation
+
+        self._set_mode("offline")
+        location = PincodeLocation.objects.create(
+            pincode="700001",
+            location=Point(88.3639, 22.5726, srid=4326),
+            city="Kolkata",
+        )
+        with _patch(
+            "apps.matching.services.geocoding_service."
+            "PincodeGeocodingService.get_or_geocode",
+            return_value=location,
+        ):
+            self._patch_me(
+                200,
+                address_line1="12 Park Street",
+                city="Kolkata",
+                pincode="700001",
+            )
+        teacher = Teacher.objects.get(user=self.user)
+        self.assertEqual(teacher.pincode_location, location)
+
+    def test_bad_pincode_format_rejected(self):
+        self._patch_me(
+            400, address_line1="12 Park Street", city="Kolkata", pincode="ABCDEF"
+        )
+        self._patch_me(
+            400, address_line1="12 Park Street", city="Kolkata", pincode="12345"
+        )
+
+    def test_geocoding_outage_does_not_block_saving_the_address(self):
+        """
+        The address (address_line1/city/pincode) is real, user-supplied
+        data; PincodeGeocodingService.get_or_geocode is an external HTTP
+        call (Nominatim) enriching it for future distance matching. If
+        that call fails - network trouble, provider outage - the address
+        must still save; only pincode_location resolution is skipped.
+        """
+        from unittest.mock import patch as _patch
+
+        from apps.matching.services.geocoding_service import GeocodingError
+
+        self._set_mode("offline")
+        with _patch(
+            "apps.matching.services.geocoding_service."
+            "PincodeGeocodingService.get_or_geocode",
+            side_effect=GeocodingError(
+                detail="Geocoding service is currently unavailable. Please try again shortly."
+            ),
+        ):
+            self._patch_me(
+                200,
+                address_line1="12 Park Street",
+                city="Kolkata",
+                pincode="700001",
+            )
+        teacher = Teacher.objects.get(user=self.user)
+        self.assertEqual(teacher.address_line1, "12 Park Street")
+        self.assertEqual(teacher.pincode, "700001")
+        self.assertIsNone(teacher.pincode_location)
+
+    def test_stale_pincode_location_is_cleared_when_a_changed_pincode_fails_to_geocode(self):
+        """
+        Regression: a teacher who successfully geocodes pincode A, then
+        changes their address to pincode B while the geocoding provider
+        is down, must NOT be left pointing at location A - that silently
+        matches them against their OLD address, which is exactly how a
+        44km-away teacher can end up eligible for an offline lead near
+        their PREVIOUS pincode after moving. pincode_location must be
+        cleared (None), not left stale, whenever the on-file pincode no
+        longer matches the location it was resolved for.
+        """
+        from unittest.mock import patch as _patch
+
+        from django.contrib.gis.geos import Point
+
+        from apps.matching.models import PincodeLocation
+        from apps.matching.services.geocoding_service import GeocodingError
+
+        self._set_mode("offline")
+        location_a = PincodeLocation.objects.create(
+            pincode="700001", location=Point(88.3639, 22.5726, srid=4326), city="Kolkata"
+        )
+        with _patch(
+            "apps.matching.services.geocoding_service."
+            "PincodeGeocodingService.get_or_geocode",
+            return_value=location_a,
+        ):
+            self._patch_me(
+                200, address_line1="12 Park Street", city="Kolkata", pincode="700001"
+            )
+        teacher = Teacher.objects.get(user=self.user)
+        self.assertEqual(teacher.pincode_location, location_a)
+
+        with _patch(
+            "apps.matching.services.geocoding_service."
+            "PincodeGeocodingService.get_or_geocode",
+            side_effect=GeocodingError(detail="down"),
+        ):
+            self._patch_me(
+                200, address_line1="45 New Road", city="Howrah", pincode="711101"
+            )
+        teacher.refresh_from_db()
+        self.assertEqual(teacher.pincode, "711101")
+        self.assertIsNone(teacher.pincode_location)
+
+    def test_partial_address_is_not_enough(self):
+        self._set_mode("both")
+        self._patch_me(400, address_line1="12 Park Street")  # no city/pincode
+
+
 class TeacherAvailabilityValidationTests(APITestCase):
     def setUp(self):
         self.user = make_user(role=UserRole.TEACHER)

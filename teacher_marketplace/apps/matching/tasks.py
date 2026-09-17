@@ -47,6 +47,7 @@ def expire_lead_assignments():
     expired_ids = list(
         LeadAssignment.objects.filter(
             status__in=[AssignmentStatus.ASSIGNED, AssignmentStatus.VIEWED],
+            never_expires=False,
             expires_at__lte=now,
         ).values_list("id", flat=True)
     )
@@ -75,3 +76,72 @@ def expire_lead_assignments():
         error_count,
     )
     return {"processed": processed_count, "errors": error_count}
+
+
+@shared_task(name="apps.matching.tasks.reveal_online_lead_tiers")
+def reveal_online_lead_tiers():
+    """
+    Beat-scheduled companion to expire_lead_assignments: brings in
+    the next subscription tier for an ONLINE lead on a fixed clock
+    (online_tier_window_hours per tier), completely independent of
+    whether the current tier's assignment has been unlocked,
+    accepted, or rejected - see
+    LeadDistributionService.reveal_next_online_stage for the actual
+    reveal logic; this task just finds which leads are worth
+    checking and calls it per lead.
+
+    Bounded lookback: once every configured tier has had a chance to
+    be revealed for a lead, a further check on it is a guaranteed
+    no-op, so there's no reason to keep scanning it forever.
+    """
+    from apps.lead_engine.models import Lead
+    from apps.matching.models import LeadAssignment
+    from apps.matching.services.config_service import get_config
+    from apps.matching.services.lead_distribution_service import (
+        LeadDistributionService,
+    )
+    from apps.teacher_profile.models import TeachingMode
+
+    config = get_config()
+    order = config.subscription_priority_order or ["Free"]
+    lookback_hours = (
+        config.online_tier_window_hours * len(order)
+        + config.lead_visibility_window_hours
+    )
+    cutoff = timezone.now() - timezone.timedelta(hours=lookback_hours)
+
+    lead_ids = list(
+        LeadAssignment.objects.filter(
+            assignment_stage=1,
+            is_direct=False,
+            lead__student_requirement__teaching_mode=TeachingMode.ONLINE,
+            assigned_at__gte=cutoff,
+        )
+        .values_list("lead_id", flat=True)
+        .distinct()
+    )
+
+    revealed_count = 0
+    error_count = 0
+    for lead_id in lead_ids:
+        try:
+            lead = Lead.objects.get(id=lead_id)
+            revealed_count += len(
+                LeadDistributionService.reveal_next_online_stage(lead)
+            )
+        except Exception as exc:  # noqa: BLE001 - one bad lead must not stop the batch
+            error_count += 1
+            logger.error(
+                "Failed to reveal online tiers for lead %s: %s",
+                lead_id,
+                exc,
+                exc_info=True,
+            )
+
+    logger.info(
+        "reveal_online_lead_tiers: checked %d lead(s), revealed %d new assignment(s), %d error(s).",
+        len(lead_ids),
+        revealed_count,
+        error_count,
+    )
+    return {"checked": len(lead_ids), "revealed": revealed_count, "errors": error_count}

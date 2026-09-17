@@ -5,8 +5,10 @@ Included from config/urls.py at the `api/v1/leads/` prefix, so the
 full paths resolve to:
 
     GET  /api/v1/leads/
+    GET  /api/v1/leads/offers/
     GET  /api/v1/leads/{id}/
     GET  /api/v1/leads/{id}/matches/
+    POST /api/v1/leads/{id}/reject/
     POST /api/v1/leads/unlock/
     GET  /api/v1/leads/unlock-history/
 
@@ -30,7 +32,9 @@ from apps.lead_engine.views import (
     LeadExportView,
     LeadListView,
     LeadMatchDetailView,
+    LeadOffersView,
     LeadRateView,
+    LeadRejectView,
     LeadUnlockPricingDetailView,
     LeadUnlockPricingListCreateView,
     MyUnlockHistoryView,
@@ -43,6 +47,7 @@ app_name = "lead_engine"
 
 urlpatterns = [
     path("", LeadListView.as_view(), name="lead-list"),
+    path("offers/", LeadOffersView.as_view(), name="lead-offers"),
     path("unlock/", UnlockLeadView.as_view(), name="unlock-lead"),
     path("unlock-history/", MyUnlockHistoryView.as_view(), name="my-unlock-history"),
     path(
@@ -53,6 +58,7 @@ urlpatterns = [
     path("export/", LeadExportView.as_view(), name="lead-export"),
     path("<uuid:id>/matches/", LeadMatchDetailView.as_view(), name="lead-matches"),
     path("<uuid:id>/rate/", LeadRateView.as_view(), name="lead-rate"),
+    path("<uuid:id>/reject/", LeadRejectView.as_view(), name="lead-reject"),
     path("<uuid:id>/", LeadDetailView.as_view(), name="lead-detail"),
 ]
 

@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { StudentRequirement } from "@/lib/types";
 import { clearIntent, readIntent } from "@/lib/intent";
-import { confirmAction, money, titleCase, toast } from "@/lib/ui";
+import { confirmAction, languageLabel, moneyRange, titleCase, toast } from "@/lib/ui";
 import { RequirementForm, draftFromRequirement, type Draft } from "@/components/RequirementForm";
 
 /**
@@ -33,7 +33,7 @@ function useIncomingIntent(): Partial<Draft> | null {
     if (!intent.subject && !intent.language) return null;
     const draft: Partial<Draft> = {};
     if (intent.subject) draft.subject = intent.subject;
-    if (intent.language) draft.preferred_language = intent.language;
+    if (intent.language) draft.preferred_languages = [intent.language];
     if (intent.windows?.length) {
       // Current shape: each day carries its own specific time.
       draft.windows = intent.windows.map((w) => ({
@@ -54,6 +54,7 @@ export function Requirements() {
   const incomingIntent = useIncomingIntent();
   const [formOpen, setFormOpen] = useState(() => Boolean(incomingIntent));
   const [editing, setEditing] = useState<StudentRequirement | null>(null);
+  const [offlineNotice, setOfflineNotice] = useState(false);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["requirements"],
@@ -107,6 +108,18 @@ export function Requirements() {
         </div>
       )}
 
+      {offlineNotice && (
+        <div className="u-alert u-alert-warn items-center justify-between">
+          <span>
+            <strong>Finding an in-person teacher usually takes a little longer.</strong>{" "}
+            We start with the nearest match and widen the search if needed.
+          </span>
+          <button type="button" className="u-btn-ghost u-btn-sm" onClick={() => setOfflineNotice(false)} aria-label="Dismiss">
+            ✕
+          </button>
+        </div>
+      )}
+
       {!isLoading && !isError && items.length === 0 && (
         <section className="u-card flex flex-col items-center gap-4 px-6 py-14 text-center">
           <span className="grid h-14 w-14 place-items-center rounded-2xl bg-pine-700 text-white">
@@ -140,8 +153,9 @@ export function Requirements() {
         <RequirementForm
           initial={incomingIntent}
           onClose={() => setFormOpen(false)}
-          onSaved={() => {
+          onSaved={(createdMode) => {
             setFormOpen(false);
+            setOfflineNotice(createdMode === "offline" || createdMode === "both");
             qc.invalidateQueries({ queryKey: ["requirements"] });
           }}
         />
@@ -170,8 +184,12 @@ function RequirementCard({
   onEdit: () => void;
 }) {
   const open = r.status === "open";
-  const budget =
-    r.budget_min || r.budget_max ? `${money(r.budget_min) ?? "—"} – ${money(r.budget_max) ?? "—"}` : "Any";
+  // Editable regardless of status - "matched" flips the moment a teacher
+  // is merely soft-matched, long before anyone actually unlocks the
+  // student's contact details. That unlock is the real lock.
+  const editable = !r.has_unlocked_lead;
+  const budgetRange = moneyRange(r.budget_min, r.budget_max);
+  const budget = budgetRange ? `${budgetRange} / mo` : "Any";
 
   return (
     <article className="u-card u-card-pad flex flex-col gap-3">
@@ -187,14 +205,14 @@ function RequirementCard({
 
       <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-[0.8125rem]">
         <Cell label="Budget" value={budget} />
-        <Cell label="Language" value={r.preferred_language?.name ?? "Any"} />
+        <Cell label="Language" value={languageLabel(r.no_language_preference, r.preferred_languages)} />
         <Cell label="Where" value={r.city?.name ?? (r.teaching_mode === "online" ? "Online" : "—")} />
         <Cell label="Posted" value={new Date(r.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} />
       </dl>
 
       <div className="mt-auto flex gap-2 border-t border-ink-200 pt-3">
         <a href={`/student/requirements/${r.id}/`} className="u-btn-secondary u-btn-sm flex-1">Open</a>
-        {open && (
+        {editable && (
           <button type="button" className="u-btn-ghost u-btn-sm" onClick={onEdit}>
             Edit
           </button>

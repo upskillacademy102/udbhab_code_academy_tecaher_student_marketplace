@@ -104,9 +104,35 @@ class EligibilityService:
                 rejection_reason="subject_mismatch",
             )
 
-        language_result = LanguageMatchingService.match_by_id(
+        # Teaching-mode compatibility: a teacher who only teaches online
+        # must never be eligible for an OFFLINE requirement, and vice
+        # versa - a BOTH on either side satisfies anything (see
+        # _teaching_modes_compatible's own docstring for the exact rule).
+        # Previously this was checked nowhere in this service - the
+        # OFFLINE/BOTH direction happened to be caught downstream only as
+        # a side effect of an online-only teacher usually lacking
+        # pincode_location (so location_precomputed came back None), and
+        # the ONLINE direction wasn't caught at all: a strictly-offline
+        # teacher (who has explicitly said they never teach online) could
+        # be marked eligible for - and offered - a purely online lead.
+        from apps.lead_engine.services import _teaching_modes_compatible
+
+        if not _teaching_modes_compatible(
+            requirement.teaching_mode, teacher_profile.teaching_mode
+        ):
+            return EligibilityResult(
+                is_eligible=False,
+                subject_result=subject_result,
+                language_result=None,
+                time_result={},
+                location_result=None,
+                rejection_reason="teaching_mode_mismatch",
+            )
+
+        language_result = LanguageMatchingService.match_by_ids(
             teacher_language_ids={lang.id for lang in teacher_profile.languages.all()},
-            required_language_id=requirement.preferred_language_id,
+            required_language_ids=requirement.preferred_language_ids,
+            no_preference=getattr(requirement, "no_language_preference", False),
         )
         if not language_result.is_eligible:
             return EligibilityResult(

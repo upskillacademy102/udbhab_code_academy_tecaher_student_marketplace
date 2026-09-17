@@ -2,7 +2,7 @@
 Data-quality hardening for the student requirement endpoint
 (`/api/v1/student-requirements/`) and its schedule preference / exception rows.
 
-Adds: budget ceiling (1,000,000) + DB CHECK `budget_min <= budget_max`;
+Adds: budget ceiling (10,000,000 - a per-month figure) + DB CHECK `budget_min <= budget_max`;
 duration DB CHECK 15-480; `description` capped at 2000 chars; control-char
 rejection on `student_class` / `preferred_timing` / exception `reason`;
 `""`/whitespace normalised to NULL with a DB not-blank CHECK; max 20 schedule
@@ -20,11 +20,15 @@ from rest_framework.test import APITestCase
 from apps.accounts.models import UserRole
 from apps.accounts.tests.helpers import login, make_user
 from apps.languages.models import Language
+from apps.lead_engine.models import Lead
 from apps.student_requirement.models import (
+    RequirementStatus,
     StudentRequirement,
     StudentSchedulePreference,
 )
 from apps.subjects.models import Subject
+from apps.teacher_profile.models import TeacherProfile, VerificationStatus
+from apps.teachers.models import Teacher
 
 REQS = "/api/v1/student-requirements/"
 
@@ -43,7 +47,7 @@ class RequirementValidationTests(APITestCase):
         StudentRequirement.objects.filter(student=self.user).delete()
         body = {
             "subject": "Mathematics",
-            "preferred_language": "English",
+            "preferred_languages": ["English"],
             "teaching_mode": "online",
             "class_duration_minutes": 60,
             **extra,
@@ -74,7 +78,7 @@ class RequirementValidationTests(APITestCase):
     def test_budget_rules(self):
         self._post(expect=400, budget_min=900, budget_max=100)  # min > max
         self._post(expect=400, budget_min=-1)  # negative
-        self._post(expect=400, budget_max="5000000")  # over ceiling
+        self._post(expect=400, budget_max="50000000")  # over ceiling
         self._post(budget_min=0, budget_max=0)  # zero ok
 
     def test_db_check_blocks_inverted_budget_written_directly(self):
@@ -140,3 +144,86 @@ class RequirementValidationTests(APITestCase):
                 end_time="18:00",
                 timezone="Asia/Kolkata",
             )
+
+
+class RequirementEditLockTests(APITestCase):
+    """
+    A requirement stays editable regardless of `status` - MATCHED included,
+    since that flips the moment a teacher is merely soft-matched (a Lead
+    row exists), long before anyone unlocks anything. The real lock is a
+    teacher actually unlocking the requirement's contact details.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        Subject.objects.get_or_create(name="Mathematics")
+        Language.objects.get_or_create(name="English", defaults={"code": "en"})
+
+    def setUp(self):
+        self.user = make_user(role=UserRole.STUDENT)
+        login(self.client, self.user)
+        self.subject = Subject.objects.get(name="Mathematics")
+
+    def _make_teacher_profile(self):
+        teacher_user = make_user(role=UserRole.TEACHER)
+        teacher = Teacher.objects.create(user=teacher_user)
+        return TeacherProfile.objects.create(
+            teacher=teacher, verification_status=VerificationStatus.VERIFIED
+        )
+
+    def test_matched_requirement_with_no_unlock_is_still_editable(self):
+        req = StudentRequirement.objects.create(
+            student=self.user,
+            subject=self.subject,
+            teaching_mode="online",
+            class_duration_minutes=60,
+            no_language_preference=True,
+            status=RequirementStatus.MATCHED,
+        )
+        Lead.objects.create(
+            student_requirement=req,
+            teacher_profile=self._make_teacher_profile(),
+            contact_unlocked=False,
+        )
+        resp = self.client.patch(
+            f"{REQS}{req.id}/", {"description": "updated"}, format="json"
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertFalse(resp.json()["data"]["has_unlocked_lead"])
+
+    def test_unlocked_requirement_cannot_be_edited(self):
+        req = StudentRequirement.objects.create(
+            student=self.user,
+            subject=self.subject,
+            class_duration_minutes=60,
+            no_language_preference=True,
+            status=RequirementStatus.MATCHED,
+        )
+        Lead.objects.create(
+            student_requirement=req,
+            teacher_profile=self._make_teacher_profile(),
+            contact_unlocked=True,
+        )
+        resp = self.client.patch(
+            f"{REQS}{req.id}/", {"description": "updated"}, format="json"
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+        req.refresh_from_db()
+        self.assertIsNone(req.description)  # unchanged
+
+    def test_list_and_detail_report_has_unlocked_lead(self):
+        req = StudentRequirement.objects.create(
+            student=self.user,
+            subject=self.subject,
+            class_duration_minutes=60,
+            no_language_preference=True,
+        )
+        Lead.objects.create(
+            student_requirement=req,
+            teacher_profile=self._make_teacher_profile(),
+            contact_unlocked=True,
+        )
+        list_resp = self.client.get(REQS)
+        self.assertTrue(list_resp.json()["data"][0]["has_unlocked_lead"])
+        detail_resp = self.client.get(f"{REQS}{req.id}/")
+        self.assertTrue(detail_resp.json()["data"]["has_unlocked_lead"])

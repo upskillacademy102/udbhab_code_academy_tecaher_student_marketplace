@@ -19,8 +19,10 @@ from rest_framework import serializers
 from apps.languages.serializers import LanguageSerializer
 from apps.location.serializers import CitySerializer
 from apps.student_requirement.models import (
+    MAX_PREFERRED_LANGUAGES,
     RequirementStatus,
     StudentRequirement,
+    StudentRequirementLanguage,
     StudentScheduleException,
     StudentSchedulePreference,
 )
@@ -61,10 +63,12 @@ class StudentRequirementSerializer(serializers.ModelSerializer):
     """
 
     subject = SubjectSerializer(read_only=True)
-    preferred_language = LanguageSerializer(read_only=True)
+    preferred_languages = serializers.SerializerMethodField()
+    no_language_preference = serializers.BooleanField(read_only=True)
     city = CitySerializer(read_only=True)
     student_name = serializers.CharField(source="student.get_full_name", read_only=True)
     schedule_preferences = SchedulePreferenceReadSerializer(many=True, read_only=True)
+    has_unlocked_lead = serializers.SerializerMethodField()
 
     class Meta:
         model = StudentRequirement
@@ -73,7 +77,8 @@ class StudentRequirementSerializer(serializers.ModelSerializer):
             "student_name",
             "subject",
             "student_class",
-            "preferred_language",
+            "preferred_languages",
+            "no_language_preference",
             "budget_min",
             "budget_max",
             "teaching_mode",
@@ -83,10 +88,40 @@ class StudentRequirementSerializer(serializers.ModelSerializer):
             "status",
             "lead_distribution_status",
             "schedule_preferences",
+            "has_unlocked_lead",
             "created_at",
             "updated_at",
         )
         read_only_fields = fields
+
+    def get_has_unlocked_lead(self, obj):
+        """
+        True once ANY teacher has unlocked this requirement's contact
+        details - the real "can the student still edit this" signal
+        (see StudentRequirementWriteSerializer.validate), independent of
+        `status` (which flips to MATCHED the moment a teacher is merely
+        soft-matched, long before anyone actually unlocks anything).
+
+        Prefers the `has_unlocked_lead` queryset annotation (Exists/
+        OuterRef in StudentRequirementListCreateView/DetailView's
+        get_queryset) when present - one query for the whole list/detail
+        response - falling back to a direct query for an instance built
+        outside that queryset (e.g. the object update() just saved and
+        handed straight back to this serializer).
+        """
+        if hasattr(obj, "has_unlocked_lead"):
+            return obj.has_unlocked_lead
+        return obj.leads.filter(contact_unlocked=True).exists()
+
+    def get_preferred_languages(self, obj):
+        """
+        Ranked most-to-least preferred (StudentRequirementLanguage.Meta.
+        ordering = ["rank"]) - the response's array order IS the rank, no
+        separate rank field needed on the wire.
+        """
+        return LanguageSerializer(
+            [pl.language for pl in obj.preferred_languages.all()], many=True
+        ).data
 
 
 class StudentSchedulePreferenceWriteSerializer(serializers.ModelSerializer):
@@ -134,7 +169,7 @@ class StudentRequirementWriteSerializer(serializers.ModelSerializer):
     """
     Write representation for creating/updating a StudentRequirement.
 
-    PHASE 5 UPDATE: subject, preferred_language, and city/pincode are
+    PHASE 5 UPDATE: subject, preferred_languages, and city/pincode are
     now PLAIN TEXT fields, resolved internally via
     SubjectMatchingService / LanguageMatchingService /
     LocationResolutionService (exact -> alias -> fuzzy, pg_trgm-
@@ -144,6 +179,14 @@ class StudentRequirementWriteSerializer(serializers.ModelSerializer):
     on the model's existing FK fields exactly as before; only the
     API's INPUT shape has changed, not the database schema or the
     downstream matching/ranking/lead-distribution engines.
+
+    LANGUAGE IS MANDATORY: `preferred_languages` (a ranked list, most
+    preferred first) and `no_language_preference` (the explicit "Any
+    language" choice) are mutually exclusive and together required -
+    every submission must supply at least one language OR set
+    no_language_preference true. See `validate()` for the exact rule
+    and StudentRequirement.no_language_preference's docstring for why
+    this mirrors schedule_preferences' flexible/specific shape.
 
     SCHEDULE PREFERENCES: `schedule_preferences` accepts the
     student's preferred day/time windows inline with the requirement.
@@ -163,10 +206,20 @@ class StudentRequirementWriteSerializer(serializers.ModelSerializer):
     subject = serializers.CharField(
         help_text="Subject name, e.g. 'Mathematics', 'math', 'maths'."
     )
-    preferred_language = serializers.CharField(
+    preferred_languages = serializers.ListField(
+        child=serializers.CharField(max_length=60),
         required=False,
-        allow_blank=True,
-        help_text="Language name, e.g. 'English', 'Bengali'.",
+        default=list,
+        help_text=(
+            "Ranked language names, most preferred first, e.g. "
+            "['Bengali', 'English']. Required unless no_language_preference "
+            "is true."
+        ),
+    )
+    no_language_preference = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="True if the student is fine with any language of instruction.",
     )
     city = serializers.CharField(
         required=False,
@@ -188,7 +241,8 @@ class StudentRequirementWriteSerializer(serializers.ModelSerializer):
             "id",
             "subject",
             "student_class",
-            "preferred_language",
+            "preferred_languages",
+            "no_language_preference",
             "budget_min",
             "budget_max",
             "teaching_mode",
@@ -239,9 +293,30 @@ class StudentRequirementWriteSerializer(serializers.ModelSerializer):
                 )
         return subject
 
-    def validate_preferred_language(self, value):
-        if not value:
-            return None
+    def validate_preferred_languages(self, value):
+        if len(value) > MAX_PREFERRED_LANGUAGES:
+            raise serializers.ValidationError(
+                f"Pick at most {MAX_PREFERRED_LANGUAGES} languages."
+            )
+        resolved = []
+        seen_ids = set()
+        for name in value:
+            language = self._resolve_language(name)
+            if language.id in seen_ids:
+                raise serializers.ValidationError(
+                    f"'{language.name}' was listed more than once."
+                )
+            seen_ids.add(language.id)
+            resolved.append(language)
+        return resolved
+
+    def _resolve_language(self, value):
+        """
+        Exact/alias/fuzzy match via LanguageMatchingService, falling back
+        to auto-creating a genuinely new language - same three-tier
+        resolution as validate_subject, applied per-item since this field
+        is now a ranked list rather than one value.
+        """
         from django.db import IntegrityError, transaction
 
         from apps.languages.models import Language
@@ -254,9 +329,6 @@ class StudentRequirementWriteSerializer(serializers.ModelSerializer):
         if result.is_eligible and result.matched_subject is not None:
             return result.matched_subject
 
-        # No existing/alias/fuzzy match: a genuinely new language, not a
-        # typo of one already on file - add it rather than bouncing the
-        # student, same as validate_subject above.
         name = value.strip()
         try:
             validate_taxonomy_name(name)
@@ -329,6 +401,20 @@ class StudentRequirementWriteSerializer(serializers.ModelSerializer):
         (attrs["subject"] is a Subject instance, attrs["city"] is a
         LocationResolutionResult or None) rather than raw ids.
         """
+        # A requirement stays editable through OPEN/MATCHED/whatever
+        # status - status flips to MATCHED the moment a teacher is merely
+        # soft-matched (a Lead row exists), which is not a reason to lock
+        # editing. The real lock is a teacher having actually unlocked the
+        # student's contact details: at that point the requirement has
+        # been acted on and changing it under a teacher's feet isn't safe.
+        if self.instance is not None and self.instance.leads.filter(
+            contact_unlocked=True
+        ).exists():
+            raise serializers.ValidationError(
+                "This request can no longer be edited - a teacher has "
+                "already unlocked your contact details."
+            )
+
         # Optional free-text: normalise "" / "   " -> None so the DB never
         # holds a blank string (also satisfies the not-blank CHECK constraint).
         for field in ("student_class", "preferred_timing", "description"):
@@ -342,6 +428,33 @@ class StudentRequirementWriteSerializer(serializers.ModelSerializer):
                     "schedule_preferences": "A requirement can have at most 20 preferred time windows."
                 }
             )
+
+        # Language is a mandatory, mutually-exclusive choice: a ranked list
+        # OR "any language", never neither, never both. On a full (create)
+        # request both keys are always present (field defaults apply), so
+        # this always runs. On a partial (PATCH) request it only runs if
+        # the client actually touched one of the two keys - same "only
+        # touch what was sent" contract as schedule_preferences/city -
+        # so a PATCH that doesn't mention language leaves the existing,
+        # already-valid choice alone.
+        no_pref = attrs.get("no_language_preference")
+        langs = attrs.get("preferred_languages")
+        if no_pref is not None or langs is not None:
+            if no_pref:
+                # "Any language" wins - a list sent alongside it is dropped
+                # rather than erroring, same leniency as WindowPicker's
+                # flexible/windows toggle on the frontend.
+                attrs["preferred_languages"] = []
+            elif langs:
+                attrs["no_language_preference"] = False
+            else:
+                raise serializers.ValidationError(
+                    {
+                        "preferred_languages": (
+                            'Pick at least one language, or choose "Any language".'
+                        )
+                    }
+                )
 
         budget_min = attrs.get("budget_min", getattr(self.instance, "budget_min", None))
         budget_max = attrs.get("budget_max", getattr(self.instance, "budget_max", None))
@@ -401,6 +514,7 @@ class StudentRequirementWriteSerializer(serializers.ModelSerializer):
         location_result = validated_data.pop("city", None)
         student = validated_data.pop("student")
         preferences = validated_data.pop("schedule_preferences", [])
+        languages = validated_data.pop("preferred_languages", [])
 
         requirement = StudentRequirement(student=student, **validated_data)
         if location_result is not None:
@@ -409,11 +523,13 @@ class StudentRequirementWriteSerializer(serializers.ModelSerializer):
         requirement.save()
 
         self._apply_preferences(requirement, preferences)
+        self._apply_languages(requirement, languages)
         return requirement
 
     def update(self, instance, validated_data):
         location_result = validated_data.pop("city", None)
         preferences = validated_data.pop("schedule_preferences", None)
+        languages = validated_data.pop("preferred_languages", None)
         for key, value in validated_data.items():
             setattr(instance, key, value)
         if location_result is not None:
@@ -430,6 +546,14 @@ class StudentRequirementWriteSerializer(serializers.ModelSerializer):
             for existing in instance.schedule_preferences.all():
                 existing.delete(hard=True)
             self._apply_preferences(instance, preferences)
+
+        # Same "only touch what was explicitly sent" contract - reached
+        # whenever validate() put a (possibly empty, for the "switched to
+        # Any language" case) list into validated_data.
+        if languages is not None:
+            for existing in instance.preferred_languages.all():
+                existing.delete(hard=True)
+            self._apply_languages(instance, languages)
         return instance
 
     @staticmethod
@@ -451,6 +575,15 @@ class StudentRequirementWriteSerializer(serializers.ModelSerializer):
                     or str(exc)
                 )
                 raise serializers.ValidationError({"schedule_preferences": detail})
+
+    @staticmethod
+    def _apply_languages(requirement, languages):
+        StudentRequirementLanguage.objects.bulk_create(
+            StudentRequirementLanguage(
+                student_requirement=requirement, language=language, rank=rank
+            )
+            for rank, language in enumerate(languages, start=1)
+        )
 
 
 class StudentSchedulePreferenceSerializer(serializers.ModelSerializer):

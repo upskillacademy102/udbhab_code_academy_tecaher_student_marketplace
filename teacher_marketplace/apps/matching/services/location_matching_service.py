@@ -5,9 +5,21 @@ Implements Section 11-13 of the matching spec exactly:
     - Pincode -> lat/long -> distance calculation -> nearest
       eligible teachers (via PincodeLocation + PostGIS, never
       numeric pincode comparison).
-    - Radius expansion: start at INITIAL_LOCATION_RADIUS_KM, widen
-      by LOCATION_RADIUS_INCREMENT_KM until candidates are found or
-      MAX_LOCATION_RADIUS_KM is reached - never unbounded.
+    - Radius expansion (`radius_used_km`): start at
+      INITIAL_LOCATION_RADIUS_KM, widen by
+      LOCATION_RADIUS_INCREMENT_KM until ANY candidate is found or
+      MAX_LOCATION_RADIUS_KM is reached - purely informational
+      ("how far did we have to look"), NOT the per-candidate
+      eligibility cutoff.
+    - ELIGIBILITY is a flat `distance_km <= MAX_LOCATION_RADIUS_KM`
+      check for every candidate independently - never unbounded, and
+      never narrowed to whatever smaller radius the expansion above
+      happened to stop at. A teacher 10km away is eligible whether or
+      not a teacher 2km away also exists; the closer one only affects
+      ORDERING (nearest offered first), not whether the farther one
+      is in the pool at all - required for "offer the nearest
+      teacher, then the next-nearest on reject/timeout" to ever be
+      able to reach a second candidate.
     - LocationScoringService converts distance into a 0-100 score.
 
 SCORING APPROACH CHOSEN: LINEAR DECAY, explained per the spec's
@@ -154,7 +166,19 @@ class LocationMatchingService:
                 )
                 continue
 
-            is_within = distance_km <= radius_used
+            # ELIGIBILITY is a flat cutoff at the configured MAXIMUM radius,
+            # never the (possibly much smaller) `radius_used` the expansion
+            # loop above happened to stop at. `radius_used` only answers
+            # "how far did we have to look to find ANYONE at all" - it is
+            # not a per-candidate cutoff. Using it as one would make a
+            # genuinely in-range teacher (e.g. 10km away, well inside a
+            # 20km max) ineligible just because a CLOSER teacher (e.g.
+            # 2km away) also exists and made the search stop expanding
+            # early - which would silently defeat "offer the nearest
+            # teacher first, and only fall back to a farther one if they
+            # reject or time out": the farther-but-still-in-range teacher
+            # would never even be a candidate to fall back to.
+            is_within = distance_km <= config.max_location_radius_km
             score = LocationScoringService.score_for_distance(
                 distance_km, config.max_location_radius_km
             )
@@ -163,7 +187,7 @@ class LocationMatchingService:
                 score=score,
                 distance_km=round(distance_km, 2),
                 radius_used_km=radius_used,
-                matched_via="within_radius" if is_within else "no_teachers_found",
+                matched_via="within_radius" if is_within else "beyond_max_radius",
             )
 
         return results

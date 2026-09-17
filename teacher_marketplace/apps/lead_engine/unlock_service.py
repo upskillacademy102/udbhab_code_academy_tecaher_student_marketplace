@@ -284,7 +284,7 @@ def _mark_unlocked(teacher, lead: Lead, *, is_free_unlock: bool, cost: int):
     allowance and purchased-balance paths in _unlock_lead_contact_txn route
     through here), so it is also the one place the two unlock notifications
     fire - the teacher's own "Lead Unlocked" receipt, and the student's
-    "A teacher unlocked your enquiry" heads-up. Hooking notifications here
+    "A teacher unlocked your lead" heads-up. Hooking notifications here
     rather than in the API view guarantees both fire for every unlock
     regardless of caller (the view, the admin action, a direct service
     call from a test) - a view-layer hook is one refactor away from being
@@ -299,8 +299,12 @@ def _mark_unlocked(teacher, lead: Lead, *, is_free_unlock: bool, cost: int):
         tokens_deducted=cost,
     )
 
+    from apps.matching.services.lead_distribution_service import (
+        LeadDistributionService,
+    )
     from apps.notifications.services import NotificationService
 
+    LeadDistributionService.on_unlocked(lead, teacher)
     NotificationService.lead_unlocked(history)
     NotificationService.student_lead_unlocked(lead)
 

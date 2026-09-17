@@ -16,6 +16,7 @@ requirements exclusively through apps.lead_engine's Lead records
 import logging
 
 from django.db import transaction
+from django.db.models import Exists, OuterRef
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import generics, status
 from rest_framework.views import APIView
@@ -25,6 +26,7 @@ from apps.core.exceptions.custom_exceptions import (
     ValidationException,
 )
 from apps.core.responses import APIResponse
+from apps.lead_engine.models import Lead
 from apps.lead_engine.tasks import process_requirement_leads
 from apps.student_requirement.models import (
     LeadDistributionStatus,
@@ -45,6 +47,24 @@ from apps.trust.gates import (
 )
 
 logger = logging.getLogger("apps.student_requirement")
+
+
+def _with_unlock_annotation(queryset):
+    """
+    Annotates `has_unlocked_lead` (True once any Lead for the row has
+    contact_unlocked=True) via a single EXISTS subquery per row, rather
+    than StudentRequirementSerializer.get_has_unlocked_lead() falling back
+    to one `.leads.filter(...).exists()` query per requirement in a list
+    response - the same N+1-avoidance shape as prefetch_related, just for
+    a boolean instead of a related object list.
+    """
+    return queryset.annotate(
+        has_unlocked_lead=Exists(
+            Lead.objects.filter(
+                student_requirement=OuterRef("pk"), contact_unlocked=True
+            )
+        )
+    )
 
 
 @extend_schema_view(
@@ -74,10 +94,10 @@ class StudentRequirementListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return StudentRequirement.objects.none()
-        return (
+        return _with_unlock_annotation(
             StudentRequirement.objects.filter(student=self.request.user)
-            .select_related("subject", "preferred_language", "city")
-            .prefetch_related("schedule_preferences")
+            .select_related("subject", "city")
+            .prefetch_related("schedule_preferences", "preferred_languages__language")
         )
 
     def get_serializer_class(self):
@@ -203,7 +223,10 @@ class StudentRequirementDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
     GET: Retrieve one of the authenticated student's own
     requirements.
-    PUT/PATCH: Update it (only while still OPEN - see note below).
+    PUT/PATCH: Update it - blocked once a teacher has unlocked its
+    contact details (see StudentRequirementWriteSerializer.validate),
+    regardless of `status` (status alone flips to MATCHED the moment a
+    teacher is merely soft-matched, long before anyone unlocks anything).
     DELETE: Soft-delete it (withdraw the requirement).
     """
 
@@ -216,9 +239,11 @@ class StudentRequirementDetailView(generics.RetrieveUpdateDestroyAPIView):
         # that id exists at all.
         if getattr(self, "swagger_fake_view", False):
             return StudentRequirement.objects.none()
-        return StudentRequirement.objects.filter(
-            student=self.request.user
-        ).prefetch_related("schedule_preferences")
+        return _with_unlock_annotation(
+            StudentRequirement.objects.filter(student=self.request.user).prefetch_related(
+                "schedule_preferences", "preferred_languages__language"
+            )
+        )
 
     def get_serializer_class(self):
         if self.request.method in ("PUT", "PATCH"):

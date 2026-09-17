@@ -35,7 +35,7 @@ from rest_framework.test import APITestCase
 from apps.accounts.models import UserRole
 from apps.accounts.tests.helpers import login, make_user
 from apps.languages.models import Language
-from apps.lead_engine.models import Lead
+from apps.lead_engine.models import Lead, LeadStatus
 from apps.lead_engine.services import generate_leads_for_requirement
 from apps.location.models import City, Country, State
 from apps.matching.models import (
@@ -48,6 +48,7 @@ from apps.matching.services.lead_distribution_service import LeadDistributionSer
 from apps.student_requirement.models import (
     RequirementStatus,
     StudentRequirement,
+    StudentRequirementLanguage,
     StudentSchedulePreference,
 )
 from apps.subjects.models import Subject
@@ -89,7 +90,7 @@ class PipelineFixtureMixin:
         cls.pro_plan = SubscriptionPlan.objects.get(name="Professional")
         cls.elite_plan = SubscriptionPlan.objects.get(name="Elite")
 
-        # Pincodes ~2 km apart (near) and ~40 km apart (far) from the student.
+        # Pincodes ~2 km (near), ~10 km (mid) and ~40 km (far) from the student.
         cls.pin_student = PincodeLocation.objects.create(
             pincode="700001",
             location=Point(88.3639, 22.5726, srid=4326),
@@ -98,6 +99,11 @@ class PipelineFixtureMixin:
         cls.pin_near = PincodeLocation.objects.create(
             pincode="700020",
             location=Point(88.3800, 22.5550, srid=4326),
+            city="Kolkata",
+        )
+        cls.pin_mid = PincodeLocation.objects.create(
+            pincode="700030",
+            location=Point(88.4639, 22.5726, srid=4326),
             city="Kolkata",
         )
         cls.pin_far = PincodeLocation.objects.create(
@@ -186,7 +192,8 @@ class PipelineFixtureMixin:
         student=None,
         *,
         subject=None,
-        language=None,
+        languages=None,
+        no_language_preference=False,
         mode=TeachingMode.ONLINE,
         city=None,
         pincode=None,
@@ -197,12 +204,17 @@ class PipelineFixtureMixin:
         req = StudentRequirement.objects.create(
             student=student,
             subject=subject or self.math,
-            preferred_language=language or self.english,
             teaching_mode=mode,
             city=city,
             pincode_location=pincode,
             class_duration_minutes=duration,
+            no_language_preference=no_language_preference,
         )
+        if not no_language_preference:
+            for rank, language in enumerate(languages or [self.english], start=1):
+                StudentRequirementLanguage.objects.create(
+                    student_requirement=req, language=language, rank=rank
+                )
         for day, start, end, tz, flex in preferences:
             StudentSchedulePreference.objects.create(
                 student_requirement=req,
@@ -271,7 +283,7 @@ class SchedulePreferenceDistributionRegressionTest(PipelineFixtureMixin, APITest
         resp = self.post_requirement(
             {
                 "subject": "Mathematics",
-                "preferred_language": "English",
+                "preferred_languages": ["English"],
                 "teaching_mode": "online",
                 "class_duration_minutes": 60,
                 "schedule_preferences": [
@@ -304,6 +316,7 @@ class SchedulePreferenceDistributionRegressionTest(PipelineFixtureMixin, APITest
         self.post_requirement(
             {
                 "subject": "Mathematics",
+                "preferred_languages": ["English"],
                 "teaching_mode": "online",
                 "schedule_preferences": [
                     {
@@ -347,7 +360,7 @@ class SchedulePreferenceDistributionRegressionTest(PipelineFixtureMixin, APITest
         resp = self.post_requirement(
             {
                 "subject": "Mathematics",
-                "preferred_language": "English",
+                "preferred_languages": ["English"],
                 "teaching_mode": "online",
             },
         )
@@ -382,7 +395,7 @@ class OfflineCityGeocodeRegressionTest(PipelineFixtureMixin, APITestCase):
         return student, self.post_requirement(
             {
                 "subject": "Mathematics",
-                "preferred_language": "English",
+                "preferred_languages": ["English"],
                 "teaching_mode": "offline",
                 "city": "Kolkata",
                 "schedule_preferences": [
@@ -454,7 +467,7 @@ class OfflineCityGeocodeRegressionTest(PipelineFixtureMixin, APITestCase):
                 "/api/v1/student-requirements/",
                 {
                     "subject": "Mathematics",
-                    "preferred_language": "English",
+                    "preferred_languages": ["English"],
                     "teaching_mode": "offline",
                     "city": "Kolkata",
                     "schedule_preferences": [
@@ -542,7 +555,7 @@ class MatchingEdgeCaseTests(PipelineFixtureMixin, APITestCase):
         resp = self.post_requirement(
             {
                 "subject": "maths",
-                "preferred_language": "English",
+                "preferred_languages": ["English"],
                 "teaching_mode": "online",
                 "schedule_preferences": [
                     {
@@ -566,16 +579,39 @@ class MatchingEdgeCaseTests(PipelineFixtureMixin, APITestCase):
 
     def test_wrong_language_excluded_from_candidates(self):
         self.make_teacher("Esha", languages=[self.hindi])
-        leads, _ = self.run_pipeline(self.make_requirement(language=self.english))
+        leads, _ = self.run_pipeline(self.make_requirement(languages=[self.english]))
         self.assertEqual(leads, [])
 
     def test_no_language_preference_matches_any_language(self):
         self.make_teacher("Esha", languages=[self.hindi])
-        req = self.make_requirement(language=None)
-        req.preferred_language = None
-        req.save(update_fields=["preferred_language"])
+        req = self.make_requirement(no_language_preference=True)
         leads, assignments = self.run_pipeline(req)
         self.assertEqual(len(leads), 1)
+
+    def test_lower_ranked_language_match_scores_below_top_choice(self):
+        # Esha only speaks Hindi (the student's rank-2 choice); Farid speaks
+        # both. Esha should score lower than Farid on the language
+        # component specifically, per MatchingService._LANGUAGE_RANK_SCORES.
+        self.make_teacher("Esha", languages=[self.hindi])
+        self.make_teacher("Farid", languages=[self.english, self.hindi])
+        req = self.make_requirement(languages=[self.english, self.hindi])
+        leads, _ = self.run_pipeline(req)
+        scores = {
+            lead.teacher_profile.teacher.user.first_name: lead.match_score.language_score
+            for lead in leads
+        }
+        self.assertEqual(scores["Farid"], 100)
+        self.assertEqual(scores["Esha"], 80)
+
+    def test_any_listed_language_passes_the_hard_eligibility_gate(self):
+        # Esha speaks only the student's SECOND choice - still eligible for
+        # an actual offer (LeadAssignment), not just a soft Lead: rank
+        # affects relative score, not the pass/fail gate.
+        self.make_teacher("Esha", languages=[self.hindi])
+        req = self.make_requirement(languages=[self.english, self.hindi])
+        leads, assignments = self.run_pipeline(req)
+        self.assertEqual(len(leads), 1)
+        self.assertEqual(len(assignments), 1)
         self.assertEqual(len(assignments), 1)
 
     def test_time_overlap_required_for_distribution_not_for_soft_lead(self):
@@ -604,6 +640,27 @@ class MatchingEdgeCaseTests(PipelineFixtureMixin, APITestCase):
             self.make_requirement(mode=TeachingMode.ONLINE)
         )
         self.assertEqual(len(assignments), 1)
+
+    def test_offline_only_teacher_excluded_from_online_requirement(self):
+        # Teaching-mode compatibility used to be checked nowhere as a hard
+        # gate in EligibilityService (only ever soft-scored in the Lead
+        # pipeline) - a strictly offline teacher, who has explicitly said
+        # they never teach online, could still be marked eligible for and
+        # offered a purely online lead.
+        self.make_teacher("Imran", mode=TeachingMode.OFFLINE, cities=[], pincode=None)
+        leads, assignments = self.run_pipeline(
+            self.make_requirement(mode=TeachingMode.ONLINE)
+        )
+        self.assertEqual(leads, [])
+        self.assertEqual(assignments, [])
+
+    def test_online_only_teacher_excluded_from_offline_requirement(self):
+        self.make_teacher("Zara", mode=TeachingMode.ONLINE, cities=[], pincode=None)
+        leads, assignments = self.run_pipeline(
+            self.make_requirement(mode=TeachingMode.OFFLINE, city=self.kolkata)
+        )
+        self.assertEqual(leads, [])
+        self.assertEqual(assignments, [])
 
     def test_pending_verification_excluded(self):
         self.make_teacher("Gita", verified=False)
@@ -638,6 +695,13 @@ class LocationExpansionTests(PipelineFixtureMixin, APITestCase):
         self.assertEqual(len(assignments), 1)
 
     def test_far_offline_teacher_is_ineligible(self):
+        # A ~40km-away teacher must be excluded even from the soft Lead
+        # (visible in the teacher's "Leads" and payable via
+        # /leads/unlock/) - not just from the real LeadAssignment offer.
+        # Before this was a hard gate, real distance only fed a 10%-
+        # weighted score that a strong subject/time/language match easily
+        # outweighed, so a teacher 40km away for an in-person lesson still
+        # showed up as a lead the student had no realistic way to use.
         self.make_teacher(
             "Bibek",
             mode=TeachingMode.OFFLINE,
@@ -645,8 +709,20 @@ class LocationExpansionTests(PipelineFixtureMixin, APITestCase):
             pincode=self.pin_far,
         )
         leads, assignments = self.run_pipeline(self._offline_requirement())
-        self.assertEqual(len(leads), 1)  # soft lead (location scored, still >= 40)
+        self.assertEqual(leads, [])  # outside 20 km max radius - no soft lead either
         self.assertEqual(assignments, [])  # outside 20 km max radius
+
+    def test_teacher_not_serving_the_city_and_without_pincode_is_excluded(self):
+        # No pincode on either side falls back to the "does this teacher
+        # serve that city" signal - but that fallback must be a real gate
+        # now too, not the old soft 40-point partial credit that
+        # MINIMUM_LEAD_MATCH_SCORE (40) let straight through regardless.
+        self.make_teacher(
+            "Farha", mode=TeachingMode.OFFLINE, cities=[self.howrah], pincode=None,
+        )
+        leads, assignments = self.run_pipeline(self._offline_requirement())
+        self.assertEqual(leads, [])
+        self.assertEqual(assignments, [])
 
     def test_missing_teacher_pincode_degrades_gracefully(self):
         self.make_teacher(
@@ -655,6 +731,36 @@ class LocationExpansionTests(PipelineFixtureMixin, APITestCase):
         # Must not raise, must not offer (location cannot be evaluated).
         leads, assignments = self.run_pipeline(self._offline_requirement())
         self.assertEqual(assignments, [])
+
+    def test_requirement_with_only_a_pincode_excludes_an_unpincoded_teacher(self):
+        # Regression: a requirement created from a raw pincode (no City
+        # row at all, city_id is None - see LocationResolutionService)
+        # combined with a candidate teacher who has neither a
+        # pincode_location nor a served-city entry must be EXCLUDED, not
+        # default-included just because there was no `city_id` to check
+        # against. This is the exact real-world shape that let a ~44km
+        # mismatch through: a teacher whose pincode_location had gone
+        # stale (cleared/missing after a failed re-geocode) still matched
+        # an offline requirement that itself had only a pincode, no city.
+        self.make_teacher(
+            "Wafa", mode=TeachingMode.OFFLINE, cities=[], pincode=None,
+        )
+        req = self.make_requirement(
+            mode=TeachingMode.OFFLINE, city=None, pincode=self.pin_student
+        )
+        leads, assignments = self.run_pipeline(req)
+        self.assertEqual(leads, [])
+        self.assertEqual(assignments, [])
+
+    def test_requirement_with_only_a_pincode_still_finds_a_nearby_teacher(self):
+        self.make_teacher(
+            "Yusuf", mode=TeachingMode.OFFLINE, cities=[], pincode=self.pin_near,
+        )
+        req = self.make_requirement(
+            mode=TeachingMode.OFFLINE, city=None, pincode=self.pin_student
+        )
+        leads, assignments = self.run_pipeline(req)
+        self.assertEqual(len(assignments), 1)
 
     def test_missing_student_pincode_degrades_gracefully(self):
         self.make_teacher(
@@ -668,6 +774,277 @@ class LocationExpansionTests(PipelineFixtureMixin, APITestCase):
         )
         leads, assignments = self.run_pipeline(req)  # no exception, no infinite loop
         self.assertEqual(assignments, [])
+
+
+# ======================================================================
+# NEAREST-FIRST SEQUENTIAL OFFERING (OFFLINE/BOTH ONLY)
+# ======================================================================
+class OfflineNearestFirstSequencingTests(PipelineFixtureMixin, APITestCase):
+    """
+    "Always the student near the teacher should receive the lead, and if
+    they reject or the allocated time passes then only the further
+    teachers should get the leads" - for an in-person lesson, distance is
+    real and matters; for an online one it doesn't. So within a
+    subscription tier: OFFLINE/BOTH offers the single nearest untried
+    teacher at a time (cascading on reject/expiry before moving to the
+    next tier); ONLINE keeps the pre-existing simultaneous fan-out
+    (covered by RankingAndDistributionTests / test_online_requirement_
+    ignores_location) since there is no distance to sequence by.
+    """
+
+    def _offline_requirement(self):
+        return self.make_requirement(
+            mode=TeachingMode.OFFLINE, city=self.kolkata, pincode=self.pin_student
+        )
+
+    def test_only_the_nearest_same_tier_teacher_is_offered_first(self):
+        near = self.make_teacher(
+            "Near", mode=TeachingMode.OFFLINE, cities=[self.kolkata], pincode=self.pin_near,
+        )
+        self.make_teacher(
+            "Mid", mode=TeachingMode.OFFLINE, cities=[self.kolkata], pincode=self.pin_mid,
+        )
+        leads, assignments = self.run_pipeline(self._offline_requirement())
+        self.assertEqual(len(leads), 2)  # both are still real soft-lead candidates
+        self.assertEqual(len(assignments), 1)  # only the nearer one is actually offered
+        self.assertEqual(assignments[0].teacher_id, near.teacher_id)
+
+    def test_farther_teacher_offered_only_after_nearer_one_rejects(self):
+        near = self.make_teacher(
+            "Near", mode=TeachingMode.OFFLINE, cities=[self.kolkata], pincode=self.pin_near,
+        )
+        mid = self.make_teacher(
+            "Mid", mode=TeachingMode.OFFLINE, cities=[self.kolkata], pincode=self.pin_mid,
+        )
+        _, assignments = self.run_pipeline(self._offline_requirement())
+        self.assertEqual(assignments[0].teacher_id, near.teacher_id)
+        self.assertEqual(assignments[0].assignment_stage, 1)
+
+        LeadDistributionService.reject_assignment(assignments[0])
+
+        lead = assignments[0].lead
+        next_stage = LeadAssignment.objects.filter(lead=lead, assignment_stage=2)
+        self.assertEqual(next_stage.count(), 1)
+        self.assertEqual(next_stage.first().teacher_id, mid.teacher_id)
+        # Still the SAME subscription tier - this is a within-tier
+        # cascade, not a tier advance.
+        self.assertEqual(
+            next_stage.first().subscription_tier, assignments[0].subscription_tier
+        )
+
+    def test_farther_teacher_offered_only_after_nearer_one_expires(self):
+        near = self.make_teacher(
+            "Near", mode=TeachingMode.OFFLINE, cities=[self.kolkata], pincode=self.pin_near,
+        )
+        mid = self.make_teacher(
+            "Mid", mode=TeachingMode.OFFLINE, cities=[self.kolkata], pincode=self.pin_mid,
+        )
+        _, assignments = self.run_pipeline(self._offline_requirement())
+        self.assertEqual(assignments[0].teacher_id, near.teacher_id)
+
+        LeadDistributionService.expire_assignment(assignments[0])
+
+        lead = assignments[0].lead
+        next_stage = LeadAssignment.objects.filter(lead=lead, assignment_stage=2)
+        self.assertEqual(next_stage.count(), 1)
+        self.assertEqual(next_stage.first().teacher_id, mid.teacher_id)
+
+    def test_a_nearer_free_teacher_still_goes_before_a_farther_elite_one(self):
+        # Offline/both ignores subscription tier entirely - pure distance,
+        # no exceptions. Subscription only matters for ONLINE ordering.
+        far_but_elite = self.make_teacher(
+            "Elite", mode=TeachingMode.OFFLINE, cities=[self.kolkata],
+            pincode=self.pin_mid, plan=self.elite_plan,
+        )
+        free_near = self.make_teacher(
+            "FreeNear", mode=TeachingMode.OFFLINE, cities=[self.kolkata],
+            pincode=self.pin_near, plan=None,
+        )
+        _, assignments = self.run_pipeline(self._offline_requirement())
+        self.assertEqual(len(assignments), 1)
+        self.assertEqual(assignments[0].teacher_id, free_near.teacher_id)
+        self.assertEqual(assignments[0].subscription_tier, "Free")
+
+        # Confirmed by cascade: if the near Free teacher rejects, the
+        # farther Elite teacher is offered next - tier never jumps the
+        # queue, it just becomes the next-nearest untried candidate.
+        LeadDistributionService.reject_assignment(assignments[0])
+        lead = assignments[0].lead
+        next_stage = LeadAssignment.objects.filter(lead=lead, assignment_stage=2)
+        self.assertEqual(next_stage.count(), 1)
+        self.assertEqual(next_stage.first().teacher_id, far_but_elite.teacher_id)
+
+    def test_tied_distance_offline_teachers_are_offered_simultaneously_regardless_of_plan(self):
+        # Ties at the exact same distance go out together, no matter plan.
+        elite = self.make_teacher(
+            "TiedElite", mode=TeachingMode.OFFLINE, cities=[self.kolkata],
+            pincode=self.pin_near, plan=self.elite_plan,
+        )
+        free = self.make_teacher(
+            "TiedFree", mode=TeachingMode.OFFLINE, cities=[self.kolkata],
+            pincode=self.pin_near, plan=None,
+        )
+        _, assignments = self.run_pipeline(self._offline_requirement())
+        self.assertEqual(len(assignments), 2)
+        self.assertEqual(
+            {a.teacher_id for a in assignments}, {elite.teacher_id, free.teacher_id}
+        )
+        self.assertEqual(assignments[0].assigned_at, assignments[1].assigned_at)
+
+    def test_unlocking_offline_lead_cancels_the_tied_sibling(self):
+        # Offline is exclusive (unlike online): whichever tied teacher
+        # unlocks first via the real API takes it, and the other's open
+        # assignment is cancelled - regardless of which of the two
+        # happens to be the "canonical" Lead every assignment is
+        # actually anchored to (see visibility_service's docstring).
+        req = self._offline_requirement()
+        elite = self.make_teacher(
+            "TiedElite", mode=TeachingMode.OFFLINE, cities=[self.kolkata],
+            pincode=self.pin_near, plan=self.elite_plan,
+        )
+        free = self.make_teacher(
+            "TiedFree", mode=TeachingMode.OFFLINE, cities=[self.kolkata],
+            pincode=self.pin_near, plan=None,
+        )
+        leads, assignments = self.run_pipeline(req)
+        self.assertEqual(len(assignments), 2)
+
+        elite_lead = Lead.objects.get(teacher_profile=elite, student_requirement=req)
+        login(self.client, elite.teacher.user)
+        resp = self.client.post(
+            "/api/v1/leads/unlock/", {"lead_id": str(elite_lead.id)}, format="json"
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+
+        elite_assignment = LeadAssignment.objects.get(lead=leads[0], teacher=elite.teacher)
+        free_assignment = LeadAssignment.objects.get(lead=leads[0], teacher=free.teacher)
+        self.assertEqual(elite_assignment.status, AssignmentStatus.ACCEPTED)
+        self.assertEqual(free_assignment.status, AssignmentStatus.CANCELLED)
+
+        # Free's own lead is consequently no longer visible/unlockable.
+        self.client.post("/api/v1/auth/logout/", {}, format="json")
+        login(self.client, free.teacher.user)
+        free_lead = Lead.objects.get(teacher_profile=free, student_requirement=req)
+        self.assertEqual(
+            self.client.get(f"/api/v1/leads/{free_lead.id}/").status_code, 404
+        )
+
+    def test_online_requirement_still_offers_the_whole_tier_at_once(self):
+        # Sanity check that the offline-only sequencing change did not
+        # touch online-mode behaviour.
+        self.make_teacher("Anita", plan=self.elite_plan, rating="4.9")
+        self.make_teacher("Amit", plan=self.elite_plan, rating="4.1")
+        _, assignments = self.run_pipeline(self.make_requirement())  # default: online
+        self.assertEqual(len(assignments), 2)
+
+
+class LeadRejectionTests(PipelineFixtureMixin, APITestCase):
+    """
+    POST /leads/{id}/reject/ - a permanent, per-teacher decline of a lead
+    they have not unlocked yet. Distinct from (but triggers) a
+    LeadAssignment reject: it also marks the Lead itself REJECTED so
+    leads_visible_to() never surfaces it to this teacher again, and it
+    releases the open assignment turn immediately rather than waiting out
+    the response window.
+    """
+
+    def _as(self, profile):
+        login(self.client, profile.teacher.user)
+
+    def _offline_requirement(self):
+        return self.make_requirement(
+            mode=TeachingMode.OFFLINE, city=self.kolkata, pincode=self.pin_student
+        )
+
+    def test_reject_releases_cascade_immediately(self):
+        near = self.make_teacher(
+            "Near", mode=TeachingMode.OFFLINE, cities=[self.kolkata], pincode=self.pin_near,
+        )
+        mid = self.make_teacher(
+            "Mid", mode=TeachingMode.OFFLINE, cities=[self.kolkata], pincode=self.pin_mid,
+        )
+        req = self._offline_requirement()
+        _, assignments = self.run_pipeline(req)
+        near_lead = Lead.objects.get(teacher_profile=near, student_requirement=req)
+
+        self._as(near)
+        resp = self.client.post(f"/api/v1/leads/{near_lead.id}/reject/", {}, format="json")
+        self.assertEqual(resp.status_code, 200, resp.content)
+
+        near_lead.refresh_from_db()
+        self.assertEqual(near_lead.status, LeadStatus.REJECTED)
+        self.assertIsNotNone(near_lead.rejected_at)
+
+        # No 24h wait needed - the next-nearest teacher is offered right away.
+        next_stage = LeadAssignment.objects.filter(
+            lead=assignments[0].lead, assignment_stage=2
+        )
+        self.assertEqual(next_stage.count(), 1)
+        self.assertEqual(next_stage.first().teacher_id, mid.teacher_id)
+
+    def test_rejected_lead_disappears_from_teachers_own_list_permanently(self):
+        near = self.make_teacher(
+            "Near", mode=TeachingMode.OFFLINE, cities=[self.kolkata], pincode=self.pin_near,
+        )
+        req = self._offline_requirement()
+        self.run_pipeline(req)
+        near_lead = Lead.objects.get(teacher_profile=near, student_requirement=req)
+
+        self._as(near)
+        self.client.post(f"/api/v1/leads/{near_lead.id}/reject/", {}, format="json")
+
+        self.assertEqual(self.client.get("/api/v1/leads/").json()["data"], [])
+        self.assertEqual(
+            self.client.get(f"/api/v1/leads/{near_lead.id}/").status_code, 404
+        )
+
+    def test_cannot_reject_after_unlocking(self):
+        near = self.make_teacher(
+            "Near", mode=TeachingMode.OFFLINE, cities=[self.kolkata], pincode=self.pin_near,
+        )
+        req = self._offline_requirement()
+        self.run_pipeline(req)
+        near_lead = Lead.objects.get(teacher_profile=near, student_requirement=req)
+
+        self._as(near)
+        unlock_resp = self.client.post(
+            "/api/v1/leads/unlock/", {"lead_id": str(near_lead.id)}, format="json"
+        )
+        self.assertEqual(unlock_resp.status_code, 200, unlock_resp.content)
+
+        resp = self.client.post(f"/api/v1/leads/{near_lead.id}/reject/", {}, format="json")
+        self.assertEqual(resp.status_code, 400)
+        near_lead.refresh_from_db()
+        self.assertNotEqual(near_lead.status, LeadStatus.REJECTED)
+
+    def test_cannot_reject_the_same_lead_twice(self):
+        near = self.make_teacher(
+            "Near", mode=TeachingMode.OFFLINE, cities=[self.kolkata], pincode=self.pin_near,
+        )
+        req = self._offline_requirement()
+        self.run_pipeline(req)
+        near_lead = Lead.objects.get(teacher_profile=near, student_requirement=req)
+
+        self._as(near)
+        first = self.client.post(f"/api/v1/leads/{near_lead.id}/reject/", {}, format="json")
+        self.assertEqual(first.status_code, 200)
+        second = self.client.post(f"/api/v1/leads/{near_lead.id}/reject/", {}, format="json")
+        self.assertEqual(second.status_code, 404)
+
+    def test_cannot_reject_another_teachers_lead(self):
+        near = self.make_teacher(
+            "Near", mode=TeachingMode.OFFLINE, cities=[self.kolkata], pincode=self.pin_near,
+        )
+        other = self.make_teacher("Other", mode=TeachingMode.OFFLINE, cities=[self.kolkata])
+        req = self._offline_requirement()
+        self.run_pipeline(req)
+        near_lead = Lead.objects.get(teacher_profile=near, student_requirement=req)
+
+        self._as(other)
+        resp = self.client.post(f"/api/v1/leads/{near_lead.id}/reject/", {}, format="json")
+        self.assertEqual(resp.status_code, 404)
+        near_lead.refresh_from_db()
+        self.assertNotEqual(near_lead.status, LeadStatus.REJECTED)
 
 
 # ======================================================================
@@ -692,20 +1069,115 @@ class RankingAndDistributionTests(PipelineFixtureMixin, APITestCase):
         self.assertEqual(assignments[0].teacher_id, self.elite.teacher_id)
         self.assertEqual(assignments[0].subscription_tier, "Elite")
 
-    def test_cascade_advances_tier_on_rejection(self):
+    def test_online_reject_does_not_cascade(self):
+        # Unlike offline, an online rejection just stops for that one
+        # teacher - it never triggers the next tier by itself. Only the
+        # time-based reveal (below) does that.
         req = self._three_tier_setup()
         _, assignments = self.run_pipeline(req)
         LeadDistributionService.reject_assignment(assignments[0])
 
         lead = assignments[0].lead
-        stage2 = LeadAssignment.objects.filter(lead=lead, assignment_stage=2)
-        self.assertEqual(stage2.count(), 1)
-        self.assertEqual(stage2.first().teacher_id, self.pro.teacher_id)
+        self.assertEqual(
+            LeadAssignment.objects.filter(lead=lead, assignment_stage=2).count(), 0
+        )
 
-        LeadDistributionService.reject_assignment(stage2.first())
-        stage3 = LeadAssignment.objects.filter(lead=lead, assignment_stage=3)
-        self.assertEqual(stage3.count(), 1)
-        self.assertEqual(stage3.first().teacher_id, self.free.teacher_id)
+    def test_online_tier_reveal_is_time_based_not_resolution_gated(self):
+        # The next tier is revealed on a fixed clock EVEN IF stage 1 is
+        # still untouched (ASSIGNED, neither unlocked nor rejected) -
+        # online is shared/pooled, not exclusive.
+        req = self._three_tier_setup()
+        _, assignments = self.run_pipeline(req)
+        lead = assignments[0].lead
+
+        revealed = LeadDistributionService.reveal_next_online_stage(lead, force=True)
+        self.assertEqual(len(revealed), 1)
+        self.assertEqual(revealed[0].teacher_id, self.pro.teacher_id)
+        # Stage 1's assignment is untouched - still open, not rejected.
+        assignments[0].refresh_from_db()
+        self.assertEqual(assignments[0].status, AssignmentStatus.ASSIGNED)
+
+        revealed_again = LeadDistributionService.reveal_next_online_stage(
+            lead, force=True
+        )
+        self.assertEqual(len(revealed_again), 1)
+        self.assertEqual(revealed_again[0].teacher_id, self.free.teacher_id)
+
+        # Nothing left to reveal - a further call is a clean no-op.
+        self.assertEqual(
+            LeadDistributionService.reveal_next_online_stage(lead, force=True), []
+        )
+
+    def test_shared_unlock_and_counter_across_tiers(self):
+        # Online is shared/pooled: Elite unlocking must not stop Free from
+        # later unlocking the SAME lead too, and both should see an
+        # accurate "N teachers unlocked" count. NOTE: the "canonical" lead
+        # distribute_lead() is anchored to is whichever candidate ranks
+        # top by MATCH SCORE (rating/experience/etc.), not necessarily the
+        # top-TIER teacher - so this test deliberately looks up each
+        # teacher's OWN Lead row rather than assuming assignments[0].lead
+        # belongs to any particular one of them.
+        req = self._three_tier_setup()
+        _, assignments = self.run_pipeline(req)
+        lead = assignments[0].lead
+        LeadDistributionService.reveal_next_online_stage(lead, force=True)
+        LeadDistributionService.reveal_next_online_stage(lead, force=True)
+
+        elite_lead = Lead.objects.get(teacher_profile=self.elite, student_requirement=req)
+        login(self.client, self.elite.teacher.user)
+        r1 = self.client.post(
+            "/api/v1/leads/unlock/", {"lead_id": str(elite_lead.id)}, format="json"
+        )
+        self.assertEqual(r1.status_code, 200, r1.content)
+
+        elite_assignment = LeadAssignment.objects.get(
+            lead=lead, teacher=self.elite.teacher
+        )
+        self.assertEqual(elite_assignment.status, AssignmentStatus.ACCEPTED)
+
+        free_lead = Lead.objects.get(
+            teacher_profile=self.free, student_requirement=req
+        )
+        # Switch the client to Free - the single-active-session rule 409s
+        # a login attempt while Elite's cookie is still presented.
+        self.client.post("/api/v1/auth/logout/", {}, format="json")
+        login(self.client, self.free.teacher.user)
+        r2 = self.client.post(
+            "/api/v1/leads/unlock/", {"lead_id": str(free_lead.id)}, format="json"
+        )
+        self.assertEqual(r2.status_code, 200, r2.content)
+
+        # Free's own assignment is untouched by Elite's unlock (no cancel).
+        free_assignment = LeadAssignment.objects.get(
+            lead=lead, teacher=self.free.teacher
+        )
+        self.assertEqual(free_assignment.status, AssignmentStatus.ACCEPTED)
+
+        detail = self.client.get(f"/api/v1/leads/{free_lead.id}/")
+        self.assertEqual(detail.json()["data"]["unlocked_count"], 2)
+
+        list_resp = self.client.get("/api/v1/leads/")
+        row = next(r for r in list_resp.json()["data"] if r["id"] == str(free_lead.id))
+        self.assertEqual(row["unlocked_count"], 2)
+
+    def test_online_tier_reveal_respects_the_configured_window_without_force(self):
+        req = self._three_tier_setup()
+        _, assignments = self.run_pipeline(req)
+        lead = assignments[0].lead
+
+        # Not due yet (default online_tier_window_hours=8, no time has passed).
+        self.assertEqual(
+            LeadDistributionService.reveal_next_online_stage(lead), []
+        )
+
+        assignments[0].refresh_from_db()
+        stage1_assigned_at = assignments[0].assigned_at
+        LeadAssignment.objects.filter(lead=lead, assignment_stage=1).update(
+            assigned_at=stage1_assigned_at - timedelta(hours=9)
+        )
+        revealed = LeadDistributionService.reveal_next_online_stage(lead)
+        self.assertEqual(len(revealed), 1)
+        self.assertEqual(revealed[0].teacher_id, self.pro.teacher_id)
 
     def test_acceptance_cancels_all_other_open_offers(self):
         # Two elite teachers so stage 1 has two simultaneous offers.
@@ -772,7 +1244,11 @@ class EmptyAndInvalidInputTests(PipelineFixtureMixin, APITestCase):
         login(self.client, student)
         resp = self.client.post(
             "/api/v1/student-requirements/",
-            {"subject": "Astrophysics of Kryptonian Botany", "teaching_mode": "online"},
+            {
+                "subject": "Astrophysics of Kryptonian Botany",
+                "preferred_languages": ["English"],
+                "teaching_mode": "online",
+            },
             format="json",
         )
         self.assertEqual(resp.status_code, 202)
@@ -963,13 +1439,25 @@ class TeacherIsolationSecurityTests(PipelineFixtureMixin, APITestCase):
 
         effective = plan or SubscriptionPlan.objects.get(name="Free")
         quota = effective.free_leads
-        t = self.make_teacher(name, plan=plan)
+        # Subject scoped to physics, not this class's default math: self.a/
+        # self.b (setUp fixtures) are Elite and also teach math, so they'd
+        # always out-rank this teacher's own tier and permanently hold
+        # stage 1 - t would generate a soft Lead but never actually be
+        # offered it. Keeping this teacher the sole eligible candidate is
+        # what lets distribute_lead() hand them stage 1 immediately below.
+        t = self.make_teacher(name, subjects=[self.physics], plan=plan)
         WalletService.get_or_create_wallet(t.teacher)  # empty wallet
         for _ in range(quota + 1):
             r = self.make_requirement(
-                student=make_user(role=UserRole.STUDENT), subject=self.math
+                student=make_user(role=UserRole.STUDENT), subject=self.physics
             )
-            generate_leads_for_requirement(r)
+            for lead in generate_leads_for_requirement(r):
+                # Unlocking is gated on actually holding a live
+                # LeadAssignment (leads_visible_to) - a real Lead is
+                # never unlockable without going through distribution
+                # first, so this helper must mirror that instead of
+                # leaving these as bare, never-offered soft leads.
+                LeadDistributionService.distribute_lead(lead)
         leads = list(Lead.objects.filter(teacher_profile=t).order_by("created_at"))
         return t, leads, quota
 
@@ -1120,7 +1608,7 @@ class MandatoryEndToEndTest(PipelineFixtureMixin, APITestCase):
         resp = self.post_requirement(
             {
                 "subject": "Mathematics",
-                "preferred_language": "English",
+                "preferred_languages": ["English"],
                 "teaching_mode": "online",
                 "class_duration_minutes": 60,
                 "student_class": "Class 10",
@@ -1233,7 +1721,7 @@ class AsyncDistributionTests(PipelineFixtureMixin, APITestCase):
         login(self.client, student)
         payload = {
             "subject": "Mathematics",
-            "preferred_language": "English",
+            "preferred_languages": ["English"],
             "teaching_mode": "online",
             "class_duration_minutes": 60,
         }
@@ -1260,6 +1748,7 @@ class AsyncDistributionTests(PipelineFixtureMixin, APITestCase):
                     "/api/v1/student-requirements/",
                     {
                         "subject": "Mathematics",
+                        "preferred_languages": ["English"],
                         "teaching_mode": "online",
                         "schedule_preferences": [
                             {
@@ -1378,6 +1867,7 @@ class AsyncDistributionTests(PipelineFixtureMixin, APITestCase):
                     "/api/v1/student-requirements/",
                     {
                         "subject": "Mathematics",
+                        "preferred_languages": ["English"],
                         "teaching_mode": "online",
                         "schedule_preferences": [
                             {

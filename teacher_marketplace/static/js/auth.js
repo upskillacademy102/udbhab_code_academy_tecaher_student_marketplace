@@ -165,12 +165,6 @@ document.addEventListener("alpine:init", () => {
     { n: 7, s: "S", full: "Sunday" },
   ];
 
-  const BANDS = [
-    { id: "morning", label: "Morning", hint: "6–12", from: "06:00", to: "12:00" },
-    { id: "afternoon", label: "Afternoon", hint: "12–5", from: "12:00", to: "17:00" },
-    { id: "evening", label: "Evening", hint: "5–10", from: "17:00", to: "22:00" },
-  ];
-
   /*
    * NOTE: defineProperties + getOwnPropertyDescriptors, NOT Object.assign.
    *
@@ -189,7 +183,7 @@ document.addEventListener("alpine:init", () => {
       // subject / language selection, adaptive picker and combobox
       window.taxonomyMixin(tax || {}),
       Object.getOwnPropertyDescriptors({
-        LEVELS, SKILL_LEVELS, DAYS, BANDS,
+        LEVELS, SKILL_LEVELS, DAYS,
         SKILL_SUBJECTS: Array.isArray(tax && tax.skillSubjects) ? tax.skillSubjects : [],
 
         // Whether the chosen subject is learned as a skill (an instrument,
@@ -210,9 +204,18 @@ document.addEventListener("alpine:init", () => {
 
         // captured intent — subject / subjectCustom / language come from
         // the mixin, which also owns the picker behaviour
+
         level: null,
-        days: [],
-        band: "evening",
+
+        // Free-time windows — shared by both roles' schedule step ("teach-
+        // hours" for a teacher, "when" for a student): a list of specific
+        // day+time windows plus an "I'm flexible" escape, same shape as
+        // frontend/src/lib/intent.ts's TimeWindow / Intent.windows and
+        // frontend/src/components/WindowPicker.tsx, so nothing needs
+        // translating once this reaches the authenticated React app
+        // (student side) or replayIntent.ts (teacher side).
+        windows: [{ day: 1, start: "18:00", end: "19:00" }],
+        flexible: false,
         // Teachers pick MULTIPLE languages, in order of how well they teach
         // in them. Order is the data: it is what the first language in the
         // list means. Kept as an ordered array of names, resolved to ids
@@ -249,13 +252,37 @@ document.addEventListener("alpine:init", () => {
             done.push("language");
           }
 
-          const days = q.get("days");
-          if (days) {
-            this.days = days.split(",").map(Number).filter((n) => n >= 1 && n <= 7);
-            if (this.days.length) done.push("when");
+          // Legacy ?days=&from=&to= scheme: parsed unconditionally as the
+          // old-bookmark fallback for the schedule step (below), expanded
+          // into one window per day sharing that one time range.
+          const legacyDays = q.get("days");
+          const legacyDayNums = legacyDays ? legacyDays.split(",").map(Number).filter((n) => n >= 1 && n <= 7) : [];
+          const legacyFrom = q.get("from");
+          const legacyTo = q.get("to");
+
+          // The student "when" step: the landing page sends either
+          // ?flexible=1 or ?windows=<JSON array of {day,start,end}>. An old
+          // bookmarked link using the scheme above still works, expanded
+          // into one window per day.
+          if (q.get("flexible") === "1") {
+            this.flexible = true;
+            done.push("when");
+          } else if (q.get("windows")) {
+            try {
+              const parsed = JSON.parse(q.get("windows"));
+              if (Array.isArray(parsed)) {
+                this.windows = parsed
+                  .filter((w) => w && w.day >= 1 && w.day <= 7 && w.start && w.end)
+                  .map((w) => ({ day: Number(w.day), start: String(w.start), end: String(w.end) }));
+              }
+              if (this.windows.length) done.push("when");
+            } catch (_) {
+              // Malformed param — fall through with the default window.
+            }
+          } else if (legacyDayNums.length && legacyFrom && legacyTo) {
+            this.windows = legacyDayNums.map((d) => ({ day: d, start: legacyFrom, end: legacyTo }));
+            done.push("when");
           }
-          const match = BANDS.find((b) => b.from === q.get("from"));
-          if (match) this.band = match.id;
 
           this.prefilled = done;
 
@@ -335,8 +362,8 @@ document.addEventListener("alpine:init", () => {
           if (has("language") && this.resolvedLanguage) {
             out.push({ step: "language", value: this.resolvedLanguage, icon: "globe" });
           }
-          if (has("when") && this.days.length) {
-            out.push({ step: "when", value: this.scheduleSummary(), icon: "clock" });
+          if (has("when") && (this.flexible || this.windows.length)) {
+            out.push({ step: "when", value: this.windowsSummary(), icon: "clock" });
           }
           return out;
         },
@@ -344,10 +371,16 @@ document.addEventListener("alpine:init", () => {
         // score, and the copy says so rather than hiding it.
         skip() { this.next(); },
 
-        toggleDay(n) {
-          const i = this.days.indexOf(n);
-          if (i === -1) this.days.push(n); else this.days.splice(i, 1);
-          this.days.sort((a, b) => a - b);
+        // Free-time windows (teach-hours / when step, shared by both roles).
+        toggleFlexible() {
+          this.flexible = !this.flexible;
+          this.windows = [];
+        },
+        addWindow() {
+          this.windows.push({ day: 1, start: "18:00", end: "19:00" });
+        },
+        removeWindow(i) {
+          this.windows.splice(i, 1);
         },
 
         /* ---- languages a teacher teaches in, best first ---- */
@@ -369,19 +402,25 @@ document.addEventListener("alpine:init", () => {
           return this.teachLanguages.indexOf(name) + 1;
         },
 
-        // "Monday mornings", "Tuesday & Thursday evenings", "most evenings" —
-        // the day stays singular and the part of day takes the plural, which
-        // is how people actually say it.
-        scheduleSummary() {
-          if (!this.days.length) return "";
-          const names = this.days.map((n) => (DAYS.find((d) => d.n === n) || {}).full).filter(Boolean);
-          const band = ((BANDS.find((b) => b.id === this.band) || {}).label || "").toLowerCase();
-          if (names.length >= 5) return "most " + band + "s";
-          let dayText;
-          if (names.length === 1) dayText = names[0];
-          else if (names.length === 2) dayText = names[0] + " & " + names[1];
-          else dayText = names.slice(0, -1).join(", ") + " & " + names[names.length - 1];
-          return dayText + " " + band + "s";
+        _formatClock(hhmm) {
+          const parts = String(hhmm || "").split(":").map(Number);
+          const h = parts[0], m = parts[1];
+          if (Number.isNaN(h)) return hhmm;
+          const period = h >= 12 ? "PM" : "AM";
+          const h12 = h % 12 === 0 ? 12 : h % 12;
+          return m ? `${h12}:${String(m).padStart(2, "0")} ${period}` : `${h12} ${period}`;
+        },
+
+        // "Mon 6–7 PM, Wed 8–9 AM" — the student's free-time windows.
+        windowsSummary() {
+          if (this.flexible) return "at any time";
+          if (!this.windows.length) return "";
+          return this.windows
+            .map((w) => {
+              const d = DAYS.find((x) => x.n === w.day);
+              return `${d ? d.full.slice(0, 3) : "?"} ${this._formatClock(w.start)}–${this._formatClock(w.end)}`;
+            })
+            .join(", ");
         },
 
         /* ---- account form validation ---- */
@@ -453,18 +492,20 @@ document.addEventListener("alpine:init", () => {
           try {
             await api.post("/auth/register/", { ...this.model, role: this.role }, { silent: true });
 
-            const band = BANDS.find((b) => b.id === this.band);
-            saveIntent({
+            const intent = {
               role: this.role,
               subject: this.resolvedSubject,
               // Students pick one language; teachers pick several, ranked.
               language: this.resolvedLanguage,
               teachLanguages: this.teachLanguages,
               level: this.level,
-              days: this.days,
-              from: this.days.length && band ? band.from : null,
-              to: this.days.length && band ? band.to : null,
-            });
+              // Free-time windows - "teach-hours" for a teacher, "when" for
+              // a student, same underlying state either way. Read by
+              // Discover/Requirements (student) and replayTeacherIntent in
+              // frontend/src/lib/replayIntent.ts (teacher).
+              windows: this.flexible ? [] : this.windows,
+            };
+            saveIntent(intent);
 
             const q = new URLSearchParams({ as: this.role, registered: "1", email: this.model.email });
             if (this.nextUrl) q.set("next", this.nextUrl);

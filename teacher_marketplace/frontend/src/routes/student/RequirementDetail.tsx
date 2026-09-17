@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { StudentRequirement } from "@/lib/types";
 import { DAYS } from "@/lib/intent";
-import { confirmAction, money, titleCase, toast } from "@/lib/ui";
+import { confirmAction, languageLabel, moneyRange, titleCase, toast } from "@/lib/ui";
 import { RequirementForm, draftFromRequirement } from "@/components/RequirementForm";
 
 /**
@@ -71,6 +71,10 @@ export function RequirementDetail() {
   }
 
   const open = r.status === "open";
+  // Editable regardless of status - "matched" flips the moment a teacher
+  // is merely soft-matched, long before anyone actually unlocks the
+  // student's contact details. That unlock is the real lock.
+  const editable = !r.has_unlocked_lead;
   const dist = distributionLine(r.lead_distribution_status);
   const windows = r.schedule_preferences ?? [];
 
@@ -83,7 +87,9 @@ export function RequirementDetail() {
           <div className="min-w-0">
             <h1 className="u-h2">{r.subject?.name ?? "Subject"}</h1>
             <p className="u-fine mt-1">
-              {[titleCase(r.teaching_mode), r.student_class, r.preferred_language?.name].filter(Boolean).join(" · ")}
+              {[titleCase(r.teaching_mode), r.student_class, languageLabel(r.no_language_preference, r.preferred_languages)]
+                .filter(Boolean)
+                .join(" · ")}
             </p>
           </div>
           <span className={open ? "u-badge u-badge-pine" : "u-badge u-badge-ink"}>{titleCase(r.status)}</span>
@@ -108,8 +114,8 @@ export function RequirementDetail() {
       <section className="u-card u-card-pad">
         <h2 className="u-eyebrow">The details</h2>
         <dl className="mt-3 grid gap-x-6 gap-y-4 sm:grid-cols-2">
-          <Row label="Budget" value={r.budget_min || r.budget_max ? `${money(r.budget_min) ?? "—"} – ${money(r.budget_max) ?? "—"}` : "Any"} />
-          <Row label="Language" value={r.preferred_language?.name ?? "Any"} />
+          <Row label="Budget" value={moneyRange(r.budget_min, r.budget_max) ? `${moneyRange(r.budget_min, r.budget_max)} / mo` : "Any"} />
+          <Row label="Language" value={languageLabel(r.no_language_preference, r.preferred_languages)} />
           <Row label="Where" value={r.city?.name ?? (r.teaching_mode === "online" ? "Online" : "—")} />
           <Row label="Class length" value={r.class_duration_minutes ? `${r.class_duration_minutes} minutes` : "—"} />
           <Row label="Posted" value={new Date(r.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })} />
@@ -144,14 +150,18 @@ export function RequirementDetail() {
         )}
       </section>
 
-      {open && (
+      {(editable || open) && (
         <div className="flex justify-end gap-2">
-          <button type="button" className="u-btn-secondary" onClick={() => setEditing(true)}>
-            Edit
-          </button>
-          <button type="button" className="u-btn-secondary" onClick={close}>
-            Close this request
-          </button>
+          {editable && (
+            <button type="button" className="u-btn-secondary" onClick={() => setEditing(true)}>
+              Edit
+            </button>
+          )}
+          {open && (
+            <button type="button" className="u-btn-secondary" onClick={close}>
+              Close this request
+            </button>
+          )}
         </div>
       )}
 

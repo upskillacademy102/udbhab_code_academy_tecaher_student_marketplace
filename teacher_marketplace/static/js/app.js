@@ -93,7 +93,7 @@
       path: location.pathname,
       get current() { return this.pending[0] || null; },
       // Suppressed only on the exact lead page that lets them resolve it —
-      // everywhere else (including the enquiries list) it still nags them.
+      // everywhere else (including the leads list) it still nags them.
       get suppressed() {
         return !!this.current && this.path === "/teacher/leads/" + this.current.id + "/";
       },
@@ -106,7 +106,14 @@
       async refresh() {
         try {
           const d = await api.get("/leads/pending-ratings/", { silent: true });
-          this.pending = (d && d.results) || [];
+          // api.get() already normalises {count, results} down to the bare
+          // results array (see static/js/api.js) - this used to read
+          // d.results on that ALREADY-unwrapped array (always undefined),
+          // so `pending` silently stayed empty and this gate never once
+          // blocked anyone despite being "mandatory". Handle both shapes
+          // defensively rather than assuming the client's current
+          // normalisation behaviour forever.
+          this.pending = Array.isArray(d) ? d : (d && d.results) || [];
         } catch (_) {}
       },
       async rate(verdict) {
@@ -115,7 +122,7 @@
         try {
           await api.post(`/leads/${this.current.id}/rate/`, { verdict });
           this.pending = this.pending.slice(1);
-          window.toast("success", "Thanks — that helps keep fake enquiries out.");
+          window.toast("success", "Thanks — that helps keep fake leads out.");
           try { window.Alpine.store("badges").refresh(); } catch (_) {}
         } catch (e) {
           window.toast("error", e.message || "Couldn't save that.");

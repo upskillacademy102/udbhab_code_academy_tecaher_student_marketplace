@@ -22,6 +22,7 @@ from apps.common.models import BaseModel
 from apps.utils.validators import (
     validate_image_upload,
     validate_no_control_characters,
+    validate_pincode,
     validate_place_name,
 )
 
@@ -100,6 +101,46 @@ class Student(BaseModel):
         blank=True,
         validators=[validate_place_name],
     )
+    address_line1 = models.CharField(
+        _("address line 1"),
+        max_length=255,
+        null=True,
+        blank=True,
+        validators=[validate_no_control_characters],
+        help_text=_("House/flat no., building, street - optional."),
+    )
+    address_line2 = models.CharField(
+        _("address line 2"),
+        max_length=255,
+        null=True,
+        blank=True,
+        validators=[validate_no_control_characters],
+        help_text=_("Area, landmark - optional."),
+    )
+    pincode = models.CharField(
+        _("PIN code"),
+        max_length=6,
+        null=True,
+        blank=True,
+        validators=[validate_pincode],
+        help_text=_(
+            "6-digit PIN code, resolved to pincode_location below on save "
+            "(see StudentCreateUpdateSerializer._resolve_pincode)."
+        ),
+    )
+    pincode_location = models.ForeignKey(
+        "matching.PincodeLocation",
+        related_name="students",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text=_(
+            "Structured pincode/location, resolved from the pincode field "
+            "above - mirrors Teacher.pincode_location's role for offline "
+            "distance matching, kept available for a future in-person "
+            "student-side matching use, though nothing queries it yet."
+        ),
+    )
     preferred_subjects = models.CharField(
         _("preferred subjects"),
         max_length=500,
@@ -144,6 +185,14 @@ class Student(BaseModel):
                         | ~models.Q(country__regex=r"^\s*$")
                     )
                     & (models.Q(bio__isnull=True) | ~models.Q(bio__regex=r"^\s*$"))
+                    & (
+                        models.Q(address_line1__isnull=True)
+                        | ~models.Q(address_line1__regex=r"^\s*$")
+                    )
+                    & (
+                        models.Q(address_line2__isnull=True)
+                        | ~models.Q(address_line2__regex=r"^\s*$")
+                    )
                 ),
             ),
         ]

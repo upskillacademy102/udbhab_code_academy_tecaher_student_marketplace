@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import type { TeacherProfile, TeacherRef } from "@/lib/types";
 import { DAYS } from "@/lib/intent";
 import { confirmAction, initials, money, moneyRange, toast } from "@/lib/ui";
+import { LearnWithTeacherModal } from "@/components/LearnWithTeacherModal";
 
 /**
  * One teacher, in full.
@@ -61,6 +62,7 @@ function cachedTeacher(id: string): TeacherProfile | null {
 export function TeacherDetail() {
   const { id = "" } = useParams();
   const seed = cachedTeacher(id);
+  const [learnWithOpen, setLearnWithOpen] = useState(false);
 
   const { data, isLoading, isError, error } = useQuery<DetailData>({
     queryKey: ["teacher", id],
@@ -168,8 +170,12 @@ export function TeacherDetail() {
 
                 {t.headline && <p className="u-body mt-3 text-ink-700">{t.headline}</p>}
 
-                <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[0.8125rem] text-ink-600">
-                  {t.teaching_mode && <span className="capitalize">{t.teaching_mode === "both" ? "Online or in person" : t.teaching_mode}</span>}
+                <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[0.8125rem] text-ink-600">
+                  {t.teaching_mode && (
+                    <span className="rounded-full bg-pine-500 px-2.5 py-0.5 text-[0.75rem] font-bold uppercase tracking-wide text-white">
+                      {t.teaching_mode === "both" ? "Online or in person" : t.teaching_mode === "online" ? "Online" : "In person"}
+                    </span>
+                  )}
                   {years != null && <span>{years} yr{years === 1 ? "" : "s"} experience</span>}
                   {city && <span>{city}</span>}
                 </div>
@@ -218,18 +224,29 @@ export function TeacherDetail() {
         <div className="flex flex-col gap-5 lg:sticky lg:top-20 lg:self-start">
           <ScheduleCheck teacherId={id} />
 
-          <section className="u-card u-card-pad border-pine-300 bg-pine-50">
-            <h2 className="u-h3">Want to learn with {name.split(" ")[0]}?</h2>
-            <p className="u-body mt-1.5 text-ink-700">
-              Post what you need and we'll take it to them — and to anyone else who fits. They get in touch with you.
-            </p>
-            <Link to="/student/requirements/" className="u-btn-primary mt-4 w-full">Post what you need</Link>
-            <p className="u-fine mt-2 text-center">Always free for students.</p>
-          </section>
+          {t.teacher?.id && (
+            <section className="u-card u-card-pad border-pine-300 bg-pine-50">
+              <h2 className="u-h3">Learn with this teacher</h2>
+              <p className="u-body mt-1.5 text-ink-700">
+                Skip the pool — send this straight to just them. It never expires, and no other teacher ever sees it.
+              </p>
+              <button type="button" className="u-btn-primary mt-4 w-full" onClick={() => setLearnWithOpen(true)}>
+                Learn with {name.split(" ")[0]}
+              </button>
+            </section>
+          )}
 
           <SafetyBox teacher={t} />
         </div>
       </div>
+
+      {learnWithOpen && t.teacher?.id && (
+        <LearnWithTeacherModal
+          teacherId={t.teacher.id}
+          teacherName={name}
+          onClose={() => setLearnWithOpen(false)}
+        />
+      )}
     </div>
   );
 }

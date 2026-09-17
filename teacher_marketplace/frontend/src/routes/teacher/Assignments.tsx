@@ -1,69 +1,29 @@
-import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
-import type { Assignment } from "@/lib/types";
-import { toast } from "@/lib/ui";
+import type { Lead } from "@/lib/types";
+import { titleCase } from "@/lib/ui";
 
 /**
- * Time-limited offers of a lead.
+ * Offers - direct "Learn with this teacher" picks only.
  *
- * These expire, so the countdown is the most important thing on each card,
- * not a footnote. Anything under two hours is shown in marigold — the only
- * place on this page that colour appears, so it reads as urgency rather than
- * decoration.
+ * A student chose THIS teacher specifically, from that teacher's own
+ * profile, skipping the general matching pool entirely. Unlike an ordinary
+ * lead, an offer never expires - the gold styling here (and the nav-glow
+ * while any are pending) is what should catch a teacher's eye, not a
+ * countdown, since there's nothing to count down to.
  *
- * The four match scores are shown as a single "why you" line rather than
- * four bars: a teacher deciding in ten seconds needs the reason, not the
- * breakdown.
+ * Unlocking/rejecting/reviewing an offer goes through the exact same
+ * LeadDetail page as any other lead - no separate accept/pass flow here
+ * any more, since unlocking now doubles as accepting.
  */
-
-function timeLeft(expiresAt?: string | null): { text: string; urgent: boolean; gone: boolean } {
-  if (!expiresAt) return { text: "", urgent: false, gone: false };
-  const ms = new Date(expiresAt).getTime() - Date.now();
-  if (ms <= 0) return { text: "expired", urgent: false, gone: true };
-  const mins = Math.round(ms / 60000);
-  if (mins < 60) return { text: `${mins} min left`, urgent: true, gone: false };
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return { text: `${hrs}h left`, urgent: hrs <= 2, gone: false };
-  const days = Math.round(hrs / 24);
-  return { text: `${days}d left`, urgent: false, gone: false };
-}
-
-function whyYou(a: Assignment): string {
-  const bits: string[] = [];
-  if ((a.subject_match_score ?? 0) > 0) bits.push("your subject");
-  if ((a.time_match_score ?? 0) > 0) bits.push("your hours");
-  if ((a.language_match_score ?? 0) > 0) bits.push("your language");
-  if ((a.location_score ?? 0) > 0) bits.push("your area");
-  if (!bits.length) return "Matched to your profile";
-  if (bits.length === 1) return `Matches ${bits[0]}`;
-  return `Matches ${bits.slice(0, -1).join(", ")} and ${bits[bits.length - 1]}`;
-}
-
 export function Assignments() {
-  const qc = useQueryClient();
-  const [busy, setBusy] = useState<string | null>(null);
-
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["assignments"],
-    queryFn: () => api.list<Assignment>("/matching/assignments/"),
+    queryKey: ["offers"],
+    queryFn: () => api.list<Lead>("/leads/offers/"),
   });
 
-  const items = (data?.items ?? []).filter((a) => (a.status ?? "").toLowerCase() === "pending" || !a.response);
-
-  async function respond(a: Assignment, action: "accept" | "reject") {
-    setBusy(a.id);
-    try {
-      await api.post(`/matching/assignments/${a.id}/${action}/`, {});
-      toast("success", action === "accept" ? "Added to your enquiries." : "Passed on it.");
-      qc.invalidateQueries({ queryKey: ["assignments"] });
-      qc.invalidateQueries({ queryKey: ["leads"] });
-    } catch (e) {
-      toast("error", (e as { message?: string })?.message ?? "Couldn't do that.");
-    } finally {
-      setBusy(null);
-    }
-  }
+  const items = data?.items ?? [];
 
   return (
     <div className="flex flex-col gap-5">
@@ -73,7 +33,7 @@ export function Assignments() {
 
       {isLoading && (
         <div className="grid gap-4 sm:grid-cols-2">
-          {Array.from({ length: 2 }).map((_, i) => <div key={i} className="h-44 animate-pulse rounded-2xl bg-ink-100" />)}
+          {Array.from({ length: 2 }).map((_, i) => <div key={i} className="h-40 animate-pulse rounded-2xl bg-ink-100" />)}
         </div>
       )}
 
@@ -88,66 +48,44 @@ export function Assignments() {
         <section className="u-card flex flex-col items-center gap-3 px-6 py-14 text-center">
           <h2 className="u-h3">No offers right now</h2>
           <p className="u-body max-w-prose text-ink-600">
-            When a student matches you closely, you get first refusal here before the enquiry goes wider.
-            Accepting adds it to your enquiries — it doesn't spend an unlock.
+            When a student picks you directly from your profile — instead of the general matching pool — it lands
+            here. Offers never expire, but you still spend 1 unlock to see their details, same as any lead.
           </p>
         </section>
       )}
 
       {items.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2">
-          {items.map((a, i) => {
-            const t = timeLeft(a.expires_at);
-            return (
-              <article
-                key={a.id}
-                className="u-stagger-item flex flex-col gap-3 rounded-2xl border-[1.5px] border-ink-300 bg-paper p-5 shadow-lift"
-                style={{ "--d": `${Math.min(i, 7) * 30}ms` } as React.CSSProperties}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <h2 className="min-w-0 truncate text-[1rem] font-semibold text-ink-900">
-                    {a.subject_name ?? "Enquiry"}
-                  </h2>
-                  {t.text && (
-                    <span
-                      className={
-                        "shrink-0 rounded-full px-2.5 py-1 text-[0.6875rem] font-bold uppercase tracking-wide " +
-                        (t.gone
-                          ? "bg-ink-100 text-ink-500"
-                          : t.urgent
-                            ? "bg-marigold-500 text-ink-900"
-                            : "bg-pine-100 text-pine-800")
-                      }
-                    >
-                      {t.text}
-                    </span>
-                  )}
-                </div>
+          {items.map((l, i) => (
+            <Link
+              key={l.id}
+              to={`/teacher/leads/${l.id}/`}
+              className="u-stagger-item flex flex-col gap-3 rounded-2xl border-2 border-marigold-400 bg-marigold-50 p-5 shadow-lift transition duration-150 ease-enter hover:-translate-y-px hover:shadow-raise"
+              style={{ "--d": `${Math.min(i, 7) * 30}ms` } as React.CSSProperties}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <h2 className="min-w-0 truncate text-[1rem] font-semibold text-ink-900">
+                  {l.subject_name ?? "Offer"}
+                </h2>
+                <span className="u-badge u-badge-marigold shrink-0">
+                  {l.contact_unlocked ? "Unlocked" : "New"}
+                </span>
+              </div>
 
-                <p className="u-fine">{whyYou(a)}</p>
+              <p className="u-fine">
+                {[titleCase(l.teaching_mode ?? ""), l.city_name].filter(Boolean).join(" · ") || "—"} — chose you
+                directly
+              </p>
 
-                <div className="mt-auto flex gap-2 border-t border-ink-200 pt-3">
-                  <button
-                    type="button"
-                    className="u-btn-primary u-btn-sm flex-1"
-                    disabled={busy === a.id || t.gone}
-                    data-loading={busy === a.id || undefined}
-                    onClick={() => respond(a, "accept")}
-                  >
-                    Take it
-                  </button>
-                  <button
-                    type="button"
-                    className="u-btn-secondary u-btn-sm"
-                    disabled={busy === a.id || t.gone}
-                    onClick={() => respond(a, "reject")}
-                  >
-                    Pass
-                  </button>
-                </div>
-              </article>
-            );
-          })}
+              <div className="mt-auto flex items-center justify-between border-t border-marigold-200 pt-3">
+                <span className="u-fine">Never expires</span>
+                <span className="inline-flex items-center gap-1 text-[0.8125rem] font-semibold text-pine-700">
+                  Open
+                  <span aria-hidden="true">→</span>
+                </span>
+              </div>
+            </Link>
+          ))}
         </div>
       )}
     </div>

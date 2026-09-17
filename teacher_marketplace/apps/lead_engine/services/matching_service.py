@@ -75,14 +75,29 @@ class MatchingService:
         teacher_subject_ids = {s.id for s in teacher_profile.subjects.all()}
         return 100 if requirement.subject_id in teacher_subject_ids else 0
 
+    # Score for matching the student's Nth-ranked language (index 0 = rank
+    # 1, most preferred) - decays with rank so a teacher matching the
+    # student's TOP choice outranks one who only matches a lower one, while
+    # any real match still clearly beats zero.
+    _LANGUAGE_RANK_SCORES = (100, 80, 60, 40, 20)
+
     @staticmethod
     def _language_score(teacher_profile, requirement) -> int:
-        if requirement.preferred_language_id is None:
-            # Student expressed no preference - not a mismatch,
-            # full score (nothing to fail to match against).
+        if requirement.no_language_preference:
+            # Student explicitly said any language is fine - not a
+            # mismatch, full score (nothing to fail to match against).
             return 100
         teacher_language_ids = {lang.id for lang in teacher_profile.languages.all()}
-        return 100 if requirement.preferred_language_id in teacher_language_ids else 0
+        best = 0
+        # `.all()` (not `.values_list()`) so this reuses the
+        # prefetch_related_objects([requirement], "preferred_languages")
+        # cache set up in lead_generation_service.generate_leads_for_
+        # requirement instead of re-querying once per candidate teacher.
+        for pl in requirement.preferred_languages.all():
+            if pl.language_id in teacher_language_ids:
+                idx = min(pl.rank - 1, len(MatchingService._LANGUAGE_RANK_SCORES) - 1)
+                best = max(best, MatchingService._LANGUAGE_RANK_SCORES[idx])
+        return best
 
     @staticmethod
     def _location_score(teacher_profile, requirement) -> int:
@@ -109,17 +124,25 @@ class MatchingService:
     @staticmethod
     def _budget_score(teacher_profile, requirement) -> int:
         """
-        100 if the teacher's hourly_rate falls within
-        [budget_min, budget_max] (inclusive). Degrades linearly for
+        100 if the teacher's monthly_rate falls within
+        [budget_min, budget_max] (inclusive) - StudentRequirement's
+        budget is a per-month figure (see MAX_REQUIREMENT_BUDGET's
+        comment in apps.student_requirement.models), so it is compared
+        against monthly_rate, never hourly_rate. Degrades linearly for
         rates above budget_max (a teacher who costs 20% more than
         the top of budget is a much softer mismatch than one who
         costs 200% more). No penalty for being below budget_min
         (cheaper than requested is never a problem for the student).
-        Returns 100 if the requirement has no budget specified at
-        all (nothing to compare against) or the teacher has no rate
-        set yet.
+
+        Returns 100 (neutral - nothing to disqualify on) if the
+        requirement has no budget specified at all, or the teacher
+        hasn't set a monthly_rate - an hourly-only rate isn't
+        converted into a monthly figure and compared, since there is
+        no real per-teacher basis (sessions/month varies per
+        teacher) to convert on; guessing one would silently invent a
+        score rather than honestly having none.
         """
-        rate = teacher_profile.hourly_rate
+        rate = teacher_profile.monthly_rate
         if rate is None or (
             requirement.budget_min is None and requirement.budget_max is None
         ):

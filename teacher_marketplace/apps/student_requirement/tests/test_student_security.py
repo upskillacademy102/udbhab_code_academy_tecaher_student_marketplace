@@ -35,7 +35,7 @@ class StudentIsolationSecurityTests(APITestCase):
             REQS,
             {
                 "subject": "Mathematics",
-                "preferred_language": "English",
+                "preferred_languages": ["English"],
                 "teaching_mode": "online",
                 "budget_min": 200,
                 "budget_max": 900,
@@ -190,7 +190,7 @@ class StudentIsolationSecurityTests(APITestCase):
     def test_requirement_validation_holds(self):
         base = {
             "subject": "Mathematics",
-            "preferred_language": "English",
+            "preferred_languages": ["English"],
             "teaching_mode": "online",
             "class_duration_minutes": 60,
         }
@@ -203,7 +203,7 @@ class StudentIsolationSecurityTests(APITestCase):
         # Unknown subject/language text is no longer a validation failure -
         # it's auto-created into the taxonomy (see
         # StudentRequirementWriteSerializer.validate_subject /
-        # validate_preferred_language) - so this checks a value that's
+        # validate_preferred_languages) - so this checks a value that's
         # still genuinely invalid: teaching_mode isn't in the model's
         # choices at all.
         self.assertEqual(
@@ -217,7 +217,7 @@ class StudentIsolationSecurityTests(APITestCase):
                 REQS,
                 {
                     "subject": "Mathematics",
-                    "preferred_language": "English",
+                    "preferred_languages": ["English"],
                     "teaching_mode": "offline",
                     "class_duration_minutes": 60,
                 },

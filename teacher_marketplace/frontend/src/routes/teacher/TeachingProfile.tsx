@@ -53,6 +53,20 @@ interface About {
   qualification_detail: string;
 }
 
+interface Address {
+  address_line1: string;
+  address_line2: string;
+  city: string;
+  state: string;
+  pincode: string;
+  country: string;
+}
+
+interface Name {
+  first_name: string;
+  last_name: string;
+}
+
 export function TeachingProfile() {
   const qc = useQueryClient();
 
@@ -82,6 +96,11 @@ export function TeachingProfile() {
     retry: false,
   });
 
+  const me = useQuery({
+    queryKey: ["my-user"],
+    queryFn: () => api.get<{ user: { first_name: string; last_name: string } }>("/auth/me/", { silent: true }),
+  });
+
   const subjects = useQuery({
     queryKey: ["subjects"],
     queryFn: () => api.list<Named>("/subjects/", { params: { page_size: 300 } }),
@@ -107,6 +126,10 @@ export function TeachingProfile() {
   const [about, setAbout] = useState<About>({
     bio: "", experience_years: "", qualification_level: "", qualification_detail: "",
   });
+  const [address, setAddress] = useState<Address>({
+    address_line1: "", address_line2: "", city: "", state: "", pincode: "", country: "",
+  });
+  const [name, setName] = useState<Name>({ first_name: "", last_name: "" });
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -132,9 +155,25 @@ export function TeachingProfile() {
       qualification_detail: String(b.qualification_detail ?? ""),
     });
     setPhotoUrl((b.profile_photo as string) || null);
+    setAddress({
+      address_line1: String(b.address_line1 ?? ""),
+      address_line2: String(b.address_line2 ?? ""),
+      city: String(b.city ?? ""),
+      state: String(b.state ?? ""),
+      pincode: String(b.pincode ?? ""),
+      country: String(b.country ?? ""),
+    });
   }, [b]);
 
-  const loading = profile.isLoading || base.isLoading;
+  useEffect(() => {
+    if (!me.data) return;
+    setName({
+      first_name: me.data.user.first_name ?? "",
+      last_name: me.data.user.last_name ?? "",
+    });
+  }, [me.data]);
+
+  const loading = profile.isLoading || base.isLoading || me.isLoading;
   if (loading) return <div className="h-96 animate-pulse rounded-2xl bg-ink-100" />;
 
   // What is missing, in the order it costs them reach.
@@ -145,6 +184,9 @@ export function TeachingProfile() {
   if (!listing.hourly_rate && !listing.monthly_rate) gaps.push("your rate");
   if (!listing.headline) gaps.push("a headline");
   if (!about.bio) gaps.push("a short bio");
+  if (listing.teaching_mode !== "online" && !(address.address_line1 && address.city && address.pincode)) {
+    gaps.push("your address for in-person lessons");
+  }
 
   return (
     <div className="flex max-w-3xl flex-col gap-5">
@@ -173,6 +215,12 @@ export function TeachingProfile() {
         onSaved={(url) => { setPhotoUrl(url); qc.invalidateQueries({ queryKey: ["my-teacher-base"] }); }}
       />
 
+      <NameSection
+        value={name}
+        onChange={setName}
+        onSaved={() => qc.invalidateQueries({ queryKey: ["my-user"] })}
+      />
+
       <ListingSection
         value={listing}
         onChange={setListing}
@@ -182,6 +230,15 @@ export function TeachingProfile() {
         exists={Boolean(p)}
         onSaved={() => qc.invalidateQueries({ queryKey: ["my-teacher-profile"] })}
       />
+
+      {listing.teaching_mode !== "online" && (
+        <AddressSection
+          value={address}
+          onChange={setAddress}
+          exists={Boolean(b)}
+          onSaved={() => qc.invalidateQueries({ queryKey: ["my-teacher-base"] })}
+        />
+      )}
 
       <AboutSection
         value={about}
@@ -271,6 +328,74 @@ function PhotoSection({
         />
       )}
     </section>
+  );
+}
+
+/* ---------------- name: shown to students, checked at verification ---------------- */
+
+function NameSection({
+  value, onChange, onSaved,
+}: {
+  value: Name;
+  onChange: (v: Name) => void;
+  onSaved: () => void;
+}) {
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  const NAME_PATTERN = /^[A-Za-z][A-Za-z\s'-]*$/;
+
+  function validate(): boolean {
+    const next: Record<string, string> = {};
+    if (!value.first_name || !NAME_PATTERN.test(value.first_name)) {
+      next.first_name = "Letters only, please.";
+    }
+    if (!value.last_name || !NAME_PATTERN.test(value.last_name)) {
+      next.last_name = "Letters only, please.";
+    }
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  }
+
+  async function save() {
+    if (!validate()) return;
+    setSaving(true);
+    try {
+      await api.patch("/auth/me/", {
+        first_name: value.first_name,
+        last_name: value.last_name,
+      }, { silent: true });
+      toast("success", "Saved.");
+      onSaved();
+    } catch (e) {
+      const err = e as ApiError;
+      if (err.fieldErrors) setErrors(err.fieldErrors);
+      else toast("error", err.message || "Couldn't save that.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Section title="Your name" hint="Shown to students exactly as written here." onSave={save} saving={saving}>
+      <div className="rounded-lg border border-marigold-300 bg-marigold-50 px-3 py-2.5 text-[0.8125rem] text-marigold-900">
+        This should match the official ID you'll upload for verification — a mismatch can make verification fail.
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="u-field">
+          <label className="u-label" htmlFor="tn-first">First name</label>
+          <input id="tn-first" className="u-input" maxLength={150}
+            value={value.first_name} onChange={(e) => onChange({ ...value, first_name: e.target.value })} />
+          {errors.first_name && <p className="u-error">{errors.first_name}</p>}
+        </div>
+        <div className="u-field">
+          <label className="u-label" htmlFor="tn-last">Last name</label>
+          <input id="tn-last" className="u-input" maxLength={150}
+            value={value.last_name} onChange={(e) => onChange({ ...value, last_name: e.target.value })} />
+          {errors.last_name && <p className="u-error">{errors.last_name}</p>}
+        </div>
+      </div>
+    </Section>
   );
 }
 
@@ -386,6 +511,97 @@ function ListingSection({
         <Picker label="Cities you'll travel to" options={cities} selected={value.cities}
           onToggle={(id) => toggle("cities", id)} empty="No cities available." error={errors.cities} />
       )}
+    </Section>
+  );
+}
+
+/* ---------------- address: where an in-person lesson happens ---------------- */
+
+function AddressSection({
+  value, onChange, exists, onSaved,
+}: {
+  value: Address;
+  onChange: (v: Address) => void;
+  exists: boolean;
+  onSaved: () => void;
+}) {
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  function validate(): boolean {
+    const next: Record<string, string> = {};
+    if (!value.address_line1) next.address_line1 = "Required for in-person or either lessons.";
+    if (!value.city) next.city = "Required for in-person or either lessons.";
+    if (!value.pincode) next.pincode = "Required for in-person or either lessons.";
+    else if (!/^[1-9][0-9]{5}$/.test(value.pincode)) next.pincode = "Enter a valid 6-digit PIN code.";
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  }
+
+  async function save() {
+    if (!validate()) return;
+    setSaving(true);
+    try {
+      const payload: Record<string, unknown> = {
+        address_line1: value.address_line1,
+        address_line2: value.address_line2 || null,
+        city: value.city,
+        state: value.state || null,
+        pincode: value.pincode,
+        country: value.country || null,
+      };
+      if (exists) await api.patch("/teachers/me/", payload, { silent: true });
+      else await api.post("/teachers/me/", payload, { silent: true });
+      toast("success", "Saved.");
+      onSaved();
+    } catch (e) {
+      const err = e as ApiError;
+      if (err.fieldErrors) setErrors(err.fieldErrors);
+      else toast("error", err.message || "Couldn't save that.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Section
+      title="Your address"
+      hint="Where an in-person lesson would actually happen — required since you offer in-person or either lessons."
+      onSave={save}
+      saving={saving}
+    >
+      <div className="u-field">
+        <label className="u-label" htmlFor="ta-addr1">Address line 1 <span className="text-danger">*</span></label>
+        <input id="ta-addr1" className="u-input" maxLength={255} placeholder="House/flat no., building, street"
+          value={value.address_line1} onChange={(e) => onChange({ ...value, address_line1: e.target.value })} />
+        {errors.address_line1 && <p className="u-error">{errors.address_line1}</p>}
+      </div>
+      <div className="u-field">
+        <label className="u-label" htmlFor="ta-addr2">Address line 2</label>
+        <input id="ta-addr2" className="u-input" maxLength={255} placeholder="Area, landmark (optional)"
+          value={value.address_line2} onChange={(e) => onChange({ ...value, address_line2: e.target.value })} />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div className="u-field">
+          <label className="u-label" htmlFor="ta-city">City <span className="text-danger">*</span></label>
+          <input id="ta-city" className="u-input" value={value.city} onChange={(e) => onChange({ ...value, city: e.target.value })} />
+          {errors.city && <p className="u-error">{errors.city}</p>}
+        </div>
+        <div className="u-field">
+          <label className="u-label" htmlFor="ta-state">State</label>
+          <input id="ta-state" className="u-input" value={value.state} onChange={(e) => onChange({ ...value, state: e.target.value })} />
+        </div>
+        <div className="u-field">
+          <label className="u-label" htmlFor="ta-pincode">PIN code <span className="text-danger">*</span></label>
+          <input id="ta-pincode" className="u-input" inputMode="numeric" maxLength={6} placeholder="e.g. 700001"
+            value={value.pincode} onChange={(e) => onChange({ ...value, pincode: e.target.value.replace(/[^0-9]/g, "") })} />
+          {errors.pincode && <p className="u-error">{errors.pincode}</p>}
+        </div>
+      </div>
+      <div className="u-field">
+        <label className="u-label" htmlFor="ta-country">Country</label>
+        <input id="ta-country" className="u-input" value={value.country} onChange={(e) => onChange({ ...value, country: e.target.value })} />
+      </div>
     </Section>
   );
 }

@@ -106,6 +106,7 @@ class LeadSerializer(serializers.ModelSerializer):
     student_name = serializers.SerializerMethodField()
     student_mobile = serializers.SerializerMethodField()
     student_email = serializers.SerializerMethodField()
+    unlocked_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Lead
@@ -128,6 +129,7 @@ class LeadSerializer(serializers.ModelSerializer):
             "student_mobile",
             "student_email",
             "my_rating",
+            "unlocked_count",
             "created_at",
         )
         read_only_fields = fields
@@ -164,6 +166,18 @@ class LeadSerializer(serializers.ModelSerializer):
             .first()
         )
         return row
+
+    def get_unlocked_count(self, lead) -> int | None:
+        """
+        How many teachers (across the whole eligible pool, not just
+        this one) have unlocked this lead - the "N teachers already
+        unlocked this lead" contrasting badge. Only meaningful for
+        shared/pooled ONLINE leads, but harmless to show for any
+        mode. Populated only when the view supplied it in context
+        (LeadDetailView.get) - null otherwise, same convention as
+        get_my_rating.
+        """
+        return self.context.get("unlocked_count")
 
     def get_masked_contact(self, lead) -> dict:
         """
@@ -238,6 +252,7 @@ class LeadListSerializer(serializers.ModelSerializer):
     student_name = serializers.SerializerMethodField()
     student_mobile = serializers.SerializerMethodField()
     my_rating = serializers.SerializerMethodField()
+    unlocked_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Lead
@@ -256,6 +271,7 @@ class LeadListSerializer(serializers.ModelSerializer):
             "is_viewed",
             "contact_unlocked",
             "my_rating",
+            "unlocked_count",
             "created_at",
         )
         read_only_fields = fields
@@ -277,6 +293,15 @@ class LeadListSerializer(serializers.ModelSerializer):
         if ratings is None:
             return None
         return ratings.get(obj.id)
+
+    def get_unlocked_count(self, obj) -> int | None:
+        """How many teachers across the whole pool have unlocked this
+        lead - see LeadSerializer.get_unlocked_count. Only populated
+        when the view supplied an ``unlock_counts`` context map."""
+        counts = self.context.get("unlock_counts")
+        if counts is None:
+            return None
+        return counts.get(obj.id, 0)
 
 
 class LeadUnlockPricingSerializer(serializers.ModelSerializer):

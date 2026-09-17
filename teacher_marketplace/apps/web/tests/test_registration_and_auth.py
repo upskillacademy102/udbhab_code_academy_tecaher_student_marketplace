@@ -82,6 +82,7 @@ class RequirementScheduleUiTests(TestCase):
             "/api/v1/student-requirements/",
             data={
                 "subject": "Mathematics",
+                "preferred_languages": ["English"],
                 "teaching_mode": "online",
                 "class_duration_minutes": 60,
                 "schedule_preferences": [

@@ -71,14 +71,42 @@ export interface TeacherProfile {
   best_matching_time?: string | null;
 }
 
+export interface WeeklyAvailabilitySlot {
+  id: string;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  timezone: string;
+  is_active: boolean;
+}
+
+/** GET /search/teachers/{teacher_id}/ - a teacher's own public
+ * marketplace profile, scoped to what "Learn with this teacher" needs. */
+export interface PublicTeacherMarketplaceProfile {
+  id: string;
+  teacher_id: string;
+  name: string;
+  headline: string | null;
+  teaching_mode: TeachingMode;
+  rating: string | null;
+  is_verified: boolean;
+  years_of_experience: number | null;
+  subjects: Named[];
+  languages: Named[];
+  weekly_availability: WeeklyAvailabilitySlot[];
+}
+
 export interface StudentProfile {
   id: string;
   user: UserRef;
   profile_photo: string | null;
   education_level: string | null;
   grade_or_year: string | null;
+  address_line1: string | null;
+  address_line2: string | null;
   city: string | null;
   state: string | null;
+  pincode: string | null;
   country: string | null;
   preferred_subjects: string | null;
   bio: string | null;
@@ -100,7 +128,9 @@ export interface StudentRequirement {
   student_name: string;
   subject: Named | null;
   student_class: string | null;
-  preferred_language: Named | null;
+  /** Ranked most-to-least preferred - array order IS the rank. */
+  preferred_languages: Named[];
+  no_language_preference: boolean;
   budget_min: string | null;
   budget_max: string | null;
   teaching_mode: TeachingMode;
@@ -111,6 +141,11 @@ export interface StudentRequirement {
   lead_distribution_status?: string | null;
   class_duration_minutes?: number | null;
   schedule_preferences?: SchedulePreference[];
+  /** True once ANY teacher has unlocked this requirement's contact
+   *  details - the real "can this still be edited" signal, independent
+   *  of `status` (which flips to "matched" the moment a teacher is
+   *  merely soft-matched, long before anyone unlocks anything). */
+  has_unlocked_lead: boolean;
   created_at: string;
 }
 
@@ -144,7 +179,7 @@ export interface Quota {
   has_free_leads_remaining?: boolean;
 }
 
-/** GET /leads/ — a student enquiry matched to this teacher. */
+/** GET /leads/ — a student lead matched to this teacher. */
 export interface Lead {
   id: string;
   subject_name?: string | null;
@@ -157,6 +192,8 @@ export interface Lead {
   is_viewed?: boolean;
   contact_unlocked?: boolean;
   my_rating?: string | null;
+  /** How many teachers across the whole pool have unlocked this lead. */
+  unlocked_count?: number | null;
   created_at: string;
   /** Only present once unlocked. */
   student_email?: string | null;
@@ -206,14 +243,18 @@ export interface Intent {
   subject?: string | null;
   language?: string | null;
   level?: string | null;
-  // Legacy shape (still written by the pre-login sign-up flow in
-  // static/js/auth.js): several days sharing one time band.
+  // Legacy shape - no longer written by static/js/auth.js's registerFlow,
+  // but still read as a fallback for an already-saved intent from before
+  // that changed, or an old bookmarked link: several days sharing one
+  // time band.
   days?: number[];
   from?: string | null;
   to?: string | null;
   // Current shape: a list of distinct day+time windows, each with its
   // own time (Monday 7pm, Tuesday 8am, ...). Preferred over days/from/to
-  // when present - see Discover.tsx's useInitialFilters.
+  // when present - see Discover.tsx's useInitialFilters and
+  // replayIntent.ts's replayTeacherIntent (student and teacher sides,
+  // respectively).
   windows?: { day: number; start: string; end: string }[];
   savedAt?: number;
 }

@@ -1,26 +1,26 @@
 import { useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { Lead } from "@/lib/types";
 import { AllowanceBar, useAllowance } from "@/components/Allowance";
-import { confirmAction, money, titleCase, toast } from "@/lib/ui";
+import { confirmAction, moneyRange, titleCase, toast } from "@/lib/ui";
 
 /**
- * One enquiry, and the decision to spend an unlock on it.
+ * One lead, and the decision to spend an unlock on it.
  *
  * Unlocking costs real money, so it is a deliberate, confirmed action with
  * the price stated before the click — never a one-tap surprise. A surprise
  * spend is a support ticket and a refund request.
  *
  * After unlocking, rating the lead is asked for directly rather than left to
- * a banner elsewhere: telling us which enquiries were genuine is the only
+ * a banner elsewhere: telling us which leads were genuine is the only
  * signal that keeps fake ones out of every teacher's list, and the moment
  * right after contact is when the teacher actually knows.
  */
 
 const VERDICTS = [
-  { id: "genuine", label: "Genuine enquiry", tone: "good" },
+  { id: "genuine", label: "Genuine lead", tone: "good" },
   { id: "fake", label: "Fake or spam", tone: "bad" },
   { id: "unreachable", label: "Couldn't reach them", tone: "neutral" },
 ] as const;
@@ -38,8 +38,10 @@ const VERDICT_TONE: Record<string, string> = {
 export function LeadDetail() {
   const { id = "" } = useParams();
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const { quota } = useAllowance();
   const [unlocking, setUnlocking] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
 
   const { data: lead, isLoading, isError, error } = useQuery<Lead>({
     queryKey: ["lead", id],
@@ -75,32 +77,54 @@ export function LeadDetail() {
     }
   }
 
+  async function reject() {
+    const ok = await confirmAction({
+      title: "Reject this lead?",
+      message: "You won't see it again, and it moves on to the next teacher right away. This can't be undone.",
+      confirmLabel: "Reject it",
+      danger: true,
+    });
+    if (!ok) return;
+
+    setRejecting(true);
+    try {
+      await api.post(`/leads/${id}/reject/`, {});
+      toast("success", "Rejected. It's moved on to the next teacher.");
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      navigate("/teacher/leads/");
+    } catch (e) {
+      toast("error", (e as { message?: string })?.message ?? "Couldn't reject that.");
+    } finally {
+      setRejecting(false);
+    }
+  }
+
   if (isLoading) return <div className="h-96 animate-pulse rounded-2xl bg-ink-100" />;
 
   if (isError || !lead) {
     const notFound = (error as { status?: number })?.status === 404;
     return (
       <section className="u-card flex flex-col items-center gap-4 px-6 py-14 text-center">
-        <h1 className="u-h3">{notFound ? "We can't find that enquiry" : "Couldn't load that enquiry"}</h1>
-        <Link to="/teacher/leads/" className="u-btn-primary">Back to enquiries</Link>
+        <h1 className="u-h3">{notFound ? "We can't find that lead" : "Couldn't load that lead"}</h1>
+        <Link to="/teacher/leads/" className="u-btn-primary">Back to leads</Link>
       </section>
     );
   }
 
   const unlocked = Boolean(lead.contact_unlocked);
-  const budget =
-    lead.budget_min || lead.budget_max ? `${money(lead.budget_min) ?? "—"} – ${money(lead.budget_max) ?? "—"}` : "Not said";
+  const budgetRange = moneyRange(lead.budget_min, lead.budget_max);
+  const budget = budgetRange ? `${budgetRange} / mo` : "Not said";
 
   return (
     <div className="flex max-w-3xl flex-col gap-5">
-      <Link to="/teacher/leads/" className="u-link -mt-1 text-[0.875rem]">← All enquiries</Link>
+      <Link to="/teacher/leads/" className="u-link -mt-1 text-[0.875rem]">← All leads</Link>
 
       {!unlocked && <AllowanceBar compact />}
 
       <section className="u-card u-card-pad">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="u-h2">{lead.subject_name ?? "Enquiry"}</h1>
+            <h1 className="u-h2">{lead.subject_name ?? "Lead"}</h1>
             <p className="u-fine mt-1">
               {[titleCase(lead.teaching_mode ?? ""), lead.city_name].filter(Boolean).join(" · ") || "—"}
             </p>
@@ -109,6 +133,12 @@ export function LeadDetail() {
             {unlocked ? "Unlocked" : "Locked"}
           </span>
         </div>
+
+        {Boolean(lead.unlocked_count) && (
+          <p className="u-badge u-badge-marigold mt-3 w-fit">
+            {lead.unlocked_count} teacher{lead.unlocked_count === 1 ? "" : "s"} already unlocked this lead
+          </p>
+        )}
 
         <dl className="mt-5 grid gap-x-6 gap-y-4 sm:grid-cols-2">
           <Row label="Budget" value={budget} />
@@ -159,6 +189,25 @@ export function LeadDetail() {
         )}
       </section>
 
+      {!unlocked && (
+        <section className="u-card u-card-pad border-2 border-rose-500 bg-rose-50">
+          <h2 className="u-h3 text-rose-900">Not a fit?</h2>
+          <p className="u-body mt-1 text-rose-800">
+            Rejecting is final — you won't see this lead again, and it goes straight to the next teacher instead of
+            waiting out the clock.
+          </p>
+          <button
+            type="button"
+            className="mt-4 w-full rounded-xl border-2 border-rose-500 bg-white px-4 py-2.5 text-[0.9375rem] font-semibold text-rose-700 shadow-soft transition hover:bg-rose-100"
+            onClick={reject}
+            data-loading={rejecting || undefined}
+            disabled={rejecting}
+          >
+            Reject lead
+          </button>
+        </section>
+      )}
+
       {unlocked && <RateLead leadId={id} existing={lead.my_rating ?? null} />}
     </div>
   );
@@ -200,7 +249,7 @@ function RateLead({ leadId, existing }: { leadId: string; existing: string | nul
     try {
       await api.post(`/leads/${leadId}/rate/`, { verdict: v, note });
       setDone(true);
-      toast("success", "Thanks — that helps keep fake enquiries out.");
+      toast("success", "Thanks — that helps keep fake leads out.");
       qc.invalidateQueries({ queryKey: ["lead", leadId] });
       qc.invalidateQueries({ queryKey: ["teacher-dashboard"] });
     } catch (e) {
@@ -214,16 +263,16 @@ function RateLead({ leadId, existing }: { leadId: string; existing: string | nul
     return (
       <section className="u-card u-card-pad border-pine-300 bg-pine-50">
         <p className="text-[0.9375rem] font-semibold text-pine-900">Thanks for rating this one.</p>
-        <p className="u-fine mt-1">It's what keeps fake enquiries out of everyone's list.</p>
+        <p className="u-fine mt-1">It's what keeps fake leads out of everyone's list.</p>
       </section>
     );
   }
 
   return (
     <section className="u-card u-card-pad border-2 border-marigold-400 bg-marigold-50">
-      <h2 className="u-h3">Was this a real enquiry?</h2>
+      <h2 className="u-h3">Was this a real lead?</h2>
       <p className="u-body mt-1.5 text-ink-600">
-        Every teacher is asked. It's the only way we catch fake enquiries — and you don't pay for the ones we catch.
+        Every teacher is asked. It's the only way we catch fake leads — and you don't pay for the ones we catch.
         You must rate every lead you unlock before you can keep browsing.
       </p>
       <div className="mt-4 flex flex-wrap gap-2">

@@ -28,11 +28,20 @@ from apps.subjects.models import Subject
 from apps.teacher_profile.models import DayOfWeek, TeachingMode
 from apps.utils.validators import validate_no_control_characters
 
-# A learning requirement's budget is a per-session/hour amount - anything
-# above this is a data-entry error, not a real budget.
-MAX_REQUIREMENT_BUDGET = Decimal("1000000.00")
+# A learning requirement's budget is a per-month amount (matches
+# TeacherProfile.monthly_rate's ceiling in apps/teacher_profile/models.py,
+# which is what it's scored against - see
+# MatchingService._budget_score) - anything above this is a data-entry
+# error, not a real budget.
+MAX_REQUIREMENT_BUDGET = Decimal("10000000.00")
 MIN_CLASS_DURATION_MINUTES = 15
 MAX_CLASS_DURATION_MINUTES = 480
+
+# A student ranks up to this many languages, most preferred first - see
+# StudentRequirementLanguage. Kept small: this is a preference order, not a
+# taxonomy browse, and MatchingService._language_score's rank-decay table
+# only has this many distinct steps.
+MAX_PREFERRED_LANGUAGES = 5
 
 
 class LeadDistributionStatus(models.TextChoices):
@@ -111,16 +120,21 @@ class StudentRequirement(BaseModel):
         validators=[validate_no_control_characters],
         help_text=_("e.g. 'Grade 10', '1st Year B.Com', 'Adult Learner'."),
     )
-    preferred_language = models.ForeignKey(
-        Language,
-        related_name="requirements",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        help_text=_("The student's preferred language of instruction."),
+    no_language_preference = models.BooleanField(
+        _("any language is fine"),
+        default=False,
+        help_text=_(
+            "Explicitly set when the student picked 'Any language' instead "
+            "of ranking specific ones. Mutually exclusive with having any "
+            "StudentRequirementLanguage rows - enforced in the write "
+            "serializer, same 'flexible vs specific' shape as "
+            "StudentSchedulePreference's flexibility field. Language is a "
+            "mandatory choice: every requirement has either this set True "
+            "or at least one ranked language."
+        ),
     )
     budget_min = models.DecimalField(
-        _("budget (min)"),
+        _("budget (min, per month)"),
         max_digits=10,
         decimal_places=2,
         null=True,
@@ -129,9 +143,14 @@ class StudentRequirement(BaseModel):
             MinValueValidator(Decimal("0.00")),
             MaxValueValidator(MAX_REQUIREMENT_BUDGET),
         ],
+        help_text=_(
+            "The low end of what the student can pay per month. Compared "
+            "against a teacher's monthly_rate in MatchingService - see "
+            "apps.teacher_profile.models.TeacherProfile.monthly_rate."
+        ),
     )
     budget_max = models.DecimalField(
-        _("budget (max)"),
+        _("budget (max, per month)"),
         max_digits=10,
         decimal_places=2,
         null=True,
@@ -140,6 +159,11 @@ class StudentRequirement(BaseModel):
             MinValueValidator(Decimal("0.00")),
             MaxValueValidator(MAX_REQUIREMENT_BUDGET),
         ],
+        help_text=_(
+            "The high end of what the student can pay per month. Compared "
+            "against a teacher's monthly_rate in MatchingService - see "
+            "apps.teacher_profile.models.TeacherProfile.monthly_rate."
+        ),
     )
     teaching_mode = models.CharField(
         _("teaching mode"),
@@ -176,6 +200,20 @@ class StudentRequirement(BaseModel):
         blank=True,
         validators=[validate_no_control_characters],
         help_text=_("Free-text description, e.g. 'Weekday evenings after 6pm'."),
+    )
+    offer_teacher = models.ForeignKey(
+        "teachers.Teacher",
+        related_name="direct_offers",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text=_(
+            "Set only for a direct 'Learn with this teacher' offer - "
+            "targets exactly this one teacher instead of the general "
+            "matching pool. Non-null is what makes this a direct offer; "
+            "never settable through the normal requirement create/update "
+            "serializer, only through DirectOfferCreateView."
+        ),
     )
 
     class ClassDuration(models.IntegerChoices):
@@ -281,6 +319,71 @@ class StudentRequirement(BaseModel):
     @property
     def is_open(self) -> bool:
         return self.status == RequirementStatus.OPEN
+
+    @property
+    def preferred_language_ids(self) -> list:
+        """
+        Flat list of Language ids from the ranked preference list, rank
+        order preserved. Reads via `.all()` (not `.values_list()`) so a
+        caller that already did
+        `prefetch_related_objects([requirement], "preferred_languages")`
+        (see lead_generation_service.generate_leads_for_requirement) gets
+        this from the prefetch cache instead of one query per access - the
+        same N+1 trap schedule_preferences hit before that prefetch was
+        added.
+        """
+        return [pl.language_id for pl in self.preferred_languages.all()]
+
+
+# ==============================================================
+# STUDENT PREFERRED LANGUAGES (ranked, replaces the old single FK)
+# ==============================================================
+class StudentRequirementLanguage(BaseModel):
+    """
+    One entry in a requirement's ranked language preference list - rank 1
+    is the student's most preferred language, rank 2 the next, and so on.
+
+    MatchingService._language_score uses the full ranked list (matching a
+    higher-ranked language scores a candidate teacher higher), while the
+    Offers hard-eligibility gate (EligibilityService, via
+    LanguageMatchingService.match_by_ids) accepts a teacher who speaks ANY
+    listed language, not only the top-ranked one - rank affects relative
+    ranking among eligible teachers, not eligibility itself.
+    """
+
+    student_requirement = models.ForeignKey(
+        StudentRequirement,
+        related_name="preferred_languages",
+        on_delete=models.CASCADE,
+    )
+    language = models.ForeignKey(
+        Language,
+        related_name="+",
+        on_delete=models.CASCADE,
+    )
+    rank = models.PositiveSmallIntegerField(
+        _("rank"),
+        validators=[MinValueValidator(1), MaxValueValidator(MAX_PREFERRED_LANGUAGES)],
+        help_text=_("1-based preference order - 1 is most preferred."),
+    )
+
+    class Meta:
+        verbose_name = _("Student Preferred Language")
+        verbose_name_plural = _("Student Preferred Languages")
+        ordering = ["rank"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["student_requirement", "rank"],
+                name="requirement_language_rank_unique",
+            ),
+            models.UniqueConstraint(
+                fields=["student_requirement", "language"],
+                name="requirement_language_unique",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.student_requirement} - #{self.rank} {self.language.name}"
 
 
 # ==============================================================

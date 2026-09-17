@@ -52,10 +52,11 @@ function moneyRange(min: string | null, max: string | null): string | null {
   return lo ?? hi;
 }
 
-/** "Bengaluru (online)" style location line, built only from real fields. */
-function locationLabel(city: string | undefined, mode: TeacherProfile["teaching_mode"]): string {
-  const modeLabel = mode === "online" ? "online" : mode === "both" ? "online or in person" : "in person";
-  return city ? `${city} (${modeLabel})` : modeLabel[0]!.toUpperCase() + modeLabel.slice(1);
+/** "Online", "In person", "Online or in person" - the teaching-mode tag. */
+function teachingModeLabel(mode: TeacherProfile["teaching_mode"]): string {
+  if (mode === "online") return "Online";
+  if (mode === "offline") return "In person";
+  return "Online or in person";
 }
 
 function CheckSeal() {
@@ -129,7 +130,8 @@ export function MatchCard({ teacher, isTopMatch = false, index = 0 }: MatchCardP
   const price = hourlyPrice ?? monthlyPrice;
   const priceUnit = hourlyPrice ? "/hr" : monthlyPrice ? "/mo" : "";
   const subjects = teacher.subjects?.map((s) => s.name) ?? [];
-  const location = locationLabel(teacher.cities?.[0]?.name, teacher.teaching_mode);
+  const city = teacher.cities?.[0]?.name;
+  const modeTag = teachingModeLabel(teacher.teaching_mode);
 
   return (
     <Link
@@ -166,7 +168,12 @@ export function MatchCard({ teacher, isTopMatch = false, index = 0 }: MatchCardP
         {/* Name + location, overlaid on a scrim so it reads on any photo */}
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent px-3 pb-2.5 pt-8">
           <p className="truncate text-[0.9375rem] font-semibold leading-tight text-white">{name}</p>
-          <p className="truncate text-[0.75rem] text-white/85">{location}</p>
+          <div className="mt-1 flex items-center gap-1.5">
+            {city && <span className="truncate text-[0.75rem] text-white/85">{city}</span>}
+            <span className="shrink-0 rounded-full bg-pine-500 px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-white shadow-sm">
+              {modeTag}
+            </span>
+          </div>
         </div>
       </div>
 

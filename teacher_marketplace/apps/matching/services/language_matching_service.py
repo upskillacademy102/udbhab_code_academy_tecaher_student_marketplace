@@ -43,6 +43,27 @@ class LanguageMatchingService:
         return MatchResult(is_eligible=False, score=0, matched_via="none")
 
     @staticmethod
+    def match_by_ids(
+        teacher_language_ids: set,
+        required_language_ids: list,
+        no_preference: bool = False,
+    ) -> MatchResult:
+        """
+        Hard-eligibility check for a requirement's RANKED, multi-language
+        preference list: the teacher passes if they speak ANY listed
+        language - rank does not affect eligibility, only
+        MatchingService._language_score's relative ranking of otherwise-
+        eligible teachers. `no_preference=True` (StudentRequirement.
+        no_language_preference) or an empty list is an explicit/implicit
+        "any language is fine", mirroring match_by_id's null-id auto-pass.
+        """
+        if no_preference or not required_language_ids:
+            return MatchResult(is_eligible=True, score=100, matched_via="exact")
+        if teacher_language_ids & set(required_language_ids):
+            return MatchResult(is_eligible=True, score=100, matched_via="exact")
+        return MatchResult(is_eligible=False, score=0, matched_via="none")
+
+    @staticmethod
     def match_by_text(query_text: str) -> MatchResult:
         config = get_config()
         normalized = query_text.strip()

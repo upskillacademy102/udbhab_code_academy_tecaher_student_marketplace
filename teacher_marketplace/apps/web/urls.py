@@ -98,7 +98,7 @@ urlpatterns = [
         "teacher/",
         spa(
             roles=T,
-            title="Your enquiries",
+            title="Your leads",
             desc="Monitor lead requests, unlocked contacts, and conversion status.",
         ),
         name="teacher-home",
@@ -107,14 +107,14 @@ urlpatterns = [
         "teacher/leads/",
         spa(
             roles=T,
-            title="Enquiries",
+            title="Leads",
             desc="Students who want what you teach. Unlock one to see how to reach them.",
         ),
         name="teacher-leads",
     ),
     path(
         "teacher/leads/<uuid:id>/",
-        spa(roles=T, title="Enquiry"),
+        spa(roles=T, title="Lead"),
         name="teacher-lead-detail",
     ),
     path(
@@ -122,7 +122,7 @@ urlpatterns = [
         spa(
             roles=T,
             title="Offers",
-            desc="First refusal on students who match you closely. They expire.",
+            desc="Students who picked you directly from your profile. They never expire.",
         ),
         name="teacher-assignments",
     ),

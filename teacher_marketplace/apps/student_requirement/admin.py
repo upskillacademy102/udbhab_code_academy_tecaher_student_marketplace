@@ -7,9 +7,21 @@ from django.utils.translation import gettext_lazy as _
 
 from apps.student_requirement.models import (
     StudentRequirement,
+    StudentRequirementLanguage,
     StudentScheduleException,
     StudentSchedulePreference,
 )
+
+
+class StudentRequirementLanguageInline(admin.TabularInline):
+    """Read-heavy inline so the ranked list is visible on the requirement
+    itself, same reasoning as pulling schedule preferences onto one screen."""
+
+    model = StudentRequirementLanguage
+    extra = 0
+    fields = ("rank", "language")
+    autocomplete_fields = ("language",)
+    ordering = ("rank",)
 
 
 @admin.register(StudentRequirement)
@@ -35,7 +47,7 @@ class StudentRequirementAdmin(admin.ModelAdmin):
         "status",
         "teaching_mode",
         "subject",
-        "preferred_language",
+        "no_language_preference",
         "city",
         "is_deleted",
     )
@@ -48,7 +60,8 @@ class StudentRequirementAdmin(admin.ModelAdmin):
     )
     ordering = ("-created_at",)
     readonly_fields = ("id", "created_at", "updated_at", "deleted_at")
-    autocomplete_fields = ("student", "subject", "preferred_language", "city")
+    autocomplete_fields = ("student", "subject", "city")
+    inlines = (StudentRequirementLanguageInline,)
 
     fieldsets = (
         (None, {"fields": ("id", "student", "subject", "student_class")}),
@@ -56,7 +69,7 @@ class StudentRequirementAdmin(admin.ModelAdmin):
             _("Preferences"),
             {
                 "fields": (
-                    "preferred_language",
+                    "no_language_preference",
                     "teaching_mode",
                     "city",
                     "preferred_timing",
@@ -87,7 +100,7 @@ class StudentRequirementAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         qs = self.model.all_objects.select_related(
-            "student", "subject", "preferred_language", "city"
+            "student", "subject", "city"
         ).get_queryset()
         ordering = self.get_ordering(request)
         if ordering:

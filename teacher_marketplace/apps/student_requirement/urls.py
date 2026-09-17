@@ -13,6 +13,7 @@ file's docstring.
 
 from django.urls import path
 
+from apps.student_requirement.direct_offer_views import DirectOfferCreateView
 from apps.student_requirement.views import (
     StudentRequirementDetailView,
     StudentRequirementListCreateView,
@@ -47,6 +48,9 @@ urlpatterns = [
         "schedule-exceptions/<uuid:id>/",
         StudentScheduleExceptionDetailView.as_view(),
         name="schedule-exception-detail",
+    ),
+    path(
+        "direct-offer/", DirectOfferCreateView.as_view(), name="direct-offer-create"
     ),
     path(
         "<uuid:id>/", StudentRequirementDetailView.as_view(), name="requirement-detail"

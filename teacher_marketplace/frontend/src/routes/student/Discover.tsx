@@ -5,6 +5,7 @@ import type { Named, TeacherProfile } from "@/lib/types";
 import { clearIntent, formatWindows, readIntent, saveIntent, type TimeWindow } from "@/lib/intent";
 import { MatchCard, MatchCardSkeleton } from "@/components/MatchCard";
 import { WindowPicker } from "@/components/WindowPicker";
+import { TaxonomyCombobox } from "@/components/TaxonomyCombobox";
 
 /**
  * Discover — the first screen after sign-up.
@@ -45,6 +46,13 @@ function useTaxonomy() {
 interface Filters {
   subject: string | null;
   language: string | null;
+  // Two independently-toggleable checkboxes (Online / In person), not one
+  // 3-way choice - see the backend's TeacherSearchFilterSet.
+  // filter_teaching_mode for the exact rule: one checked -> that mode OR a
+  // teacher who does both; both checked -> ONLY a teacher who does both.
+  // Same filter as "Find Verified Teachers" (Search.tsx) - this page was
+  // missing it entirely even though it hits the same search endpoint.
+  modes: ("online" | "offline")[];
   // A list of specific day+time windows (Monday 7-8pm, Tuesday 8-9am, ...)
   // rather than several days sharing one coarse band.
   windows: TimeWindow[];
@@ -53,6 +61,14 @@ interface Filters {
   // this on clears them. Same affordance as the "Find Verified Teachers"
   // filter page, for a student with no fixed schedule.
   flexible: boolean;
+}
+
+/** "Online", "In person", "Online or in person" - matches MatchCard's tag. */
+function modeFilterLabel(modes: Filters["modes"]): string | null {
+  if (modes.length === 2) return "Online or in person";
+  if (modes[0] === "online") return "Online";
+  if (modes[0] === "offline") return "In person";
+  return null;
 }
 
 /**
@@ -85,6 +101,7 @@ function useInitialFilters(): Filters {
     return {
       subject: intent?.subject ?? null,
       language: intent?.language ?? null,
+      modes: [],
       windows,
       flexible: false,
     };
@@ -110,6 +127,7 @@ export function Discover() {
     const p: Record<string, string> = {};
     if (filters.subject) p.subject = filters.subject;
     if (filters.language) p.language = filters.language;
+    if (filters.modes.length) p.teaching_mode = filters.modes.join(",");
     if (hasSchedule) {
       p.preferred_slots = JSON.stringify(
         filters.windows.map((w) => ({ day: w.day, start_time: w.start, end_time: w.end }))
@@ -130,6 +148,11 @@ export function Discover() {
 
   const setWindows = (windows: TimeWindow[]) => setFilters((f) => ({ ...f, windows, flexible: false }));
   const toggleFlexible = () => setFilters((f) => ({ ...f, flexible: !f.flexible, windows: [] }));
+  const toggleModeFilter = (id: "online" | "offline") =>
+    setFilters((f) => ({
+      ...f,
+      modes: f.modes.includes(id) ? f.modes.filter((m) => m !== id) : [...f.modes, id],
+    }));
 
   const headline = (() => {
     if (isLoading) return "Finding your matches…";
@@ -149,9 +172,14 @@ export function Discover() {
             <span className="text-[0.75rem] font-semibold uppercase tracking-wider text-ink-500">Looking for</span>
             <Pill>{filters.subject ?? "Any subject"}</Pill>
             <Pill>{filters.language ?? "Any language"}</Pill>
+            <Pill>{modeFilterLabel(filters.modes) ?? "Any mode"}</Pill>
             <Pill>{hasSchedule ? formatWindows(filters.windows) : filters.flexible ? "Flexible — any time works" : "Any time"}</Pill>
           </div>
-          <button type="button" className="u-btn-secondary u-btn-sm" onClick={() => setEditing((v) => !v)}>
+          <button
+            type="button"
+            className={editing ? "u-btn-primary u-btn-sm" : "u-btn-secondary u-btn-sm"}
+            onClick={() => setEditing((v) => !v)}
+          >
             {editing ? "Done" : "Change"}
           </button>
         </div>
@@ -171,10 +199,12 @@ export function Discover() {
               </div>
               <div className="mt-2.5">
                 {subjectMode === "select" ? (
-                  <ChipRow
-                    options={subjects.map((s) => s.name)}
+                  <TaxonomyCombobox
+                    id="discover-subject"
+                    items={subjects.map((s) => s.name)}
                     value={filters.subject}
-                    onPick={(v) => setFilters((f) => ({ ...f, subject: v }))}
+                    onChange={(v) => setFilters((f) => ({ ...f, subject: v }))}
+                    placeholder="Search subjects — e.g. Mathematics"
                     emptyHint="No subjects have been added yet."
                   />
                 ) : (
@@ -198,10 +228,12 @@ export function Discover() {
               </div>
               <div className="mt-2.5">
                 {languageMode === "select" ? (
-                  <ChipRow
-                    options={languages.map((l) => l.name)}
+                  <TaxonomyCombobox
+                    id="discover-language"
+                    items={languages.map((l) => l.name)}
                     value={filters.language}
-                    onPick={(v) => setFilters((f) => ({ ...f, language: v }))}
+                    onChange={(v) => setFilters((f) => ({ ...f, language: v }))}
+                    placeholder="Search languages — e.g. Hindi"
                     emptyHint="No languages have been added yet."
                   />
                 ) : (
@@ -210,6 +242,23 @@ export function Discover() {
                     onChange={(e) => setFilters((f) => ({ ...f, language: e.target.value || null }))} />
                 )}
               </div>
+            </div>
+
+            <div>
+              <p className="u-eyebrow">How you'd like to learn</p>
+              <div className="mt-2.5 flex flex-wrap gap-2">
+                <button type="button" className="u-chip u-chip-sm" aria-pressed={filters.modes.includes("online")}
+                  onClick={() => toggleModeFilter("online")}>
+                  Online
+                </button>
+                <button type="button" className="u-chip u-chip-sm" aria-pressed={filters.modes.includes("offline")}
+                  onClick={() => toggleModeFilter("offline")}>
+                  In person
+                </button>
+              </div>
+              {filters.modes.length === 2 && (
+                <p className="u-hint mt-1.5">Showing only teachers who offer both.</p>
+              )}
             </div>
 
             <div>
@@ -281,28 +330,6 @@ function Pill({ children }: { children: React.ReactNode }) {
     <span className="inline-flex items-center rounded-full border border-ink-300 bg-paper px-3 py-1 text-[0.8125rem] font-medium text-ink-800">
       {children}
     </span>
-  );
-}
-
-/** Single-select chips: tapping the active one clears it. */
-function ChipRow({
-  options, value, onPick, emptyHint,
-}: {
-  options: string[];
-  value: string | null;
-  onPick: (v: string | null) => void;
-  emptyHint?: string;
-}) {
-  if (!options.length) return <p className="u-fine">{emptyHint}</p>;
-  return (
-    <div className="flex flex-wrap gap-2">
-      {options.map((o) => (
-        <button key={o} type="button" className="u-chip u-chip-sm" aria-pressed={value === o}
-          onClick={() => onPick(value === o ? null : o)}>
-          {o}
-        </button>
-      ))}
-    </div>
   );
 }
 

@@ -236,6 +236,52 @@ class TeacherWeeklyAvailabilitySerializer(serializers.ModelSerializer):
         return attrs
 
 
+class PublicTeacherMarketplaceProfileSerializer(serializers.ModelSerializer):
+    """
+    Public, safe-to-share subset of a TeacherProfile for the student-
+    facing "Learn with this teacher" direct-offer flow - a student
+    picking a teacher directly needs to see (and choose from) that
+    teacher's own subjects/languages/available time slots, which
+    /teachers/{id}/ (Phase 1's TeacherSerializer) does not expose at
+    all. Deliberately excludes address/pincode/verification-document
+    fields - only what's needed to build the scoped offer form.
+    """
+
+    teacher_id = serializers.UUIDField(read_only=True)
+    subjects = SubjectSerializer(many=True, read_only=True)
+    languages = LanguageSerializer(many=True, read_only=True)
+    weekly_availability = serializers.SerializerMethodField()
+    name = serializers.SerializerMethodField()
+    is_verified = serializers.BooleanField(read_only=True)
+    years_of_experience = serializers.IntegerField(read_only=True)
+
+    def get_name(self, obj) -> str:
+        return obj.teacher.user.get_full_name()
+
+    def get_weekly_availability(self, obj) -> list:
+        slots = obj.weekly_availability.filter(is_active=True).order_by(
+            "day_of_week", "start_time"
+        )
+        return TeacherWeeklyAvailabilitySerializer(slots, many=True).data
+
+    class Meta:
+        model = TeacherProfile
+        fields = (
+            "id",
+            "teacher_id",
+            "name",
+            "headline",
+            "teaching_mode",
+            "rating",
+            "is_verified",
+            "years_of_experience",
+            "subjects",
+            "languages",
+            "weekly_availability",
+        )
+        read_only_fields = fields
+
+
 class TeacherScheduleExceptionSerializer(serializers.ModelSerializer):
     """Read/write representation of a one-off teacher schedule exception."""
 

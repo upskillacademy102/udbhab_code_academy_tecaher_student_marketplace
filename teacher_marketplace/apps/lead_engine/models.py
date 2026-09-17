@@ -33,11 +33,19 @@ class LeadStatus(models.TextChoices):
         VIEWED   - the teacher has opened/viewed this lead's details
         CLOSED   - no longer relevant (e.g. the underlying
                    StudentRequirement was closed/withdrawn)
+        REJECTED - this specific teacher declined it (see
+                   LeadRejectView) before ever unlocking it. A
+                   permanent, per-teacher dismissal - this Lead never
+                   becomes visible to them again, and any open
+                   LeadAssignment they held is released immediately
+                   so distribution can move on to the next candidate
+                   rather than waiting for it to time out.
     """
 
     NEW = "new", _("New")
     VIEWED = "viewed", _("Viewed")
     CLOSED = "closed", _("Closed")
+    REJECTED = "rejected", _("Rejected")
 
 
 class Lead(BaseModel):
@@ -78,6 +86,12 @@ class Lead(BaseModel):
         _("viewed at"),
         null=True,
         blank=True,
+    )
+    rejected_at = models.DateTimeField(
+        _("rejected at"),
+        null=True,
+        blank=True,
+        help_text=_("When this teacher rejected this lead, if they did."),
     )
     contact_unlocked = models.BooleanField(
         _("contact unlocked"),

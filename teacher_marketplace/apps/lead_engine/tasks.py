@@ -73,9 +73,9 @@ def process_requirement_leads(self, requirement_id):
 
     requirement = (
         StudentRequirement.objects.select_related(
-            "subject", "preferred_language", "city", "pincode_location", "student"
+            "subject", "city", "pincode_location", "student"
         )
-        .prefetch_related("schedule_preferences")
+        .prefetch_related("schedule_preferences", "preferred_languages")
         .filter(id=requirement_id)
         .first()
     )

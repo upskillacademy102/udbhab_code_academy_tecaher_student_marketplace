@@ -104,7 +104,7 @@ _RULES: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
     ("accounts:change-mobile-confirm", ("POST",), _ANY_AUTHED),
     ("accounts:sensitive-change-list", ("GET",), _ANY_AUTHED),
     ("accounts:sensitive-change-cancel", ("POST",), _ANY_AUTHED),
-    ("accounts:me", ("GET",), _ANY_AUTHED),
+    ("accounts:me", ("GET", "PATCH"), _ANY_AUTHED),
     # ===== Contact verification (apps.trust) - own account, any role ========
     ("trust:verification-status", ("GET",), _ANY_AUTHED),
     ("trust:otp-email-request", ("POST",), _ANY_AUTHED),
@@ -162,6 +162,7 @@ _RULES: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
     ("student_requirement:preference-detail", ("PATCH", "DELETE"), _STUDENT),
     ("student_requirement:schedule-exception-list-create", ("GET", "POST"), _STUDENT),
     ("student_requirement:schedule-exception-detail", ("DELETE",), _STUDENT),
+    ("student_requirement:direct-offer-create", ("POST",), _STUDENT),
     ("students-me-preferences:me-preference-list-create", ("GET", "POST"), _STUDENT),
     ("students-me-preferences:me-preference-detail", ("PATCH", "DELETE"), _STUDENT),
     # ======================================================================
@@ -178,6 +179,7 @@ _RULES: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
     ("teachers:teacher-detail", ("GET",), _STUDENT_ADMIN),
     ("teacher-best-slots:teacher-best-slots", ("GET",), _STUDENT_ADMIN),
     ("search:teacher-search", ("GET",), _STUDENT_ADMIN),
+    ("search:teacher-marketplace-profile", ("GET",), _STUDENT_ADMIN),
     ("matching:eligible-search", ("GET",), _STUDENT_ADMIN),
     # ======================================================================
     # TEACHER: own workspace
@@ -203,10 +205,12 @@ _RULES: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
     # TEACHER: marketplace workflow (leads / wallet / payments / subs)
     # ======================================================================
     ("lead_engine:lead-list", ("GET",), _TEACHER),
+    ("lead_engine:lead-offers", ("GET",), _TEACHER),
     ("lead_engine:lead-detail", ("GET",), _TEACHER),
     ("lead_engine:lead-matches", ("GET",), _TEACHER),
     ("lead_engine:unlock-lead", ("POST",), _TEACHER),
     ("lead_engine:lead-rate", ("POST",), _TEACHER),
+    ("lead_engine:lead-reject", ("POST",), _TEACHER),
     ("lead_engine:pending-ratings", ("GET",), _TEACHER),
     ("lead_engine:lead-export", ("GET",), _TEACHER),
     ("lead_engine:my-unlock-history", ("GET",), _TEACHER),

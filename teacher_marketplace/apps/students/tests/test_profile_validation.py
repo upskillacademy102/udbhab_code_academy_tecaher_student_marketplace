@@ -83,6 +83,90 @@ class StudentProfileValidationTests(APITestCase):
             Student.objects.get(user=self.user).preferred_subjects, "Maths, Physics"
         )
 
+    # ---- detailed address (address_line1/2 + pincode) ------------
+    def test_address_fields_save_and_resolve_pincode(self):
+        from unittest.mock import patch as _patch_mock
+
+        from django.contrib.gis.geos import Point
+
+        from apps.matching.models import PincodeLocation
+
+        location = PincodeLocation.objects.create(
+            pincode="700001", location=Point(88.3639, 22.5726, srid=4326), city="Kolkata"
+        )
+        with _patch_mock(
+            "apps.matching.services.geocoding_service."
+            "PincodeGeocodingService.get_or_geocode",
+            return_value=location,
+        ):
+            resp = self._patch(
+                address_line1="12 Park Street",
+                address_line2="Near the lake",
+                city="Kolkata",
+                pincode="700001",
+            )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        s = Student.objects.get(user=self.user)
+        self.assertEqual(s.pincode_location, location)
+
+    def test_bad_pincode_format_rejected(self):
+        self.assertEqual(self._patch(pincode="ABCDEF").status_code, 400)
+        self.assertEqual(self._patch(pincode="12345").status_code, 400)
+
+    def test_geocoding_outage_does_not_block_saving_the_address(self):
+        from unittest.mock import patch as _patch_mock
+
+        from apps.matching.services.geocoding_service import GeocodingError
+
+        with _patch_mock(
+            "apps.matching.services.geocoding_service."
+            "PincodeGeocodingService.get_or_geocode",
+            side_effect=GeocodingError(
+                detail="Geocoding service is currently unavailable. Please try again shortly."
+            ),
+        ):
+            resp = self._patch(
+                address_line1="12 Park Street", city="Kolkata", pincode="700001"
+            )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        s = Student.objects.get(user=self.user)
+        self.assertEqual(s.address_line1, "12 Park Street")
+        self.assertIsNone(s.pincode_location)
+
+    def test_stale_pincode_location_is_cleared_when_a_changed_pincode_fails_to_geocode(self):
+        from unittest.mock import patch as _patch_mock
+
+        from django.contrib.gis.geos import Point
+
+        from apps.matching.models import PincodeLocation
+        from apps.matching.services.geocoding_service import GeocodingError
+
+        location_a = PincodeLocation.objects.create(
+            pincode="700001", location=Point(88.3639, 22.5726, srid=4326), city="Kolkata"
+        )
+        with _patch_mock(
+            "apps.matching.services.geocoding_service."
+            "PincodeGeocodingService.get_or_geocode",
+            return_value=location_a,
+        ):
+            self._patch(address_line1="12 Park Street", city="Kolkata", pincode="700001")
+        s = Student.objects.get(user=self.user)
+        self.assertEqual(s.pincode_location, location_a)
+
+        with _patch_mock(
+            "apps.matching.services.geocoding_service."
+            "PincodeGeocodingService.get_or_geocode",
+            side_effect=GeocodingError(detail="down"),
+        ):
+            self._patch(address_line1="45 New Road", city="Howrah", pincode="711101")
+        s.refresh_from_db()
+        self.assertEqual(s.pincode, "711101")
+        self.assertIsNone(s.pincode_location)
+
+    def test_address_is_optional(self):
+        # Unlike the teacher side, nothing on Student requires this.
+        self.assertEqual(self._patch(bio="just a bio").status_code, 200)
+
         self.assertEqual(
             self._patch(
                 preferred_subjects=", ".join(f"Subj{i}" for i in range(20))

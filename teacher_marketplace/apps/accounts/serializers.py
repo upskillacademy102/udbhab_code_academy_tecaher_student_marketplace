@@ -71,6 +71,22 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class UserNameUpdateSerializer(serializers.ModelSerializer):
+    """
+    Lets a signed-in user (student or teacher) change their own display
+    name from `PATCH /api/v1/auth/me/`. Kept separate from
+    `UserSerializer` (which is entirely read-only) since this is the one
+    piece of `User` that account holder is allowed to write directly.
+    """
+
+    first_name = serializers.CharField(validators=[validate_name])
+    last_name = serializers.CharField(validators=[validate_name])
+
+    class Meta:
+        model = User
+        fields = ("first_name", "last_name")
+
+
 class PublicUserSerializer(serializers.ModelSerializer):
     """
     Contact-safe representation of a User, for anywhere a person's

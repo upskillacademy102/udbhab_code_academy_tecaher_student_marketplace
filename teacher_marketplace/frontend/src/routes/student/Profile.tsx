@@ -24,16 +24,20 @@ const LEVELS = [
 interface Form {
   education_level: string;
   grade_or_year: string;
+  address_line1: string;
+  address_line2: string;
   city: string;
   state: string;
+  pincode: string;
   country: string;
   preferred_subjects: string;
   bio: string;
 }
 
 const EMPTY: Form = {
-  education_level: "", grade_or_year: "", city: "", state: "",
-  country: "", preferred_subjects: "", bio: "",
+  education_level: "", grade_or_year: "",
+  address_line1: "", address_line2: "", city: "", state: "", pincode: "", country: "",
+  preferred_subjects: "", bio: "",
 };
 
 export function Profile() {
@@ -71,8 +75,11 @@ export function Profile() {
     setF({
       education_level: data.education_level ?? "",
       grade_or_year: data.grade_or_year ?? "",
+      address_line1: data.address_line1 ?? "",
+      address_line2: data.address_line2 ?? "",
       city: data.city ?? "",
       state: data.state ?? "",
+      pincode: data.pincode ?? "",
       country: data.country ?? "",
       preferred_subjects: data.preferred_subjects ?? "",
       bio: data.bio ?? "",
@@ -150,6 +157,19 @@ export function Profile() {
       <section className="u-card u-card-pad flex flex-col gap-4">
         <h2 className="u-h3">Where you are</h2>
         <p className="u-fine -mt-2">Only needed if you want lessons in person.</p>
+
+        <div className="u-field">
+          <label className="u-label" htmlFor="p-addr1">Address line 1</label>
+          <input id="p-addr1" className="u-input" maxLength={255} placeholder="House/flat no., building, street"
+            value={f.address_line1} onChange={(e) => set("address_line1", e.target.value)} />
+          {errors.address_line1 && <p className="u-error">{errors.address_line1}</p>}
+        </div>
+        <div className="u-field">
+          <label className="u-label" htmlFor="p-addr2">Address line 2</label>
+          <input id="p-addr2" className="u-input" maxLength={255} placeholder="Area, landmark (optional)"
+            value={f.address_line2} onChange={(e) => set("address_line2", e.target.value)} />
+        </div>
+
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="u-field">
             <label className="u-label" htmlFor="p-city">City</label>
@@ -161,9 +181,15 @@ export function Profile() {
             <input id="p-state" className="u-input" value={f.state} onChange={(e) => set("state", e.target.value)} />
           </div>
           <div className="u-field">
-            <label className="u-label" htmlFor="p-country">Country</label>
-            <input id="p-country" className="u-input" value={f.country} onChange={(e) => set("country", e.target.value)} />
+            <label className="u-label" htmlFor="p-pincode">PIN code</label>
+            <input id="p-pincode" className="u-input" inputMode="numeric" maxLength={6} placeholder="e.g. 700001"
+              value={f.pincode} onChange={(e) => set("pincode", e.target.value.replace(/[^0-9]/g, ""))} />
+            {errors.pincode && <p className="u-error">{errors.pincode}</p>}
           </div>
+        </div>
+        <div className="u-field">
+          <label className="u-label" htmlFor="p-country">Country</label>
+          <input id="p-country" className="u-input" value={f.country} onChange={(e) => set("country", e.target.value)} />
         </div>
       </section>
 

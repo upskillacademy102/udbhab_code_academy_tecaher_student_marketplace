@@ -266,7 +266,13 @@ class EligibleTeacherSearchView(APIView):
 
         fake_requirement = _FakeReq()
         fake_requirement.subject_id = subject.id
-        fake_requirement.preferred_language_id = language_id
+        # This endpoint is an ad-hoc param search, not driven by a real
+        # StudentRequirement - "no language param" and "any language is
+        # fine" are the same thing here, so no_language_preference stays
+        # False and an empty id list already means "match everyone" (see
+        # LanguageMatchingService.match_by_ids).
+        fake_requirement.preferred_language_ids = [language_id] if language_id else []
+        fake_requirement.no_language_preference = False
         fake_requirement.class_duration_minutes = duration
         fake_requirement.teaching_mode = teaching_mode
 

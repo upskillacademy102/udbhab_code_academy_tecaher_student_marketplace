@@ -42,6 +42,7 @@ from apps.lead_engine.serializers import (
     LeadUnlockPricingSerializer,
     LeadUnlockPricingWriteSerializer,
 )
+from apps.lead_engine.services.visibility_service import leads_visible_to
 from apps.lead_engine.unlock_service import (
     InsufficientBalanceForUnlock,
     unlock_lead_contact,
@@ -92,12 +93,47 @@ def _my_rating_map(teacher, leads):
     )
 
 
+def _unlock_count_map(leads):
+    """{lead_id: N} - how many teachers across the WHOLE requirement
+    have unlocked it, powering the "N teachers already unlocked this
+    lead" badge.
+
+    Each teacher has their OWN separate Lead row for the same
+    requirement (unique_lead_per_requirement_teacher_pair), and
+    LeadUnlockHistory.lead points at whichever teacher's own row they
+    unlocked - never a shared id - so counting by lead_id would only
+    ever find 0 or 1 (this teacher's own unlock). The real count has
+    to be grouped by student_requirement, then broadcast back to
+    every lead that shares it.
+    """
+    from django.db.models import Count
+
+    requirement_ids = {lead_obj.student_requirement_id for lead_obj in leads}
+    counts_by_requirement = dict(
+        LeadUnlockHistory.objects.filter(
+            lead__student_requirement_id__in=requirement_ids
+        )
+        .values("lead__student_requirement_id")
+        .annotate(n=Count("id"))
+        .values_list("lead__student_requirement_id", "n")
+    )
+    return {
+        lead_obj.id: counts_by_requirement.get(lead_obj.student_requirement_id, 0)
+        for lead_obj in leads
+    }
+
+
 @extend_schema(tags=["Leads"])
 class LeadListView(generics.ListAPIView):
     """
     Lists the authenticated teacher's own matching leads. Uses
     LeadListSerializer (lighter payload) for the list view - full
     detail is available via LeadDetailView.
+
+    Excludes direct offers ("Learn with this teacher" picks) - those
+    live exclusively in the Offers tab (LeadOffersView) so a teacher
+    isn't asked to spot one gold-glow-worthy card mixed into their
+    ordinary matched-lead list.
     """
 
     serializer_class = LeadListSerializer
@@ -106,17 +142,63 @@ class LeadListView(generics.ListAPIView):
         if getattr(self, "swagger_fake_view", False):
             return Lead.objects.none()
         profile = _get_teacher_profile_or_raise(self.request)
-        return Lead.objects.filter(teacher_profile=profile).select_related(
-            "student_requirement",
-            "student_requirement__subject",
-            "student_requirement__city",
-            "student_requirement__student",
+        return (
+            leads_visible_to(profile)
+            .exclude(assignments__is_direct=True)
+            .select_related(
+                "student_requirement",
+                "student_requirement__subject",
+                "student_requirement__city",
+                "student_requirement__student",
+            )
         )
 
     def list(self, request, *args, **kwargs):
         profile = _get_teacher_profile_or_raise(request)
         queryset = list(self.filter_queryset(self.get_queryset()))
-        ctx = {"my_ratings": _my_rating_map(profile.teacher, queryset)}
+        ctx = {
+            "my_ratings": _my_rating_map(profile.teacher, queryset),
+            "unlock_counts": _unlock_count_map(queryset),
+        }
+        serializer = LeadListSerializer(queryset, many=True, context=ctx)
+        return APIResponse.success(data=serializer.data)
+
+
+@extend_schema(tags=["Leads"], summary="Direct offers - students who picked this teacher directly")
+class LeadOffersView(generics.ListAPIView):
+    """
+    GET /api/v1/leads/offers/
+
+    The repurposed "Offers" tab: exclusively direct "Learn with this
+    teacher" picks (is_direct=True) - never expire, gold nav-glow
+    while any are pending. The general subscription/distance cascade
+    lives in the ordinary Leads tab (LeadListView) instead.
+    """
+
+    serializer_class = LeadListSerializer
+
+    def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return Lead.objects.none()
+        profile = _get_teacher_profile_or_raise(self.request)
+        return (
+            leads_visible_to(profile)
+            .filter(assignments__is_direct=True)
+            .select_related(
+                "student_requirement",
+                "student_requirement__subject",
+                "student_requirement__city",
+                "student_requirement__student",
+            )
+        )
+
+    def list(self, request, *args, **kwargs):
+        profile = _get_teacher_profile_or_raise(request)
+        queryset = list(self.filter_queryset(self.get_queryset()))
+        ctx = {
+            "my_ratings": _my_rating_map(profile.teacher, queryset),
+            "unlock_counts": _unlock_count_map(queryset),
+        }
         serializer = LeadListSerializer(queryset, many=True, context=ctx)
         return APIResponse.success(data=serializer.data)
 
@@ -130,7 +212,7 @@ class PendingRatingsView(generics.ListAPIView):
     """
     GET: every lead the teacher has unlocked and not yet rated for quality.
     Drives the "you have N leads to rate" nudge - honest lead feedback is
-    what protects every teacher from fake enquiries.
+    what protects every teacher from fake leads.
     """
 
     serializer_class = LeadListSerializer
@@ -175,7 +257,7 @@ class PendingRatingsView(generics.ListAPIView):
         teacher who unlocks a lead and leaves without rating it gets an
         actual notification, not just a page they can scroll past. Runs as
         a side effect of every pending-ratings check (this view is what
-        both the SPA-wide review gate and the enquiries list poll), so it
+        both the SPA-wide review gate and the leads list poll), so it
         fires as soon as anything asks "does this teacher owe a rating?" -
         not tied to one specific call site that could be skipped or
         refactored away.
@@ -206,7 +288,7 @@ class LeadExportView(APIView):
     """
     GET: streams a CSV of every lead this teacher has unlocked, contact
     details included - the same unlock-gated data already shown on their
-    dashboard/enquiries list, just downloadable. Never includes a lead
+    dashboard/leads list, just downloadable. Never includes a lead
     that isn't contact_unlocked, for the same reason every other surface
     in this app withholds it: unlocking is what pays for that visibility.
     """
@@ -229,7 +311,7 @@ class LeadExportView(APIView):
         )
 
         response = HttpResponse(content_type="text/csv")
-        response["Content-Disposition"] = 'attachment; filename="enquiries.csv"'
+        response["Content-Disposition"] = 'attachment; filename="leads.csv"'
         writer = csv.writer(response)
         writer.writerow(
             ["Subject", "Mode", "City", "Student name", "Phone", "Email", "Status", "Unlocked at"]
@@ -263,14 +345,15 @@ class LeadDetailView(APIView):
     def get_object(self, request, lead_id):
         profile = _get_teacher_profile_or_raise(request)
         lead = (
-            Lead.objects.filter(id=lead_id, teacher_profile=profile)
+            leads_visible_to(profile)
+            .filter(id=lead_id)
             .select_related(
                 "student_requirement",
                 "student_requirement__subject",
-                "student_requirement__preferred_language",
                 "student_requirement__city",
                 "student_requirement__student",
             )
+            .prefetch_related("student_requirement__preferred_languages__language")
             .first()
         )
         if lead is None:
@@ -287,9 +370,13 @@ class LeadDetailView(APIView):
 
         logger.info("Lead %s viewed by teacher %s", lead.id, request.user.email)
 
-        return APIResponse.success(
-            data=LeadSerializer(lead, context={"request": request}).data
-        )
+        # Every teacher's own Lead row across this requirement, not just
+        # this one - see _unlock_count_map's docstring for why.
+        unlocked_count = LeadUnlockHistory.objects.filter(
+            lead__student_requirement=lead.student_requirement
+        ).count()
+        ctx = {"request": request, "unlocked_count": unlocked_count}
+        return APIResponse.success(data=LeadSerializer(lead, context=ctx).data)
 
 
 # ==========================================================
@@ -334,12 +421,16 @@ class UnlockLeadView(APIView):
             raise ValidationException(detail="lead_id is required.")
 
         try:
-            lead = Lead.objects.select_related(
-                "teacher_profile",
-                "student_requirement",
-                "student_requirement__subject",
-                "student_requirement__student",
-            ).get(id=lead_id, teacher_profile=profile)
+            lead = (
+                leads_visible_to(profile)
+                .select_related(
+                    "teacher_profile",
+                    "student_requirement",
+                    "student_requirement__subject",
+                    "student_requirement__student",
+                )
+                .get(id=lead_id)
+            )
         except Lead.DoesNotExist:
             raise ResourceNotFoundException(detail="Lead not found.")
 
@@ -423,6 +514,68 @@ class LeadRateView(APIView):
         return APIResponse.success(
             data={"verdict": rating.verdict},
             message="Thanks - your feedback helps keep leads honest.",
+        )
+
+
+@extend_schema(tags=["Leads"], responses={200: OpenApiResponse(description="`data`: {status}")})
+class LeadRejectView(APIView):
+    """
+    POST /api/v1/leads/{id}/reject/
+
+    Lets a teacher permanently decline a lead they have NOT unlocked
+    yet - once contact is unlocked, they must review it instead (see
+    LeadRateView/PendingRatingsView), never reject it. Rejecting
+    releases any open LeadAssignment turn immediately, so
+    LeadDistributionService can move on to the next candidate rather
+    than waiting for the response window to time out.
+    """
+
+    def post(self, request, id):
+        from django.utils import timezone
+
+        from apps.lead_engine.models import LeadStatus
+        from apps.matching.models import AssignmentStatus, LeadAssignment
+        from apps.matching.services.lead_distribution_service import (
+            LeadDistributionService,
+        )
+
+        profile = _get_teacher_profile_or_raise(request)
+        lead = leads_visible_to(profile).filter(id=id).first()
+        if lead is None:
+            raise ResourceNotFoundException(detail="Lead not found.")
+
+        if lead.contact_unlocked:
+            raise ValidationException(
+                detail="You've already unlocked this lead - review it instead of rejecting it."
+            )
+        # No separate "already rejected" check: leads_visible_to() already
+        # excludes REJECTED leads, so a repeat call 404s above instead.
+
+        lead.status = LeadStatus.REJECTED
+        lead.rejected_at = timezone.now()
+        lead.save(update_fields=["status", "rejected_at", "updated_at"])
+
+        # lead__student_requirement, not lead= - LeadAssignment.lead
+        # always anchors to one canonical Lead per requirement, even
+        # for a non-canonical offered teacher's own assignment (see
+        # visibility_service's docstring for why).
+        assignment = LeadAssignment.objects.filter(
+            lead__student_requirement=lead.student_requirement,
+            teacher=profile.teacher,
+            status__in=[AssignmentStatus.ASSIGNED, AssignmentStatus.VIEWED],
+        ).first()
+        if assignment is not None:
+            is_direct = assignment.is_direct
+            LeadDistributionService.reject_assignment(assignment)
+            if is_direct:
+                from apps.notifications.services import NotificationService
+
+                NotificationService.direct_offer_declined(lead)
+
+        logger.info("Lead %s rejected by teacher %s", lead.id, request.user.email)
+
+        return APIResponse.success(
+            data={"status": lead.status}, message="Lead rejected."
         )
 
 

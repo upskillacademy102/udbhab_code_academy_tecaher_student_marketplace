@@ -33,6 +33,13 @@ export async function replayTeacherIntent(): Promise<boolean> {
     ? (intent as { teachLanguages: string[] }).teachLanguages
     : [];
   const subject = intent.subject ?? null;
+  // Current shape: the "teach-hours" step now writes the same windows[]
+  // (each day with its own time) the student "when" step always has -
+  // static/js/auth.js's registerFlow no longer writes the legacy
+  // days/from/to (one shared band for every day) below, but an
+  // already-saved intent from before that change, or an old bookmarked
+  // link, may still only have it.
+  const windows = Array.isArray(intent.windows) ? intent.windows : [];
   const days = Array.isArray(intent.days) ? intent.days : [];
 
   let touched = false;
@@ -65,18 +72,30 @@ export async function replayTeacherIntent(): Promise<boolean> {
     return touched;
   }
 
-  const band = BANDS.find((b) => b.from === intent.from) ?? BANDS[2];
-  if (days.length) {
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata";
+
+  if (windows.length) {
+    for (const w of windows) {
+      try {
+        await api.post(
+          "/teachers/profile/weekly-availability/",
+          { day_of_week: Number(w.day), start_time: w.start, end_time: w.end, timezone },
+          { silent: true },
+        );
+        touched = true;
+      } catch {
+        // A duplicate window is rejected by a unique constraint, which is
+        // fine — the row already exists, which is the outcome we wanted.
+      }
+    }
+  } else if (days.length) {
+    // Legacy shape: every day shares the same one time range.
+    const band = BANDS.find((b) => b.from === intent.from) ?? BANDS[2];
     for (const day of days) {
       try {
         await api.post(
           "/teachers/profile/weekly-availability/",
-          {
-            day_of_week: Number(day),
-            start_time: band.from,
-            end_time: band.to,
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata",
-          },
+          { day_of_week: Number(day), start_time: band.from, end_time: band.to, timezone },
           { silent: true },
         );
         touched = true;

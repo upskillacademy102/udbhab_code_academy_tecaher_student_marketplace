@@ -60,8 +60,22 @@ class ResolvedConfig:
         return self._get("max_location_radius_km", "MAX_LOCATION_RADIUS_KM", 20)
 
     @property
-    def lead_response_window_hours(self) -> int:
-        return self._get("lead_response_window_hours", "LEAD_RESPONSE_WINDOW_HOURS", 24)
+    def offline_response_window_hours(self) -> int:
+        return self._get(
+            "offline_response_window_hours", "OFFLINE_RESPONSE_WINDOW_HOURS", 24
+        )
+
+    @property
+    def online_tier_window_hours(self) -> int:
+        return self._get(
+            "online_tier_window_hours", "ONLINE_TIER_WINDOW_HOURS", 8
+        )
+
+    @property
+    def lead_visibility_window_hours(self) -> int:
+        return self._get(
+            "lead_visibility_window_hours", "LEAD_VISIBILITY_WINDOW_HOURS", 24
+        )
 
     @property
     def subscription_priority_order(self) -> list:

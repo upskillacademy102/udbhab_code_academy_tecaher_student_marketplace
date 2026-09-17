@@ -215,6 +215,25 @@ def validate_language_code(value: str) -> None:
         )
 
 
+# A 6-digit Indian PIN code - first digit 1-9 (no leading zero), matching
+# how MOBILE_NUMBER_REGEX above is digits-only rather than "looks like a
+# phone number". This is deliberately stricter than PincodeLocation.pincode
+# itself (which also stores synthetic "CITY:<uuid>" cache keys and so can't
+# be format-restricted) - this validator is for a genuine user-entered
+# postal code on an address form.
+_PINCODE_REGEX = re.compile(r"^[1-9][0-9]{5}$")
+
+
+def validate_pincode(value: str) -> None:
+    if value is None or value == "":
+        return
+    if not _PINCODE_REGEX.match(value):
+        raise ValidationError(
+            _("Enter a valid 6-digit PIN code."),
+            code="invalid_pincode",
+        )
+
+
 # ISO 3166-1 alpha-2 or alpha-3 country code (letters only, 2-3 chars).
 _COUNTRY_CODE_REGEX = re.compile(r"^[A-Za-z]{2,3}$")
 

@@ -13,10 +13,14 @@ Phase 1 scope note: no matching/search/ranking logic lives here -
 these serializers only validate and shape Student profile data.
 """
 
+import logging
+
 from rest_framework import serializers
 
 from apps.accounts.serializers import UserSerializer
 from apps.students.models import Student
+
+logger = logging.getLogger("apps.students")
 
 
 class StudentSerializer(serializers.ModelSerializer):
@@ -36,8 +40,11 @@ class StudentSerializer(serializers.ModelSerializer):
             "profile_photo",
             "education_level",
             "grade_or_year",
+            "address_line1",
+            "address_line2",
             "city",
             "state",
+            "pincode",
             "country",
             "preferred_subjects",
             "bio",
@@ -63,8 +70,11 @@ class StudentCreateUpdateSerializer(serializers.ModelSerializer):
             "profile_photo",
             "education_level",
             "grade_or_year",
+            "address_line1",
+            "address_line2",
             "city",
             "state",
+            "pincode",
             "country",
             "preferred_subjects",
             "bio",
@@ -75,8 +85,11 @@ class StudentCreateUpdateSerializer(serializers.ModelSerializer):
     # only ever holds a real value or NULL, never a blank string.
     _NULLABLE_TEXT = (
         "grade_or_year",
+        "address_line1",
+        "address_line2",
         "city",
         "state",
+        "pincode",
         "country",
         "preferred_subjects",
         "bio",
@@ -90,6 +103,65 @@ class StudentCreateUpdateSerializer(serializers.ModelSerializer):
                     v = v.strip()
                     attrs[field] = v or None
         return attrs
+
+    def create(self, validated_data):
+        instance = super().create(validated_data)
+        self._resolve_pincode(instance, "pincode" in validated_data)
+        return instance
+
+    def update(self, instance, validated_data):
+        instance = super().update(instance, validated_data)
+        self._resolve_pincode(instance, "pincode" in validated_data)
+        return instance
+
+    @staticmethod
+    def _resolve_pincode(instance, pincode_was_submitted: bool):
+        """Mirrors TeacherCreateUpdateSerializer._resolve_pincode exactly -
+        see that docstring. Best-effort here too: the address itself was
+        already saved by super().create()/update() by the time this runs,
+        and nothing currently queries a student's pincode_location, so a
+        geocoding provider being unreachable must never fail the request -
+        this just keeps the same structured-location capability available
+        for a future in-person student-side matching use, same reasoning
+        as the model field."""
+        if not pincode_was_submitted:
+            return
+        if not instance.pincode:
+            if instance.pincode_location_id is not None:
+                instance.pincode_location = None
+                instance.save(update_fields=["pincode_location"])
+            return
+
+        from apps.matching.services.geocoding_service import (
+            GeocodingError,
+            PincodeGeocodingService,
+        )
+
+        try:
+            location = PincodeGeocodingService.get_or_geocode(instance.pincode)
+        except GeocodingError:
+            # A location left over from a DIFFERENT, previously-saved
+            # pincode must not survive a failed re-geocode of a changed
+            # one - see TeacherCreateUpdateSerializer._resolve_pincode's
+            # docstring for why a stale-but-present location is worse
+            # than none at all.
+            stale = (
+                instance.pincode_location_id is not None
+                and instance.pincode_location.pincode != instance.pincode
+            )
+            if stale:
+                instance.pincode_location = None
+                instance.save(update_fields=["pincode_location"])
+            logger.warning(
+                "Could not resolve pincode %s for student %s - address saved, "
+                "pincode_location %s.",
+                instance.pincode,
+                instance.pk,
+                "cleared (was stale for a different pincode)" if stale else "left as-is",
+            )
+            return
+        instance.pincode_location = location
+        instance.save(update_fields=["pincode_location"])
 
     def validate_preferred_subjects(self, value):
         """

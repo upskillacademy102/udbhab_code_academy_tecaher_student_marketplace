@@ -3,17 +3,17 @@ import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import type { Lead } from "@/lib/types";
 import { AllowanceBar } from "@/components/Allowance";
-import { money, titleCase } from "@/lib/ui";
+import { moneyRange, titleCase } from "@/lib/ui";
 
 /**
- * Student enquiries matched to this teacher.
+ * Student leads matched to this teacher.
  *
  * The allowance sits at the top of this page on purpose: every card below it
  * costs one, so the budget belongs in view while the choice is being made,
  * not one page away.
  *
  * Contact details stay hidden until unlocked — that is the product, not a
- * dark pattern — so each card shows everything needed to judge the enquiry
+ * dark pattern — so each card shows everything needed to judge the lead
  * (subject, mode, budget, when) and nothing that identifies the student.
  */
 export function Leads() {
@@ -38,14 +38,14 @@ export function Leads() {
 
       {isError && (
         <div className="u-alert u-alert-error items-center justify-between">
-          <span>{(error as { message?: string })?.message ?? "Couldn't load your enquiries."}</span>
+          <span>{(error as { message?: string })?.message ?? "Couldn't load your leads."}</span>
           <button type="button" className="u-btn-secondary u-btn-sm" onClick={() => refetch()}>Try again</button>
         </div>
       )}
 
       {!isLoading && !isError && items.length === 0 && (
         <section className="u-card flex flex-col items-center gap-4 px-6 py-14 text-center">
-          <h1 className="u-h3">No enquiries yet</h1>
+          <h1 className="u-h3">No leads yet</h1>
           <p className="u-body max-w-prose text-ink-600">
             Students get matched to you on subject, language and the hours you've set as free. The more hours you
             set, the more students can reach you.
@@ -76,8 +76,8 @@ export function Leads() {
 }
 
 function LeadCard({ lead: l, index }: { lead: Lead; index: number }) {
-  const budget =
-    l.budget_min || l.budget_max ? `${money(l.budget_min) ?? "—"} – ${money(l.budget_max) ?? "—"}` : "Not said";
+  const budgetRange = moneyRange(l.budget_min, l.budget_max);
+  const budget = budgetRange ? `${budgetRange} / mo` : "Not said";
   const open = !l.contact_unlocked;
 
   return (
@@ -88,7 +88,7 @@ function LeadCard({ lead: l, index }: { lead: Lead; index: number }) {
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="truncate text-[1rem] font-semibold text-ink-900">{l.subject_name ?? "Enquiry"}</h3>
+          <h3 className="truncate text-[1rem] font-semibold text-ink-900">{l.subject_name ?? "Lead"}</h3>
           <p className="u-fine mt-0.5">
             {[titleCase(l.teaching_mode ?? ""), l.city_name].filter(Boolean).join(" · ") || "—"}
           </p>
@@ -99,6 +99,12 @@ function LeadCard({ lead: l, index }: { lead: Lead; index: number }) {
           <span className="u-badge u-badge-pine shrink-0">Unlocked</span>
         )}
       </div>
+
+      {Boolean(l.unlocked_count) && (
+        <p className="u-badge u-badge-marigold w-fit text-[0.75rem]">
+          {l.unlocked_count} teacher{l.unlocked_count === 1 ? "" : "s"} unlocked this
+        </p>
+      )}
 
       <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-[0.8125rem]">
         <div>

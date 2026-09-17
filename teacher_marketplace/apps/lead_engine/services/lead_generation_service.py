@@ -16,11 +16,13 @@ a model.
 
 MATCHING CRITERIA (per spec):
     1. Subject      - teacher must teach the requirement's subject
-    2. Language      - if the student specified a preferred language,
-                       the teacher must teach in that language
-                       (if the student left it blank, this
-                       criterion is skipped entirely - no
-                       requirement to match against)
+    2. Language      - if the student ranked one or more preferred
+                       languages, the teacher must teach in at
+                       least one of them (rank affects relative
+                       score, not this pass/fail gate - see
+                       MatchingService._language_score); if the
+                       student chose "any language", this
+                       criterion is skipped entirely
     3. Location      - if the requirement's teaching_mode requires
                        Offline (OFFLINE or BOTH), the teacher must
                        serve the requirement's city
@@ -122,16 +124,111 @@ def _teaching_modes_compatible(requirement_mode: str, teacher_mode: str) -> bool
     return requirement_mode == teacher_mode
 
 
+def _allowed_teacher_modes(requirement_mode) -> list:
+    """
+    The set of TeacherProfile.teaching_mode values that
+    _teaching_modes_compatible(requirement_mode, teacher_mode) would
+    accept, expressed as a plain list so it can be used in a
+    `teaching_mode__in=...` DB filter - collapsing the pairwise
+    function into a single-sided lookup since `requirement_mode` is
+    fixed for the whole queryset.
+    """
+    if requirement_mode == TeachingMode.BOTH:
+        return [TeachingMode.ONLINE, TeachingMode.OFFLINE, TeachingMode.BOTH]
+    return [requirement_mode, TeachingMode.BOTH]
+
+
+def _offline_location_eligible_ids(candidates, requirement) -> set:
+    """
+    Returns the subset (by TeacherProfile.id) of `candidates` who
+    could actually be offered this OFFLINE/BOTH requirement in real
+    life - i.e. applies the SAME location gate
+    LeadDistributionService/EligibilityService already use for the
+    real LeadAssignment offer, so a teacher who is genuinely too far
+    away (or in an unconfirmed city) never even generates a soft Lead
+    a student's "matched" count relies on and a teacher can pay to
+    unlock. Before this, location only fed a soft score
+    (MatchingService._location_score, 10% weight) that was never
+    enough to actually exclude anyone - a teacher tens of kilometres
+    away for an in-person lesson still generated a Lead.
+
+    `candidates` must already be the subject/language/mode-narrowed
+    list (small, per the two-phase strategy) - this never runs
+    against the full teacher table.
+
+    Falls back to the older "teacher lists this city as served" check
+    only when real pincode-distance data isn't available for the
+    requirement or a given teacher (e.g. pre-dates the address
+    feature, or geocoding hasn't resolved yet) - real distance is
+    authoritative whenever both sides have it.
+    """
+    from apps.matching.services.location_matching_service import (
+        LocationMatchingService,
+    )
+
+    candidate_pincode_ids = {
+        c.id: c.teacher.pincode_location_id
+        for c in candidates
+        if c.teacher.pincode_location_id is not None
+    }
+    location_results = {}
+    if requirement.pincode_location_id is not None and candidate_pincode_ids:
+        location_results = LocationMatchingService.find_eligible_teacher_ids(
+            requirement.pincode_location, candidate_pincode_ids
+        )
+
+    kept_ids = set()
+    for c in candidates:
+        result = location_results.get(c.id)
+        if result is not None:
+            # Real distance was computed for this teacher - authoritative,
+            # whichever way it goes.
+            if result.is_eligible:
+                kept_ids.add(c.id)
+            continue
+        # No pincode-distance comparison available for this teacher
+        # specifically (their own pincode_location is missing/unresolved).
+        # Fall back to the coarser "does this teacher serve that city"
+        # signal wherever the requirement actually has one to check.
+        if requirement.city_id is not None:
+            teacher_city_ids = {city.id for city in c.cities.all()}
+            if requirement.city_id in teacher_city_ids:
+                kept_ids.add(c.id)
+            continue
+        if requirement.pincode_location_id is None:
+            # The requirement itself has NO location signal at all (no
+            # city, no pincode) - nothing to disqualify this teacher
+            # against, so don't over-exclude on missing data.
+            kept_ids.add(c.id)
+            continue
+        # The requirement DOES have a real, precise pincode-based location
+        # (just no separate City row - e.g. it was created from a raw
+        # pincode rather than a city name), but this teacher has neither a
+        # comparable pincode_location nor a served-city entry. There is no
+        # way to confirm they are anywhere near this student, so - unlike
+        # the "no signal at all" case above - do not assume they are.
+    return kept_ids
+
+
 def find_candidate_teacher_profiles(requirement):
     """
     PHASE 1 of the two-phase performance strategy (see module
     docstring below): a cheap, indexed SQL filter narrowing to
-    verified teachers who teach the right subject - and, if the
-    requirement is offline-capable, who serve the right city. This
-    is intentionally the SAME cheap narrowing Phase 2 used, now
-    explicitly separated from scoring (which is expensive and must
-    only run against this already-narrowed set, never the full
-    teacher table).
+    verified teachers who teach the right subject and whose teaching
+    mode is compatible with the requirement's - plus, if the
+    requirement is offline-capable, a hard location-eligibility gate
+    (see _filter_by_offline_location_eligibility). This is
+    intentionally the SAME narrowing Phase 2 used, now explicitly
+    separated from scoring (which is expensive and must only run
+    against this already-narrowed set, never the full teacher table).
+
+    Still returns a lazy queryset (existing callers outside this
+    module chain further queryset methods - e.g. .values_list() - off
+    the result), even though the location gate below needs the rows
+    materialised first to compute distances in Python: that
+    materialisation happens internally, and the ineligible rows are
+    then excluded via one final `.filter(id__in=...)` so the return
+    value stays a genuine, further-chainable QuerySet.
     """
     from apps.trust.matching_support import apply_teacher_gate, exclude_blocked_teachers
 
@@ -141,6 +238,7 @@ def find_candidate_teacher_profiles(requirement):
                 TeacherProfile.objects.filter(
                     subjects=requirement.subject,
                     teacher__user__is_active=True,
+                    teaching_mode__in=_allowed_teacher_modes(requirement.teaching_mode),
                 )
             ),
             requirement.student,
@@ -156,10 +254,16 @@ def find_candidate_teacher_profiles(requirement):
         .distinct()
     )
 
-    if requirement.preferred_language_id:
-        queryset = queryset.filter(languages=requirement.preferred_language)
+    if not requirement.no_language_preference:
+        language_ids = requirement.preferred_language_ids
+        if language_ids:
+            queryset = queryset.filter(languages__id__in=language_ids)
 
-    return queryset
+    if requirement.teaching_mode not in (TeachingMode.OFFLINE, TeachingMode.BOTH):
+        return queryset
+
+    eligible_ids = _offline_location_eligible_ids(list(queryset), requirement)
+    return queryset.filter(id__in=eligible_ids)
 
 
 def generate_leads_for_requirement(requirement):
@@ -186,10 +290,13 @@ def generate_leads_for_requirement(requirement):
     from apps.subscriptions.services import SubscriptionService
 
     # MatchingService.score_teacher() reads requirement.schedule_preferences
-    # twice, and it runs once per candidate - without this prefetch that was
-    # 2 identical queries for the *student's* windows per matching teacher
-    # (the linear cost that made a popular-subject POST slow). Prefetch once.
-    prefetch_related_objects([requirement], "schedule_preferences")
+    # and (via _language_score) requirement.preferred_languages, each once
+    # per candidate - without this prefetch that was N identical queries
+    # per matching teacher (the linear cost that made a popular-subject
+    # POST slow). Prefetch both once.
+    prefetch_related_objects(
+        [requirement], "schedule_preferences", "preferred_languages"
+    )
 
     candidates = list(find_candidate_teacher_profiles(requirement))
 

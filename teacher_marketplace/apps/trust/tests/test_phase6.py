@@ -33,7 +33,7 @@ RQ = "/api/v1/student-requirements/"
 _PAYLOAD = {
     "subject": "Mathematics",
     "student_class": "10",
-    "preferred_language": "English",
+    "preferred_languages": ["English"],
     "budget_min": 200,
     "budget_max": 900,
     "teaching_mode": "online",
@@ -218,7 +218,7 @@ class VelocityTests(PipelineFixtureMixin, APITestCase):
             StudentRequirement.objects.create(
                 student=student,
                 subject=self.math,
-                preferred_language=self.english,
+                no_language_preference=True,
                 teaching_mode="online",
                 class_duration_minutes=60,
                 status=status,

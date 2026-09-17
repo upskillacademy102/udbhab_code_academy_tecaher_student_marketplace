@@ -46,6 +46,7 @@ from apps.accounts.serializers import (
     ResetPasswordSerializer,
     SensitiveChangeConfirmSerializer,
     SessionAwareTokenRefreshSerializer,
+    UserNameUpdateSerializer,
     UserSerializer,
 )
 from apps.accounts.tokens import issue_pair
@@ -330,6 +331,14 @@ class MeView(APIView):
                 "impersonated_by": impersonated_by,
             }
         )
+
+    def patch(self, request):
+        serializer = UserNameUpdateSerializer(
+            request.user, data=request.data, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return APIResponse.success(data={"user": UserSerializer(request.user).data})
 
 
 # ==========================================================
