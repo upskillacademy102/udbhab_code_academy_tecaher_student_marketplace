@@ -96,7 +96,6 @@
       meta: {},
       init() {
         this.initCollection();
-        this.$watch("pagination", (p) => { this.meta = p || {}; });
       },
       prioTone(p) { return p <= 1 ? "badge-red" : (p === 2 ? "badge-amber" : "badge-slate"); },
       async assign(it) {

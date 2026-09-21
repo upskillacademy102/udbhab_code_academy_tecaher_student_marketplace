@@ -26,8 +26,13 @@ from apps.trust.models import (
 
 logger = logging.getLogger("apps.trust.sanction")
 
-# Roles a sanction may never touch, however it is triggered.
-_PROTECTED_ROLES = (UserRole.ADMIN, UserRole.SUPERADMIN)
+# Roles a sanction may never touch, however it is triggered. Super Admin is
+# the only permanently protected role - there is always at least one, and
+# it must never be able to lock itself/each other out. Admin is deliberately
+# NOT protected: a Super Admin must be able to ban/unban an Admin account
+# (manually, or via the staff-login brute-force auto-ban), same as any
+# Student or Teacher account.
+_PROTECTED_ROLES = (UserRole.SUPERADMIN,)
 
 
 class SanctionService:
@@ -56,7 +61,7 @@ class SanctionService:
         """
         if user.role in _PROTECTED_ROLES:
             raise ValidationException(
-                detail="Admin and Super Admin accounts cannot be sanctioned here."
+                detail="Super Admin accounts cannot be sanctioned here."
             )
 
         existing = SanctionService.active_for(user)

@@ -15,6 +15,8 @@ Run: python manage.py test apps.trust.tests.test_fake_lead_reports \
      --settings=config.settings.test
 """
 
+from datetime import timedelta
+
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
@@ -24,6 +26,7 @@ from apps.accounts.tests.helpers import login, make_user
 from apps.lead_engine.models import Lead
 from apps.lead_engine.tests.test_lead_pipeline import PipelineFixtureMixin
 from apps.lead_engine.unlock_service import unlock_lead_contact
+from apps.matching.models import LeadAssignment
 from apps.trust.models import (
     AccountSanction,
     LeadQualityRating,
@@ -234,15 +237,28 @@ class SanctionApiTests(_Mixin, APITestCase):
         student.refresh_from_db()
         self.assertTrue(student.is_active)
 
-    def test_staff_accounts_cannot_be_sanctioned(self):
+    def test_admin_can_be_sanctioned_but_superadmin_cannot(self):
+        # Admin is sanctionable (Super Admin's ban/unban authority extends
+        # to Admin accounts, not just Student/Teacher) - only Super Admin
+        # itself is permanently protected.
         self._superadmin()
-        target = make_user(role=UserRole.ADMIN)
+        admin_target = make_user(role=UserRole.ADMIN)
         r = self.client.post(
             "/api/v1/ops/sanctions/",
-            {"user_id": str(target.id), "kind": "ban"},
+            {"user_id": str(admin_target.id), "kind": "ban"},
             format="json",
         )
-        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(r.status_code, 201, r.content)
+        admin_target.refresh_from_db()
+        self.assertFalse(admin_target.is_active)
+
+        superadmin_target = make_user(role=UserRole.SUPERADMIN)
+        r2 = self.client.post(
+            "/api/v1/ops/sanctions/",
+            {"user_id": str(superadmin_target.id), "kind": "ban"},
+            format="json",
+        )
+        self.assertEqual(r2.status_code, 400, r2.content)
 
     def test_lift_reactivates_the_account(self):
         self._superadmin()
@@ -315,3 +331,154 @@ class TeacherRatingSurfaceTests(_Mixin, APITestCase):
 
         d = self.client.get("/api/v1/dashboard/").json()["data"]
         self.assertEqual(d["pending_rating_count"], 1)
+
+
+class LeadQualityVisibilityTests(_Mixin, APITestCase):
+    """
+    OpsStudentLeadQualityView / OpsTeacherLeadReviewsView (Phase 6) - the
+    Leads & Requirements browser's two tabs.
+    """
+
+    def _superadmin(self):
+        sa = make_user(role=UserRole.SUPERADMIN)
+        login(self.client, sa)
+        return sa
+
+    def _rate(self, student, teacher_name, *, verdict, note=""):
+        """Same shape as _Mixin._report_fake but returns the lead/teacher
+        too, and accepts any verdict - needed to build a mixed genuine/
+        unreachable/fake fixture for the aggregation tests below."""
+        req = self.make_requirement(student=student)
+        profile = self.make_teacher(teacher_name, plan=self.free_plan)
+        lead = Lead.objects.create(student_requirement=req, teacher_profile=profile)
+        unlock_lead_contact(profile.teacher, lead)
+        rating = LeadQualityService.rate(
+            teacher=profile.teacher, lead=lead, verdict=verdict, note=note
+        )
+        return rating, lead, profile.teacher
+
+    def test_non_superadmin_forbidden_on_both_endpoints(self):
+        login(self.client, make_user(role=UserRole.ADMIN))
+        self.assertEqual(
+            self.client.get("/api/v1/ops/students-lead-quality/").status_code, 403
+        )
+        self.assertEqual(
+            self.client.get("/api/v1/ops/teacher-lead-reviews/").status_code, 403
+        )
+
+    def test_student_aggregate_counts_match_the_underlying_ratings(self):
+        self._superadmin()
+        student = make_user(role=UserRole.STUDENT)
+        self._rate(student, "G1", verdict=LeadQualityVerdict.GENUINE)
+        self._rate(student, "G2", verdict=LeadQualityVerdict.GENUINE)
+        self._rate(student, "U1", verdict=LeadQualityVerdict.UNREACHABLE)
+        self._rate(student, "F1", verdict=LeadQualityVerdict.FAKE)
+
+        # Cross-check against the DB directly, not just the API response.
+        db_total = LeadQualityRating.objects.filter(student=student).count()
+        db_genuine = LeadQualityRating.objects.filter(
+            student=student, verdict=LeadQualityVerdict.GENUINE
+        ).count()
+        self.assertEqual(db_total, 4)
+        self.assertEqual(db_genuine, 2)
+
+        r = self.client.get("/api/v1/ops/students-lead-quality/")
+        self.assertEqual(r.status_code, 200)
+        row = next(
+            x
+            for x in r.json()["data"]["results"]
+            if x["student_id"] == str(student.id)
+        )
+        self.assertEqual(row["total_ratings"], db_total)
+        self.assertEqual(row["genuine"], db_genuine)
+        self.assertEqual(row["unreachable"], 1)
+        self.assertEqual(row["fake"], 1)
+        self.assertEqual(row["student_email"], student.email)
+        self.assertIsNone(row["sanction"])
+
+    def test_student_id_param_returns_that_students_individual_ratings(self):
+        self._superadmin()
+        student = make_user(role=UserRole.STUDENT)
+        other = make_user(role=UserRole.STUDENT)
+        self._rate(student, "D1", verdict=LeadQualityVerdict.GENUINE, note="all good")
+        self._rate(other, "D2", verdict=LeadQualityVerdict.FAKE)
+
+        r = self.client.get(
+            "/api/v1/ops/students-lead-quality/", {"student_id": str(student.id)}
+        )
+        data = r.json()["data"]
+        self.assertEqual(data["count"], 1)
+        self.assertEqual(data["results"][0]["verdict"], "genuine")
+        self.assertEqual(data["results"][0]["note"], "all good")
+
+    def test_banned_student_shows_sanction_in_the_summary(self):
+        self._superadmin()
+        student = make_user(role=UserRole.STUDENT)
+        self._rate(student, "B1", verdict=LeadQualityVerdict.FAKE)
+        SanctionService.apply(student, reason="manual test ban")
+
+        r = self.client.get("/api/v1/ops/students-lead-quality/")
+        row = next(
+            x
+            for x in r.json()["data"]["results"]
+            if x["student_id"] == str(student.id)
+        )
+        self.assertIsNotNone(row["sanction"])
+        self.assertEqual(row["sanction"]["kind"], "ban")
+        self.assertFalse(row["account_active"])
+
+    def test_teacher_lead_reviews_tags_direct_offer_vs_pooled_enquiry(self):
+        self._superadmin()
+        student = make_user(role=UserRole.STUDENT)
+        _, direct_lead, direct_teacher = self._rate(
+            student, "Direct1", verdict=LeadQualityVerdict.GENUINE
+        )
+        now = timezone.now()
+        LeadAssignment.objects.create(
+            lead=direct_lead,
+            teacher=direct_teacher,
+            subscription_tier="Free",
+            assignment_stage=1,
+            assigned_at=now,
+            expires_at=now + timedelta(hours=24),
+            is_direct=True,
+        )
+        # A pooled-enquiry lead has no LeadAssignment row at all in this
+        # fixture (make_teacher/make_requirement don't create one) - the
+        # view must default is_direct_offer to False rather than error.
+        _, _pooled_lead, pooled_teacher = self._rate(
+            student, "Pooled1", verdict=LeadQualityVerdict.GENUINE
+        )
+
+        r = self.client.get("/api/v1/ops/teacher-lead-reviews/")
+        self.assertEqual(r.status_code, 200)
+        rows = {row["teacher_id"]: row for row in r.json()["data"]["results"]}
+
+        self.assertTrue(rows[str(direct_teacher.id)]["is_direct_offer"])
+        self.assertFalse(rows[str(pooled_teacher.id)]["is_direct_offer"])
+        # Cross-check straight against the model, per the plan's own
+        # verification note for this phase.
+        self.assertEqual(
+            LeadAssignment.objects.get(
+                lead=direct_lead, teacher=direct_teacher
+            ).is_direct,
+            rows[str(direct_teacher.id)]["is_direct_offer"],
+        )
+
+    def test_teacher_lead_reviews_filters_by_teacher_and_verdict(self):
+        self._superadmin()
+        student = make_user(role=UserRole.STUDENT)
+        _, _, teacher_a = self._rate(student, "TA", verdict=LeadQualityVerdict.GENUINE)
+        _, _, teacher_b = self._rate(student, "TB", verdict=LeadQualityVerdict.FAKE)
+
+        by_teacher = self.client.get(
+            "/api/v1/ops/teacher-lead-reviews/", {"teacher_id": str(teacher_a.id)}
+        ).json()["data"]["results"]
+        self.assertEqual(len(by_teacher), 1)
+        self.assertEqual(by_teacher[0]["teacher_id"], str(teacher_a.id))
+
+        by_verdict = self.client.get(
+            "/api/v1/ops/teacher-lead-reviews/", {"verdict": "fake"}
+        ).json()["data"]["results"]
+        self.assertTrue(all(row["verdict"] == "fake" for row in by_verdict))
+        self.assertTrue(any(row["teacher_id"] == str(teacher_b.id) for row in by_verdict))

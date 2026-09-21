@@ -29,12 +29,18 @@ from apps.web import urls as web_urls
 # shell regardless; the browser fetches the real record from the API.
 DUMMY_UUID = "11111111-1111-1111-1111-111111111111"
 
-# URL-prefix -> the role whose nav and guard own that page.
+# URL-prefix -> the role whose nav and guard own that page. staff/admin/ and
+# staff/superadmin/ are the new React-owned dashboards (Phase 3+) - a
+# distinct prefix from the legacy admin-portal/ and super-admin/ templates,
+# which keep working by direct URL even though ROLE_HOME no longer points at
+# them (apps/web/guards.py).
 _PREFIX_ROLE = (
     ("student/", UserRole.STUDENT),
     ("teacher/", UserRole.TEACHER),
     ("admin-portal/", UserRole.ADMIN),
+    ("staff/admin/", UserRole.ADMIN),
     ("super-admin/", UserRole.SUPERADMIN),
+    ("staff/superadmin/", UserRole.SUPERADMIN),
 )
 
 # Public pages: (path, needs_login). /suspended/ is behind login_required_web
@@ -143,4 +149,32 @@ class AllPagesRenderTests(TestCase):
         self.assertFalse(
             failures,
             "pages 500ing under the Super Admin session:\n" + "\n".join(failures),
+        )
+
+    def test_every_nav_link_resolves_to_a_registered_route(self):
+        """
+        apps.web.nav.nav_for() is hand-maintained separately from
+        apps.web.urls - nothing enforces that a URL typed into a NavItem
+        actually matches a registered path. This walks every nav item for
+        every role and resolves its url through Django's own URL resolver,
+        so a typo'd or stale nav link (pointing at a renamed/removed page)
+        fails here instead of silently 404ing for a real user who clicks it.
+        """
+        from django.urls import Resolver404, resolve
+
+        from apps.web.nav import nav_for
+
+        failures = []
+        for role in ("student", "teacher", "admin", "superadmin"):
+            for section in nav_for(role):
+                for item in section["items"]:
+                    url = item.get("url")
+                    if not url:
+                        continue
+                    try:
+                        resolve(url)
+                    except Resolver404:
+                        failures.append(f"[{role}] {item['label']!r} -> {url}")
+        self.assertFalse(
+            failures, "nav items pointing at unregistered URLs:\n" + "\n".join(failures)
         )

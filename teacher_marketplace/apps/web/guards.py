@@ -21,8 +21,11 @@ from apps.accounts.authentication import CookieJWTAuthentication
 ROLE_HOME = {
     "student": "/student/",
     "teacher": "/teacher/",
-    "admin": "/admin-portal/",
-    "superadmin": "/super-admin/",
+    # Repointed to the new React dashboards (Phase 4). The old
+    # /admin-portal/ and /super-admin/ templates still work by direct URL -
+    # they're just no longer where a staff login lands.
+    "admin": "/staff/admin/",
+    "superadmin": "/staff/superadmin/",
 }
 
 

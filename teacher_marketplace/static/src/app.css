@@ -510,6 +510,7 @@
   .u-badge-pine { @apply bg-pine-50 text-pine-800 ring-pine-200; }
   .u-badge-ink { @apply bg-ink-50 text-ink-600 ring-ink-200; }
   .u-badge-marigold { @apply bg-marigold-100 text-marigold-800 ring-marigold-300; }
+  .u-badge-danger { @apply bg-danger/10 text-danger ring-danger/30; }
   .u-badge svg { @apply h-3.5 w-3.5 shrink-0; }
 
   /* --- Alerts -------------------------------------------------------- */

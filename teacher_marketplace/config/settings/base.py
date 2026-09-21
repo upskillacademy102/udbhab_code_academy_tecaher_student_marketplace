@@ -887,6 +887,21 @@ FAKE_LEAD_REPORT_MONTHLY_WINDOW_DAYS = config(
     "FAKE_LEAD_REPORT_MONTHLY_WINDOW_DAYS", default=30, cast=int
 )
 
+# Brute-force protection on the admin/super-admin staff-login endpoints
+# (apps.trust.services.staff_login_guard_service.StaffLoginGuardService).
+# >= STAFF_LOGIN_BRUTEFORCE_THRESHOLD failed attempts within a rolling 24h
+# window against the SAME real account auto-bans that account (a real,
+# superadmin-reversible AccountSanction, same pattern as the fake-lead
+# auto-ban above). The same threshold, hit by attempts against identifiers
+# that don't resolve to any real account, instead blocks the source IP
+# from the staff-login endpoints for STAFF_LOGIN_IP_BLOCK_MINUTES.
+STAFF_LOGIN_BRUTEFORCE_THRESHOLD = config(
+    "STAFF_LOGIN_BRUTEFORCE_THRESHOLD", default=10, cast=int
+)
+STAFF_LOGIN_IP_BLOCK_MINUTES = config(
+    "STAFF_LOGIN_IP_BLOCK_MINUTES", default=60, cast=int
+)
+
 # Phase 7 - payment / transaction fraud
 # One payment instrument (card fingerprint / UPI VPA) funding more than
 # this many distinct teacher accounts opens a payment-risk review item.

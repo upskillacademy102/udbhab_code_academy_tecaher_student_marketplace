@@ -25,6 +25,8 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth import authenticate
+from django.contrib.auth.hashers import check_password, make_password
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from drf_spectacular.utils import (
@@ -42,23 +44,33 @@ from rest_framework.views import APIView
 
 from apps.accounts.cookies import set_auth_cookies
 from apps.accounts.models import (
+    AdminAccountRequest,
+    AdminAccountRequestStatus,
+    AdminDepartment,
     AdminLoginRequest,
     ImpersonationSession,
     User,
     UserRole,
     UserSession,
 )
+from apps.accounts.services.admin_account_naming import approve_and_create_admin
 from apps.accounts.tokens import issue_pair
 from apps.core.exceptions.custom_exceptions import (
+    ConflictException,
     PermissionDeniedException,
     ResourceNotFoundException,
     ValidationException,
 )
 from apps.core.responses import APIResponse
-from apps.core.throttling import AdminLoginRateThrottle, ResilientAnonRateThrottle
+from apps.core.throttling import (
+    AdminLoginRateThrottle,
+    RegisterRateThrottle,
+    ResilientAnonRateThrottle,
+)
 from apps.ops.models import AuditCategory, AuditStatus
 from apps.ops.services import AuditService
 from apps.trust.services.captcha_service import CaptchaService
+from apps.trust.services.staff_login_guard_service import StaffLoginGuardService
 from apps.utils.validators import validate_mobile_number, validate_name
 
 _CREATABLE_BY_ADMIN = {UserRole.STUDENT, UserRole.TEACHER}
@@ -146,6 +158,12 @@ class AdminUserCreateSerializer(serializers.Serializer):
         return value
 
     def validate_role(self, value):
+        if value == UserRole.ADMIN:
+            raise serializers.ValidationError(
+                "Admin accounts can only be created through the admin-account "
+                "request/approval flow (Super Admin dashboard -> Admin "
+                "account requests), not created directly here."
+            )
         actor = (
             self.context["request"].web_user
             if hasattr(self.context["request"], "web_user")
@@ -172,6 +190,17 @@ class AdminUserUpdateSerializer(serializers.Serializer):
     is_email_verified = serializers.BooleanField(required=False)
     is_mobile_verified = serializers.BooleanField(required=False)
     role = serializers.ChoiceField(choices=UserRole.choices, required=False)
+
+    def validate_role(self, value):
+        if value == UserRole.ADMIN:
+            raise serializers.ValidationError(
+                "A user can only become an Admin through the admin-account "
+                "request/approval flow (Super Admin dashboard -> Admin "
+                "account requests) - role can't be changed to admin here, "
+                "even by a Super Admin. Moving an existing Admin OUT of the "
+                "role (e.g. back to teacher) is unaffected."
+            )
+        return value
 
     def validate_first_name(self, value):
         return _normalise_name(value)
@@ -214,6 +243,133 @@ class AdminLoginRequestSerializer(serializers.ModelSerializer):
             "created_at",
         )
         read_only_fields = fields
+
+
+class AdminAccountRequestCreateSerializer(serializers.Serializer):
+    """
+    Public "become an Admin" submission - same fields as RegisterSerializer.
+    Creates an AdminAccountRequest, never a User: no account exists until a
+    Super Admin approves this request and assigns a department (see
+    apps.accounts.services.admin_account_naming.approve_and_create_admin).
+    """
+
+    email = serializers.EmailField()
+    mobile = serializers.CharField(max_length=17, validators=[validate_mobile_number])
+    first_name = serializers.CharField(max_length=150, validators=[validate_name])
+    last_name = serializers.CharField(max_length=150, validators=[validate_name])
+    password = serializers.CharField(write_only=True, style={"input_type": "password"})
+    password_confirm = serializers.CharField(
+        write_only=True, style={"input_type": "password"}
+    )
+
+    def validate_first_name(self, value):
+        return _normalise_name(value)
+
+    def validate_last_name(self, value):
+        return _normalise_name(value)
+
+    def validate_email(self, value):
+        value = User.objects.normalize_email(value)
+        if User.all_objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        if AdminAccountRequest.objects.filter(
+            email__iexact=value, status=AdminAccountRequestStatus.PENDING
+        ).exists():
+            raise serializers.ValidationError(
+                "A request with this email is already awaiting review."
+            )
+        return value
+
+    def validate_mobile(self, value):
+        value = value.strip()
+        if User.all_objects.filter(mobile=value).exists():
+            raise serializers.ValidationError(
+                "A user with this mobile number already exists."
+            )
+        if AdminAccountRequest.objects.filter(
+            mobile=value, status=AdminAccountRequestStatus.PENDING
+        ).exists():
+            raise serializers.ValidationError(
+                "A request with this mobile number is already awaiting review."
+            )
+        return value
+
+    def validate_password(self, value):
+        from django.contrib.auth import password_validation
+
+        password_validation.validate_password(value)
+        return value
+
+    def validate(self, attrs):
+        if attrs["password"] != attrs["password_confirm"]:
+            raise serializers.ValidationError(
+                {"password_confirm": "Passwords do not match."}
+            )
+        return attrs
+
+
+class AdminAccountRequestSerializer(serializers.ModelSerializer):
+    department_name = serializers.CharField(
+        source="department.name", read_only=True, default=None
+    )
+    reviewed_by_email = serializers.CharField(
+        source="reviewed_by.email", read_only=True, default=None
+    )
+    created_admin_account_name = serializers.CharField(
+        source="created_user.admin_account_name", read_only=True, default=None
+    )
+
+    class Meta:
+        model = AdminAccountRequest
+        fields = (
+            "id",
+            "email",
+            "mobile",
+            "first_name",
+            "last_name",
+            "status",
+            "department",
+            "department_name",
+            "created_admin_account_name",
+            "reviewed_by_email",
+            "reviewed_at",
+            "deny_reason",
+            "requested_ip",
+            "requested_user_agent",
+            "created_at",
+        )
+        read_only_fields = fields
+
+
+class AdminDepartmentSerializer(serializers.ModelSerializer):
+    admin_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AdminDepartment
+        fields = (
+            "id",
+            "name",
+            "slug",
+            "is_active",
+            "admin_count",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "slug", "admin_count", "created_at", "updated_at")
+
+    def get_admin_count(self, obj) -> int:
+        return obj.admins.filter(is_active=True).count()
+
+    def validate_name(self, value):
+        value = value.strip() if isinstance(value, str) else value
+        qs = AdminDepartment.all_objects.filter(name__iexact=value)
+        if self.instance is not None:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError(
+                "A department with this name already exists."
+            )
+        return value
 
 
 # ======================================================================
@@ -573,6 +729,15 @@ class AdminLoginView(APIView):
                 detail="This sign-in is for administrator accounts only."
             )
 
+        if user.admin_account_name:
+            # Admins created via the self-service admin-account-request flow
+            # sign in with their generated account name at the new staff
+            # gateway (/staff/login-admin/), not here with email - keeps
+            # exactly one working login path per account.
+            raise ValidationException(
+                detail="This account signs in from the admin login page."
+            )
+
         if not settings.ADMIN_LOGIN_REQUIRES_APPROVAL:
             return _issue_session_response(user, request, "Signed in.")
 
@@ -731,3 +896,399 @@ class AdminLoginRequestDecisionView(APIView):
             data=AdminLoginRequestSerializer(req).data,
             message="Approved." if self.approve else "Denied.",
         )
+
+
+# ======================================================================
+# Staff gateway direct login (Super Admin: direct; Admin: account-name +
+# password, one-time-approved at account-creation - see
+# apps.accounts.services.admin_account_naming). Reached only via the
+# hidden triple-click gateway, never linked from any nav.
+# ======================================================================
+@extend_schema(
+    tags=["Authentication"],
+    summary="Super Admin direct sign-in (staff gateway)",
+    request=inline_serializer(
+        "StaffSuperAdminLoginRequest",
+        {
+            "email": drf_serializers.EmailField(),
+            "password": drf_serializers.CharField(),
+        },
+    ),
+    responses={200: OpenApiResponse(description="Signed in; auth cookies set.")},
+)
+class StaffSuperAdminLoginView(APIView):
+    permission_classes = []
+    authentication_classes = []
+    throttle_classes = [ResilientAnonRateThrottle, AdminLoginRateThrottle]
+
+    def post(self, request):
+        StaffLoginGuardService.check_ip_block(request, page="superadmin")
+        CaptchaService.verify_or_raise(request)
+
+        email = (request.data.get("email") or "").strip().lower()
+        password = request.data.get("password") or ""
+        user = authenticate(request, username=email, password=password)
+        is_superadmin = user is not None and user.role == UserRole.SUPERADMIN
+
+        if not is_superadmin or not user.is_active:
+            # Only attribute the failure to a real account when that
+            # account is actually a Super Admin - typing someone else's
+            # (student/teacher/admin) email here must never be able to get
+            # THEIR account auto-banned; it's tracked as an unresolved
+            # (IP-only) attempt instead.
+            resolved = user if is_superadmin else None
+            StaffLoginGuardService.record_failure(
+                request, page="superadmin", identifier=email, resolved_user=resolved
+            )
+            raise ValidationException(detail="Incorrect email or password.")
+
+        CaptchaService.record_account_use(request, user.id)
+        StaffLoginGuardService.record_success(page="superadmin", identifier=email)
+        AuditService.record(
+            request=request,
+            category=AuditCategory.AUTH,
+            action="staff_login.superadmin",
+            actor=user,
+            message=f"Super Admin {user.email} signed in via the staff gateway",
+        )
+        return _issue_session_response(user, request, "Signed in.")
+
+
+@extend_schema(
+    tags=["Authentication"],
+    summary="Admin sign-in with the generated account name (staff gateway)",
+    request=inline_serializer(
+        "StaffAdminLoginRequest",
+        {
+            "account_name": drf_serializers.CharField(),
+            "password": drf_serializers.CharField(),
+        },
+    ),
+    responses={
+        200: OpenApiResponse(
+            description="Signed in; auth cookies set. `data.first_login_notice` "
+            "is true exactly once, on this admin's very first successful login."
+        )
+    },
+)
+class StaffAdminLoginView(APIView):
+    permission_classes = []
+    authentication_classes = []
+    throttle_classes = [ResilientAnonRateThrottle, AdminLoginRateThrottle]
+
+    def post(self, request):
+        StaffLoginGuardService.check_ip_block(request, page="admin")
+        CaptchaService.verify_or_raise(request)
+
+        account_name = (request.data.get("account_name") or "").strip()
+        password = request.data.get("password") or ""
+
+        # Cannot use django.contrib.auth.authenticate() - USERNAME_FIELD is
+        # "email", not admin_account_name - so the lookup + password check
+        # are done directly here instead.
+        user = User.objects.filter(
+            admin_account_name=account_name, role=UserRole.ADMIN
+        ).first()
+
+        if user is None:
+            # Constant-time-ish: still run a hash comparison against a
+            # dummy value so "no such account name" and "wrong password"
+            # take comparable time (mirrors Django's own ModelBackend,
+            # which does the same when a username doesn't resolve).
+            check_password(password, make_password(None))
+            valid = False
+        else:
+            valid = user.is_active and user.check_password(password)
+
+        if not valid:
+            StaffLoginGuardService.record_failure(
+                request, page="admin", identifier=account_name, resolved_user=user
+            )
+            raise ValidationException(detail="Incorrect account name or password.")
+
+        CaptchaService.record_account_use(request, user.id)
+        StaffLoginGuardService.record_success(page="admin", identifier=account_name)
+
+        with transaction.atomic():
+            user = User.objects.select_for_update().get(pk=user.pk)
+            first_login = not user.has_seen_admin_credentials_notice
+            if first_login:
+                user.has_seen_admin_credentials_notice = True
+                user.save(
+                    update_fields=["has_seen_admin_credentials_notice", "updated_at"]
+                )
+            session = UserSession.start(
+                user, device_info=request.META.get("HTTP_USER_AGENT")
+            )
+
+        access, refresh = issue_pair(user, sid=session.session_id)
+        AuditService.record(
+            request=request,
+            category=AuditCategory.AUTH,
+            action="staff_login.admin",
+            actor=user,
+            message=f"Admin {user.admin_account_name} signed in via the staff gateway",
+            first_login=first_login,
+        )
+        resp = APIResponse.success(
+            data={
+                "access": access,
+                "refresh": refresh,
+                "user": AdminUserSerializer(user).data,
+                "first_login_notice": first_login,
+            },
+            message="Signed in.",
+        )
+        set_auth_cookies(resp, access, refresh)
+        return resp
+
+
+# ======================================================================
+# Admin-account requests (self-service "become an Admin") + Departments.
+# Submitting is public (reached via the hidden staff gateway); review,
+# decision, and department management are Super Admin only (unlisted in
+# apps.accounts.api_permissions -> allowed only by the superadmin
+# short-circuit).
+# ======================================================================
+@extend_schema(
+    tags=["Authentication"],
+    summary="Submit a request to become an Admin (staff gateway)",
+    request=AdminAccountRequestCreateSerializer,
+    responses={
+        201: OpenApiResponse(
+            description="Request recorded; awaiting Super Admin review. No account exists yet."
+        )
+    },
+)
+class AdminAccountRequestCreateView(APIView):
+    permission_classes = []
+    authentication_classes = []
+    throttle_classes = [ResilientAnonRateThrottle, RegisterRateThrottle]
+
+    def post(self, request):
+        CaptchaService.verify_or_raise(request)
+
+        serializer = AdminAccountRequestCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        req = AdminAccountRequest.objects.create(
+            email=data["email"],
+            mobile=data["mobile"],
+            first_name=data["first_name"],
+            last_name=data["last_name"],
+            password_hash=make_password(data["password"]),
+            requested_ip=request.META.get("REMOTE_ADDR"),
+            requested_user_agent=request.META.get("HTTP_USER_AGENT", "")[:400],
+        )
+        AuditService.record(
+            request=request,
+            category=AuditCategory.ADMIN_LOGIN,
+            action="admin_account_request.submitted",
+            status=AuditStatus.PENDING,
+            target=req,
+            message=f"{req.email} requested an admin account",
+        )
+        return APIResponse.created(
+            data={"id": str(req.id), "status": req.status},
+            message="Your request has been sent to the Super Admin — they "
+            "will reach out and appoint you as admin.",
+        )
+
+
+@extend_schema(
+    tags=["User Management"],
+    summary="Pending + recent admin-account requests (super admin)",
+    responses=AdminAccountRequestSerializer(many=True),
+)
+class AdminAccountRequestListView(APIView):
+    def get(self, request):
+        qs = AdminAccountRequest.objects.select_related(
+            "department", "reviewed_by", "created_user"
+        ).order_by("-created_at")
+        status_param = request.query_params.get("status")
+        if status_param:
+            qs = qs.filter(status=status_param)
+        return APIResponse.success(
+            data=AdminAccountRequestSerializer(qs[:200], many=True).data
+        )
+
+
+@extend_schema(
+    tags=["User Management"],
+    summary="Approve (with department) or deny a pending admin-account request (super admin)",
+    request=inline_serializer(
+        "AdminAccountRequestDecisionBody",
+        {
+            "department_id": drf_serializers.UUIDField(required=False),
+            "reason": drf_serializers.CharField(required=False, allow_blank=True),
+        },
+    ),
+    responses={200: AdminAccountRequestSerializer},
+)
+class AdminAccountRequestDecisionView(APIView):
+    approve = True
+
+    def post(self, request, id):
+        req = AdminAccountRequest.objects.filter(id=id).first()
+        if req is None:
+            raise ResourceNotFoundException(detail="Request not found.")
+        if req.status != AdminAccountRequestStatus.PENDING:
+            raise ValidationException(detail=f"This request is already {req.status}.")
+
+        if self.approve:
+            department_id = request.data.get("department_id")
+            if not department_id:
+                # The "no way around it" requirement, enforced server-side:
+                # approval and department assignment are one action, not two.
+                raise ValidationException(
+                    detail="Select a department to approve this request — "
+                    "approval and department assignment happen together."
+                )
+            department = AdminDepartment.objects.filter(
+                id=department_id, is_active=True
+            ).first()
+            if department is None:
+                raise ValidationException(detail="Select a valid, active department.")
+
+            user = approve_and_create_admin(
+                req, department=department, reviewed_by=_actor(request)
+            )
+            AuditService.record(
+                request=request,
+                category=AuditCategory.ADMIN_LOGIN,
+                action="admin_account_request.approved",
+                target=user,
+                message=f"{req.email} approved as admin ({user.admin_account_name})",
+                department=department.slug,
+                generated_account_name=user.admin_account_name,
+            )
+            return APIResponse.success(
+                data=AdminAccountRequestSerializer(req).data,
+                message=f"Approved. Admin account created: {user.admin_account_name}",
+            )
+
+        req.status = AdminAccountRequestStatus.DENIED
+        req.deny_reason = (request.data.get("reason") or "")[:500]
+        req.reviewed_by = _actor(request)
+        req.reviewed_at = timezone.now()
+        req.save(
+            update_fields=[
+                "status",
+                "deny_reason",
+                "reviewed_by",
+                "reviewed_at",
+                "updated_at",
+            ]
+        )
+        AuditService.record(
+            request=request,
+            category=AuditCategory.ADMIN_LOGIN,
+            action="admin_account_request.denied",
+            target=req,
+            message=f"{req.email} admin request denied",
+        )
+        return APIResponse.success(
+            data=AdminAccountRequestSerializer(req).data, message="Request denied."
+        )
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["User Management"], summary="List admin departments (super admin)"
+    ),
+    post=extend_schema(
+        tags=["User Management"], summary="Create an admin department (super admin)"
+    ),
+)
+class AdminDepartmentListCreateView(APIView):
+    def get(self, request):
+        qs = AdminDepartment.objects.all().order_by("name")
+        return APIResponse.success(data=AdminDepartmentSerializer(qs, many=True).data)
+
+    def post(self, request):
+        serializer = AdminDepartmentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        department = serializer.save()
+        AuditService.record(
+            request=request,
+            category=AuditCategory.USER,
+            action="admin_department.created",
+            target=department,
+            message=f"Department created: {department.name}",
+        )
+        return APIResponse.created(
+            data=AdminDepartmentSerializer(department).data,
+            message="Department created.",
+        )
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["User Management"], summary="Retrieve an admin department (super admin)"
+    ),
+    put=extend_schema(
+        tags=["User Management"], summary="Update an admin department (super admin)"
+    ),
+    patch=extend_schema(
+        tags=["User Management"],
+        summary="Partially update an admin department (super admin)",
+    ),
+    delete=extend_schema(
+        tags=["User Management"], summary="Delete an admin department (super admin)"
+    ),
+)
+class AdminDepartmentDetailView(APIView):
+    def _get_department(self, id):
+        department = AdminDepartment.all_objects.filter(id=id).first()
+        if department is None:
+            raise ResourceNotFoundException(detail="Department not found.")
+        return department
+
+    def get(self, request, id):
+        return APIResponse.success(
+            data=AdminDepartmentSerializer(self._get_department(id)).data
+        )
+
+    def put(self, request, id):
+        return self._update(request, id, partial=False)
+
+    def patch(self, request, id):
+        return self._update(request, id, partial=True)
+
+    def _update(self, request, id, partial):
+        department = self._get_department(id)
+        serializer = AdminDepartmentSerializer(
+            department, data=request.data, partial=partial
+        )
+        serializer.is_valid(raise_exception=True)
+        department = serializer.save()
+        AuditService.record(
+            request=request,
+            category=AuditCategory.USER,
+            action="admin_department.updated",
+            target=department,
+            message=f"Department updated: {department.name}",
+        )
+        return APIResponse.success(
+            data=AdminDepartmentSerializer(department).data,
+            message="Department updated.",
+        )
+
+    def delete(self, request, id):
+        department = self._get_department(id)
+        if department.admins.filter(is_active=True).exists():
+            raise ConflictException(
+                detail="This department has active admins assigned to it and "
+                "cannot be removed."
+            )
+        name = department.name
+        department.delete()  # soft delete, per BaseModel
+        AuditService.record(
+            request=request,
+            category=AuditCategory.USER,
+            action="admin_department.deleted",
+            target=department,
+            message=f"Department deleted: {name}",
+        )
+        return APIResponse.no_content(message="Department deleted.")

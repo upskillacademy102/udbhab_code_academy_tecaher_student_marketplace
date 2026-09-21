@@ -25,6 +25,7 @@ from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
 from django.db import models
+from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
 from apps.common.models import BaseModel
@@ -156,6 +157,39 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
         _("mobile verified"),
         default=False,
         help_text=_("Whether the user has verified their mobile number."),
+    )
+
+    admin_account_name = models.CharField(
+        _("admin account name"),
+        max_length=190,
+        unique=True,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text=_(
+            "Login identifier for role=admin accounts created via the "
+            "self-service admin-account-request flow, e.g. 'RajuDas@Finance'. "
+            "Null for every other role, and for admin accounts that predate "
+            "this flow (they keep signing in the old, email-based way)."
+        ),
+    )
+    admin_department = models.ForeignKey(
+        "accounts.AdminDepartment",
+        verbose_name=_("admin department"),
+        related_name="admins",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        help_text=_("Department this admin was assigned when approved. Null for non-admins."),
+    )
+    has_seen_admin_credentials_notice = models.BooleanField(
+        _("has seen admin credentials notice"),
+        default=False,
+        help_text=_(
+            "Flips to True the first time this admin successfully signs in "
+            "via the admin login page - after that, the one-time "
+            "account-name-and-password reveal is never shown again."
+        ),
     )
 
     objects = UserManager()
@@ -431,3 +465,126 @@ class AdminLoginRequest(BaseModel):
         from django.utils import timezone
 
         return self.expires_at <= timezone.now()
+
+
+class AdminDepartment(BaseModel):
+    """
+    Reference data for where an approved admin sits, e.g. Finance, Support.
+    Same shape/soft-delete pattern as ``apps.subjects.Subject`` - picked from
+    a fixed list at admin-approval time (never free-typed), and named (not
+    hard-deleted) so historical ``User.admin_account_name`` values that
+    reference it stay meaningful.
+    """
+
+    name = models.CharField(_("name"), max_length=80, unique=True, db_index=True)
+    slug = models.SlugField(_("slug"), max_length=90, unique=True, blank=True)
+    is_active = models.BooleanField(_("is active"), default=True, db_index=True)
+
+    class Meta:
+        verbose_name = _("Admin department")
+        verbose_name_plural = _("Admin departments")
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(self.name)
+        super().save(*args, **kwargs)
+
+    @property
+    def canonical_name(self) -> str:
+        """Space-stripped form used in a generated admin account name,
+        e.g. 'Content Moderation' -> 'ContentModeration'."""
+        return "".join(self.name.split())
+
+
+class AdminAccountRequestStatus(models.TextChoices):
+    PENDING = "pending", _("Pending")
+    APPROVED = "approved", _("Approved")
+    DENIED = "denied", _("Denied")
+
+
+class AdminAccountRequest(BaseModel):
+    """
+    A self-service request to become an Admin. Distinct from
+    ``AdminLoginRequest`` (which gates a single *login attempt* for an
+    admin who already exists) - this gates *account creation itself*.
+
+    No ``User`` row exists for this request until it is approved: the
+    requester's details plus their chosen password are held here in
+    ``pending`` status. Approving is a single atomic action
+    (``apps.accounts.services.admin_account_naming.approve_and_create_admin``)
+    that creates the ``User`` with role=admin, a department, and a generated
+    ``admin_account_name`` all at once - there is no partial state where a
+    ``User`` exists but is unapproved, and no way to approve without also
+    assigning a department.
+    """
+
+    email = models.EmailField(_("email address"), db_index=True)
+    mobile = models.CharField(
+        _("mobile number"), max_length=17, validators=[validate_mobile_number]
+    )
+    first_name = models.CharField(
+        _("first name"), max_length=150, validators=[validate_name]
+    )
+    last_name = models.CharField(
+        _("last name"), max_length=150, validators=[validate_name]
+    )
+    # Hashed with django.contrib.auth.hashers.make_password the moment the
+    # request is submitted - never stored or logged in plaintext, not even
+    # for the duration of the request. Copied verbatim (not re-hashed) onto
+    # the created User's `password` field on approval.
+    password_hash = models.CharField(_("password hash"), max_length=255)
+
+    status = models.CharField(
+        _("status"),
+        max_length=10,
+        choices=AdminAccountRequestStatus.choices,
+        default=AdminAccountRequestStatus.PENDING,
+        db_index=True,
+    )
+    department = models.ForeignKey(
+        "accounts.AdminDepartment",
+        verbose_name=_("department"),
+        related_name="account_requests",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        help_text=_("Set only at approval time, together with status=approved."),
+    )
+    created_user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("created user"),
+        related_name="admin_account_request",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text=_("The User row created on approval. Null while pending/denied."),
+    )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("reviewed by"),
+        related_name="admin_account_requests_reviewed",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    reviewed_at = models.DateTimeField(_("reviewed at"), null=True, blank=True)
+    deny_reason = models.CharField(_("deny reason"), max_length=500, blank=True)
+    requested_ip = models.GenericIPAddressField(
+        _("requested ip"), null=True, blank=True
+    )
+    requested_user_agent = models.CharField(
+        _("requested user agent"), max_length=400, blank=True
+    )
+
+    class Meta:
+        verbose_name = _("Admin account request")
+        verbose_name_plural = _("Admin account requests")
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["status", "-created_at"])]
+
+    def __str__(self):
+        return f"{self.email} ({self.status})"

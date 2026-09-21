@@ -87,3 +87,9 @@ TRUST_GEOIP_PROVIDER = "stub"
 # back to small values to exercise the auto-ban path deliberately.
 FAKE_LEAD_AUTOBAN_WEEKLY = 10_000
 FAKE_LEAD_AUTOBAN_MONTHLY = 10_000
+
+# Same tactic for the staff-login brute-force guard - pinned out of reach so
+# an incidental run of failed staff-login attempts elsewhere in the suite
+# never auto-bans a test fixture. test_staff_login_guard.py overrides this
+# back to a small value to exercise the threshold deliberately.
+STAFF_LOGIN_BRUTEFORCE_THRESHOLD = 10_000

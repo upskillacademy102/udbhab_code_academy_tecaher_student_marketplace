@@ -195,10 +195,12 @@ class LeadOffersView(generics.ListAPIView):
     def list(self, request, *args, **kwargs):
         profile = _get_teacher_profile_or_raise(request)
         queryset = list(self.filter_queryset(self.get_queryset()))
-        ctx = {
-            "my_ratings": _my_rating_map(profile.teacher, queryset),
-            "unlock_counts": _unlock_count_map(queryset),
-        }
+        # No "unlock_counts" here: every lead in this view is a direct offer
+        # (is_direct=True, exactly one teacher ever assigned), so the count
+        # could only ever be this same teacher counting themselves - the
+        # "N teachers already unlocked this lead" badge reads as competitive
+        # pressure from OTHER teachers, which structurally can't exist here.
+        ctx = {"my_ratings": _my_rating_map(profile.teacher, queryset)}
         serializer = LeadListSerializer(queryset, many=True, context=ctx)
         return APIResponse.success(data=serializer.data)
 
@@ -370,12 +372,32 @@ class LeadDetailView(APIView):
 
         logger.info("Lead %s viewed by teacher %s", lead.id, request.user.email)
 
+        from apps.matching.models import LeadAssignment
+
+        profile = _get_teacher_profile_or_raise(request)
+        is_direct = LeadAssignment.objects.filter(
+            lead__student_requirement=lead.student_requirement,
+            teacher=profile.teacher,
+            is_direct=True,
+        ).exists()
+
         # Every teacher's own Lead row across this requirement, not just
-        # this one - see _unlock_count_map's docstring for why.
-        unlocked_count = LeadUnlockHistory.objects.filter(
-            lead__student_requirement=lead.student_requirement
-        ).count()
-        ctx = {"request": request, "unlocked_count": unlocked_count}
+        # this one - see _unlock_count_map's docstring for why. Skipped for
+        # a direct offer: is_direct means exactly one teacher was ever
+        # assigned, so this would only ever count that same teacher
+        # unlocking their own lead - the "N teachers already unlocked this
+        # lead" badge reads as competitive pressure from OTHER teachers,
+        # which structurally can't exist on a direct offer.
+        unlocked_count = None
+        if not is_direct:
+            unlocked_count = LeadUnlockHistory.objects.filter(
+                lead__student_requirement=lead.student_requirement
+            ).count()
+        ctx = {
+            "request": request,
+            "unlocked_count": unlocked_count,
+            "is_direct_offer": is_direct,
+        }
         return APIResponse.success(data=LeadSerializer(lead, context=ctx).data)
 
 

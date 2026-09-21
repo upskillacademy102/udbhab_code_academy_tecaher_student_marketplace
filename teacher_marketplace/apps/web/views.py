@@ -141,6 +141,50 @@ def staff_login_page(request):
     return render(request, "web/login_staff.html", {"page_title": "Staff sign-in"})
 
 
+# ----------------------------------------------------------------------
+# Hidden staff gateway - reached only by triple-clicking/triple-tapping the
+# logo on the landing page (templates/web/landing.html). Never linked from
+# any nav. See StaffSuperAdminLoginView / StaffAdminLoginView in
+# apps.accounts.admin_api for the endpoints these pages post to.
+# ----------------------------------------------------------------------
+def staff_gateway_page(request):
+    """Three options: create an admin account, log in as admin, log in as super admin."""
+    user = resolve_web_user(request)
+    if user is not None:
+        return redirect(home_url_for(user))
+    return render(request, "web/staff/gateway.html", {"page_title": "Staff access"})
+
+
+def staff_login_superadmin_page(request):
+    user = resolve_web_user(request)
+    if user is not None:
+        return redirect(home_url_for(user))
+    return render(
+        request, "web/staff/login_superadmin.html", {"page_title": "Super Admin sign-in"}
+    )
+
+
+def staff_login_admin_page(request):
+    user = resolve_web_user(request)
+    if user is not None:
+        return redirect(home_url_for(user))
+    return render(
+        request, "web/staff/login_admin.html", {"page_title": "Admin sign-in"}
+    )
+
+
+def staff_create_admin_account_page(request):
+    """Self-service "become an Admin" request form (Phase 3)."""
+    user = resolve_web_user(request)
+    if user is not None:
+        return redirect(home_url_for(user))
+    return render(
+        request,
+        "web/staff/create_admin_account.html",
+        {"page_title": "Request admin access"},
+    )
+
+
 @role_required("teacher")
 def teacher_profile(request):
     """

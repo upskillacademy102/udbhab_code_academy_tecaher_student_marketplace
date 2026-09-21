@@ -79,6 +79,9 @@ PUBLIC_ROUTE_NAMES = frozenset(
         "accounts:reset-password",
         "accounts:admin-login",  # staff sign-in -> pending approval (no session issued)
         "accounts:admin-login-status",  # admin polls for approval (guarded by a one-time poll token)
+        "accounts:staff-login-superadmin",  # hidden-gateway Super Admin direct sign-in
+        "accounts:staff-login-admin",  # hidden-gateway Admin sign-in (account name + password)
+        "accounts:staff-create-admin-account",  # public "become an Admin" request submission
         "public:stats",  # anonymous landing-page counts, no PII
         "payments:webhook",  # server-to-server, HMAC-verified
         "schema",  # OpenAPI - prod additionally gates to staff
@@ -141,7 +144,10 @@ _RULES: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
     ("admin_support:resolve", ("POST",), _ADMIN),  # view itself 403s a non-assigned admin
     # POST admin_users:list, PATCH admin_users:detail, and admin_users:{activate,
     # deactivate,impersonate} + accounts:admin-login-{requests,approve,deny} +
-    # admin_onboarding_calls:schedule + admin_support:assign + ops:* are
+    # admin_onboarding_calls:schedule + admin_support:assign + ops:* +
+    # subjects:subject-{list-create,detail} write methods +
+    # languages:language-{list-create,detail} write methods +
+    # accounts:staff-admin-account-requests* + accounts:staff-departments* are
     # intentionally unlisted -> Super Admin only (is_allowed short-circuit).
     # ===== Notifications - every authenticated role ========================
     ("notifications:notification-list", ("GET",), _ANY_AUTHED),
@@ -231,15 +237,19 @@ _RULES: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
     ("matching:assignment-reject", ("POST",), _TEACHER),
     # ======================================================================
     # REFERENCE DATA - taxonomy: read = any authed role, write = admin
+    # (except Subjects/Languages: write is Super-Admin-only - see below,
+    # both grants left commented in place for context rather than deleted
+    # bare, since a future reader may otherwise wonder why these two routes
+    # look inconsistent with grade_levels/location right below them).
     # ======================================================================
     ("subjects:subject-list-create", ("GET",), _ANY_AUTHED),
-    ("subjects:subject-list-create", ("POST",), _ADMIN),
+    # POST subjects:subject-list-create and PUT/PATCH/DELETE
+    # subjects:subject-detail are intentionally NOT granted to _ADMIN -
+    # Subject writes are Super Admin only (bypass short-circuit covers it).
     ("subjects:subject-detail", ("GET",), _ANY_AUTHED),
-    ("subjects:subject-detail", ("PUT", "PATCH", "DELETE"), _ADMIN),
     ("languages:language-list-create", ("GET",), _ANY_AUTHED),
-    ("languages:language-list-create", ("POST",), _ADMIN),
+    # Same as Subjects above: language writes are Super Admin only.
     ("languages:language-detail", ("GET",), _ANY_AUTHED),
-    ("languages:language-detail", ("PUT", "PATCH", "DELETE"), _ADMIN),
     ("grade_levels:grade-level-list-create", ("GET",), _ANY_AUTHED),
     ("grade_levels:grade-level-list-create", ("POST",), _ADMIN),
     ("grade_levels:grade-level-detail", ("GET",), _ANY_AUTHED),

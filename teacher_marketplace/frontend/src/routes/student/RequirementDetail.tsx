@@ -116,7 +116,7 @@ export function RequirementDetail() {
         <dl className="mt-3 grid gap-x-6 gap-y-4 sm:grid-cols-2">
           <Row label="Budget" value={moneyRange(r.budget_min, r.budget_max) ? `${moneyRange(r.budget_min, r.budget_max)} / mo` : "Any"} />
           <Row label="Language" value={languageLabel(r.no_language_preference, r.preferred_languages)} />
-          <Row label="Where" value={r.city?.name ?? (r.teaching_mode === "online" ? "Online" : "—")} />
+          <Row label="Where" value={r.city?.name ?? (r.pincode ? `PIN ${r.pincode}` : r.teaching_mode === "online" ? "Online" : "—")} />
           <Row label="Class length" value={r.class_duration_minutes ? `${r.class_duration_minutes} minutes` : "—"} />
           <Row label="Posted" value={new Date(r.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })} />
           {r.preferred_timing && <Row label="Timing notes" value={r.preferred_timing} />}

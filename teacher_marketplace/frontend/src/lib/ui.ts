@@ -77,6 +77,16 @@ export function languageLabel(
   return preferredLanguages.map((l) => l.name).join(" › ");
 }
 
+/**
+ * "Banned" / "Suspended" for an AccountSanction's `kind`. Built as one
+ * complete string rather than `{kind}ned` in JSX + a CSS `capitalize` class -
+ * split across a JS-expression text node and a literal-text sibling node,
+ * some browsers capitalize each text node independently ("BanNed").
+ */
+export function sanctionLabel(kind: string): string {
+  return kind === "ban" ? "Banned" : "Suspended";
+}
+
 export function titleCase(s: string | null | undefined): string {
   if (!s) return "";
   return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());

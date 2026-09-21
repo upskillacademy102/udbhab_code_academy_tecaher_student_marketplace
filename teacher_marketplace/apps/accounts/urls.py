@@ -18,15 +18,36 @@ Included from config/urls.py at the `api/v1/auth/` prefix.
     GET  /api/v1/auth/admin/login-requests/             pending + recent   (Super Admin)
     POST /api/v1/auth/admin/login-requests/{id}/approve/
     POST /api/v1/auth/admin/login-requests/{id}/deny/
+
+    POST /api/v1/auth/staff/login-superadmin/           Super Admin direct sign-in
+    POST /api/v1/auth/staff/login-admin/                Admin sign-in (account name + password)
+
+    POST /api/v1/auth/staff/create-admin-account/               submit request (public)
+    GET  /api/v1/auth/staff/admin-account-requests/              pending + recent   (Super Admin)
+    POST /api/v1/auth/staff/admin-account-requests/{id}/approve/ (Super Admin, requires department_id)
+    POST /api/v1/auth/staff/admin-account-requests/{id}/deny/    (Super Admin)
+    GET/POST             /api/v1/auth/staff/departments/          (Super Admin)
+    GET/PUT/PATCH/DELETE /api/v1/auth/staff/departments/{id}/     (Super Admin)
+
+The above are reached only via the hidden triple-click gateway on the
+landing-page logo (see apps.web for the logged-out gateway/login pages) -
+never linked from any nav.
 """
 
 from django.urls import path
 
 from apps.accounts.admin_api import (
+    AdminAccountRequestCreateView,
+    AdminAccountRequestDecisionView,
+    AdminAccountRequestListView,
+    AdminDepartmentDetailView,
+    AdminDepartmentListCreateView,
     AdminLoginRequestDecisionView,
     AdminLoginRequestListView,
     AdminLoginStatusView,
     AdminLoginView,
+    StaffAdminLoginView,
+    StaffSuperAdminLoginView,
 )
 from apps.accounts.views import (
     ChangeEmailConfirmView,
@@ -113,5 +134,48 @@ urlpatterns = [
         "admin/login-requests/<uuid:id>/deny/",
         AdminLoginRequestDecisionView.as_view(approve=False),
         name="admin-login-deny",
+    ),
+    # ---- staff gateway direct login (hidden triple-click entry point) ----
+    path(
+        "staff/login-superadmin/",
+        StaffSuperAdminLoginView.as_view(),
+        name="staff-login-superadmin",
+    ),
+    path(
+        "staff/login-admin/",
+        StaffAdminLoginView.as_view(),
+        name="staff-login-admin",
+    ),
+    # ---- admin-account requests (self-service "become an Admin") ----
+    path(
+        "staff/create-admin-account/",
+        AdminAccountRequestCreateView.as_view(),
+        name="staff-create-admin-account",
+    ),
+    path(
+        "staff/admin-account-requests/",
+        AdminAccountRequestListView.as_view(),
+        name="staff-admin-account-requests",
+    ),
+    path(
+        "staff/admin-account-requests/<uuid:id>/approve/",
+        AdminAccountRequestDecisionView.as_view(approve=True),
+        name="staff-admin-account-request-approve",
+    ),
+    path(
+        "staff/admin-account-requests/<uuid:id>/deny/",
+        AdminAccountRequestDecisionView.as_view(approve=False),
+        name="staff-admin-account-request-deny",
+    ),
+    # ---- admin departments (super admin, fixed-but-editable list) ----
+    path(
+        "staff/departments/",
+        AdminDepartmentListCreateView.as_view(),
+        name="staff-departments",
+    ),
+    path(
+        "staff/departments/<uuid:id>/",
+        AdminDepartmentDetailView.as_view(),
+        name="staff-department-detail",
     ),
 ]

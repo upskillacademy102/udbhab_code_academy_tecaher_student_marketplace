@@ -4,7 +4,12 @@
    ============================================================ */
 window.RESOURCE_CONFIG = {
   subjects: {
-    title: "Subjects", endpoint: "/subjects/", crud: true,
+    // Writes are Super-Admin-only (apps/accounts/api_permissions.py) - the
+    // new React screen at /staff/*/subjects/ is where Admin/Super Admin are
+    // actually sent now (apps/web/nav.py); this old page stays reachable by
+    // direct URL, so `superadminOnly` keeps its Add/Edit/Delete controls
+    // from being shown to an Admin who'd just get a 403 clicking them.
+    title: "Subjects", endpoint: "/subjects/", crud: true, superadminOnly: true,
     columns: [
       { key: "name", label: "Name" },
       { key: "description", label: "Description", muted: true },
@@ -18,7 +23,7 @@ window.RESOURCE_CONFIG = {
     ],
   },
   languages: {
-    title: "Languages", endpoint: "/languages/", crud: true,
+    title: "Languages", endpoint: "/languages/", crud: true, superadminOnly: true,
     columns: [
       { key: "name", label: "Name" },
       { key: "code", label: "Code" },
@@ -202,6 +207,22 @@ document.addEventListener("alpine:init", () => {
     nonField: "",
     submitting: false,
     refs: {}, // { fieldKey: [options] }
+
+    // Whether THIS viewer can create a row here (toolbar "Add" button) -
+    // true for both full-crud AND append-only resources, same as before,
+    // MINUS a superadminOnly resource (subjects, languages) viewed by a
+    // plain Admin: those are 403'd server-side even though cfg.crud is
+    // true, so the button must key off this instead of cfg.crud/appendOnly
+    // directly or an Admin sees a button that always fails.
+    get canWrite() {
+      const writable = this.cfg.crud || this.cfg.appendOnly;
+      return !!writable && (!this.cfg.superadminOnly || document.body.dataset.role === "superadmin");
+    },
+    // Row-level Edit/Delete - append-only resources never get these
+    // regardless of canWrite (unchanged from the old cfg.crud-only gate).
+    get canEditDelete() {
+      return !!this.cfg.crud && this.canWrite;
+    },
 
     init() {
       this.initCollection();

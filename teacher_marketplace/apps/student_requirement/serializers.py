@@ -66,6 +66,12 @@ class StudentRequirementSerializer(serializers.ModelSerializer):
     preferred_languages = serializers.SerializerMethodField()
     no_language_preference = serializers.BooleanField(read_only=True)
     city = CitySerializer(read_only=True)
+    # A requirement created via the pincode escape hatch (see validate_city /
+    # LocationResolutionService.resolve) has city=None and only
+    # pincode_location set - without this, the location a student typed in
+    # was accepted and used for real matching, but never shown back to them
+    # anywhere (looked, to them, like it had been silently dropped).
+    pincode = serializers.SerializerMethodField()
     student_name = serializers.CharField(source="student.get_full_name", read_only=True)
     schedule_preferences = SchedulePreferenceReadSerializer(many=True, read_only=True)
     has_unlocked_lead = serializers.SerializerMethodField()
@@ -83,6 +89,7 @@ class StudentRequirementSerializer(serializers.ModelSerializer):
             "budget_max",
             "teaching_mode",
             "city",
+            "pincode",
             "preferred_timing",
             "description",
             "status",
@@ -93,6 +100,12 @@ class StudentRequirementSerializer(serializers.ModelSerializer):
             "updated_at",
         )
         read_only_fields = fields
+
+    def get_pincode(self, obj):
+        loc = obj.pincode_location
+        if loc is None or loc.pincode.startswith("CITY:"):
+            return None
+        return loc.pincode
 
     def get_has_unlocked_lead(self, obj):
         """

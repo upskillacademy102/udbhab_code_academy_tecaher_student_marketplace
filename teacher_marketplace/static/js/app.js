@@ -73,8 +73,9 @@
         this.busy = true;
         try {
           const r = await api.post("/auth/stop-impersonation/", {}, { silent: true });
-          const home = { student: "/student/", teacher: "/teacher/", admin: "/admin-portal/", superadmin: "/super-admin/" };
-          location.assign((r && r.user && home[r.user.role]) || "/super-admin/");
+          // Keep in sync with apps/web/guards.py's ROLE_HOME (Phase 4).
+          const home = { student: "/student/", teacher: "/teacher/", admin: "/staff/admin/", superadmin: "/staff/superadmin/" };
+          location.assign((r && r.user && home[r.user.role]) || "/staff/superadmin/");
         } catch (e) {
           window.toast("error", e.message || "Couldn't return to your account. Try logging in again.");
           this.busy = false;

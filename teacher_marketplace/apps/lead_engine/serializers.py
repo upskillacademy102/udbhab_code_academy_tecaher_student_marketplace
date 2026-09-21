@@ -107,6 +107,7 @@ class LeadSerializer(serializers.ModelSerializer):
     student_mobile = serializers.SerializerMethodField()
     student_email = serializers.SerializerMethodField()
     unlocked_count = serializers.SerializerMethodField()
+    is_direct_offer = serializers.SerializerMethodField()
 
     class Meta:
         model = Lead
@@ -130,6 +131,7 @@ class LeadSerializer(serializers.ModelSerializer):
             "student_email",
             "my_rating",
             "unlocked_count",
+            "is_direct_offer",
             "created_at",
         )
         read_only_fields = fields
@@ -178,6 +180,14 @@ class LeadSerializer(serializers.ModelSerializer):
         get_my_rating.
         """
         return self.context.get("unlocked_count")
+
+    def get_is_direct_offer(self, lead) -> bool:
+        """True when this teacher was picked directly ("Learn with this
+        teacher") rather than matched into the general pool - see
+        LeadDetailView.get. Rejecting this kind of lead has no "next
+        teacher" to fall through to, unlike an ordinary cascading lead, so
+        the frontend needs this to show accurate reject-consequence copy."""
+        return bool(self.context.get("is_direct_offer"))
 
     def get_masked_contact(self, lead) -> dict:
         """

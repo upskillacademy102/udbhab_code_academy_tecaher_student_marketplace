@@ -42,7 +42,22 @@ Honesty constraints held throughout:
   {# ============ Header ============ #}
   <header class="sticky top-0 z-40 border-b border-ink-100/80 bg-paper-canvas/85 backdrop-blur">
     <div class="u-shell flex h-[68px] items-center justify-between gap-4">
-      <a href="/" class="flex items-center gap-2.5">
+      {% comment %}
+      Hidden staff gateway: 3 clicks/taps on THIS logo (landing page header
+      only - the logo elsewhere, e.g. base_public.html/base_app.html/the
+      footer below, is separate markup and does not carry this handler) go
+      to /staff/gateway/ instead of "/". A single click still goes home -
+      each click waits 350ms for a follow-up before falling through, so an
+      ordinary "go to homepage" click is unaffected (350ms is imperceptible).
+      x-data/@click are scoped to just this anchor, isolated from
+      landingPage()'s own state, so this can be copy-pasted verbatim if
+      another hidden entry point is ever wanted elsewhere.
+      {% endcomment %}
+      <a href="/" class="flex items-center gap-2.5"
+         x-data="{ n: 0, t: null }"
+         @click.prevent="n++; clearTimeout(t);
+                         if (n >= 3) { n = 0; location.assign('/staff/gateway/'); }
+                         else { t = setTimeout(() => { location.assign('/'); n = 0; }, 350); }">
         <span class="grid h-9 w-9 place-items-center rounded-lg bg-pine-700 font-display text-lg font-bold text-marigold-400">{{ SITE_NAME|first }}</span>
         <span class="font-display text-[1.0625rem] font-semibold tracking-tight text-ink-900">{{ SITE_NAME }}</span>
       </a>

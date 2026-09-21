@@ -5,7 +5,7 @@
     <span class="pointer-events-none absolute inset-y-0 left-3 grid place-items-center text-slate-400">{% icon "search" "h-4 w-4" %}</span>
     <input class="input pl-9" placeholder="Search…" x-model="q" aria-label="Search">
   </div>
-  <button class="btn-primary" @click="openCreate()">{% icon "plus" %} <span x-text="'Add ' + cfg.title.replace(/s$/, '').toLowerCase()"></span></button>
+  <button class="btn-primary" @click="openCreate()" x-show="canWrite">{% icon "plus" %} <span x-text="'Add ' + cfg.title.replace(/s$/, '').toLowerCase()"></span></button>
 </div>
 
 <p class="mb-3 text-xs text-slate-500" x-show="cfg.hint" x-text="cfg.hint"></p>
@@ -17,7 +17,7 @@
   <div class="empty-icon">{% icon "list" "h-6 w-6" %}</div>
   <p class="empty-title" x-text="q ? 'No matches' : 'Nothing here yet'"></p>
   <p class="empty-desc" x-text="q ? 'Try a different search term.' : 'Add the first entry to get started.'"></p>
-  <button class="btn-primary mt-4" @click="openCreate()" x-show="!q">{% icon "plus" %} Add</button>
+  <button class="btn-primary mt-4" @click="openCreate()" x-show="!q && canWrite">{% icon "plus" %} Add</button>
 </div>
 
 <div x-show="state === 'ready'" x-cloak class="table-wrap">
@@ -42,7 +42,7 @@
             </td>
           </template>
           <td class="text-right">
-            <div class="flex justify-end gap-1" x-show="cfg.crud">
+            <div class="flex justify-end gap-1" x-show="canEditDelete">
               <button class="btn-ghost btn-sm" @click="openEdit(row)" aria-label="Edit">{% icon "edit" "h-4 w-4" %}</button>
               <button class="btn-ghost btn-sm text-rose-600 hover:bg-rose-50" @click="remove(row)" aria-label="Delete">{% icon "trash" "h-4 w-4" %}</button>
             </div>

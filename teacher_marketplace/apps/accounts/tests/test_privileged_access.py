@@ -187,11 +187,18 @@ class UserManagementTests(APITestCase):
 class SuperAdminSuspendPromoteRevokeTests(APITestCase):
     """
     Super Admin's authority over every non-super-admin account: suspend
-    (deactivate) a teacher or student, promote either to Admin, revoke an
-    Admin's role, and suspend an Admin account outright. All through the
+    (deactivate) a teacher or student, revoke an Admin's role back to
+    teacher/student, and suspend an Admin account outright. All through the
     existing `/api/v1/admin/users/{id}/` PATCH + activate/deactivate
     endpoints - superadmin-only per apps.accounts.api_permissions (only
     GET is granted to plain Admin there).
+
+    Promoting someone TO Admin via this PATCH endpoint is intentionally
+    NOT available, even to Super Admin - see
+    `test_promoting_to_admin_via_patch_is_blocked` below. The only path to
+    role=admin is the admin-account request/approval flow (see
+    test_admin_account_requests.py), which also assigns a department and
+    generates the admin_account_name login identifier.
     """
 
     def setUp(self):
@@ -241,29 +248,14 @@ class SuperAdminSuspendPromoteRevokeTests(APITestCase):
         target.refresh_from_db()
         self.assertTrue(target.is_active)
 
-    def test_promotes_a_student_and_a_teacher_to_admin(self):
+    def test_promoting_to_admin_via_patch_is_blocked(self):
         for role in (UserRole.STUDENT, UserRole.TEACHER):
             target = make_user(role, email=f"promote-{role}@x.test")
             r = self._set_role(target, "admin")
-            self.assertEqual(r.status_code, OK, r.content)
+            self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST, r.content)
             target.refresh_from_db()
-            self.assertEqual(target.role, UserRole.ADMIN)
-
-            # they can now reach the admin-only read APIs...
-            promoted_client = self.client_class()
-            login(promoted_client, target)
-            self.assertEqual(
-                promoted_client.get("/api/v1/admin/users/").status_code, OK
-            )
-            # ...but not the super-admin-only write APIs.
-            self.assertEqual(
-                promoted_client.patch(
-                    f"/api/v1/admin/users/{target.id}/",
-                    {"first_name": "X"},
-                    format="json",
-                ).status_code,
-                FORBIDDEN,
-            )
+            # role is unchanged - the request/approval flow is the only path.
+            self.assertEqual(target.role, role)
 
     def test_revokes_admin_status(self):
         admin = make_user(UserRole.ADMIN, email="revoke@x.test")
@@ -315,11 +307,15 @@ class SuperAdminSuspendPromoteRevokeTests(APITestCase):
         target = make_user(UserRole.TEACHER, email="audited@x.test")
         self._deactivate(target)
         self._activate(target)
-        self._set_role(target, "admin")
+        # Promotion to admin is blocked (see test_promoting_to_admin_via_patch_is_blocked
+        # above) - exercise "role changed" via a still-allowed transition instead:
+        # demoting an existing admin back to teacher.
+        admin = make_user(UserRole.ADMIN, email="audited-admin@x.test")
+        self._set_role(admin, "teacher")
         actions = set(
-            AuditLog.objects.filter(target_id=str(target.id)).values_list(
-                "action", flat=True
-            )
+            AuditLog.objects.filter(
+                target_id__in=[str(target.id), str(admin.id)]
+            ).values_list("action", flat=True)
         )
         self.assertIn("user.deactivated", actions)
         self.assertIn("user.activated", actions)

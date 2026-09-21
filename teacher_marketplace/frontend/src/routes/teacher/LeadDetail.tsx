@@ -78,9 +78,15 @@ export function LeadDetail() {
   }
 
   async function reject() {
+    // A direct offer ("Learn with this teacher") was only ever sent to
+    // this one teacher - there is no "next teacher" for it to fall through
+    // to, unlike an ordinary matched/cascading lead.
+    const isDirect = Boolean(lead?.is_direct_offer);
     const ok = await confirmAction({
       title: "Reject this lead?",
-      message: "You won't see it again, and it moves on to the next teacher right away. This can't be undone.",
+      message: isDirect
+        ? "You won't see it again. The student picked you specifically, so this doesn't go to anyone else — they'll need to reach out to another teacher themselves. This can't be undone."
+        : "You won't see it again, and it moves on to the next teacher right away. This can't be undone.",
       confirmLabel: "Reject it",
       danger: true,
     });
@@ -89,7 +95,7 @@ export function LeadDetail() {
     setRejecting(true);
     try {
       await api.post(`/leads/${id}/reject/`, {});
-      toast("success", "Rejected. It's moved on to the next teacher.");
+      toast("success", isDirect ? "Rejected." : "Rejected. It's moved on to the next teacher.");
       qc.invalidateQueries({ queryKey: ["leads"] });
       navigate("/teacher/leads/");
     } catch (e) {
@@ -193,8 +199,9 @@ export function LeadDetail() {
         <section className="u-card u-card-pad border-2 border-rose-500 bg-rose-50">
           <h2 className="u-h3 text-rose-900">Not a fit?</h2>
           <p className="u-body mt-1 text-rose-800">
-            Rejecting is final — you won't see this lead again, and it goes straight to the next teacher instead of
-            waiting out the clock.
+            {lead.is_direct_offer
+              ? "Rejecting is final — you won't see this lead again. This student picked you specifically, so nobody else will see it either."
+              : "Rejecting is final — you won't see this lead again, and it goes straight to the next teacher instead of waiting out the clock."}
           </p>
           <button
             type="button"

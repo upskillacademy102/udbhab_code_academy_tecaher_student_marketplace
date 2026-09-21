@@ -206,7 +206,7 @@ function RequirementCard({
       <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-[0.8125rem]">
         <Cell label="Budget" value={budget} />
         <Cell label="Language" value={languageLabel(r.no_language_preference, r.preferred_languages)} />
-        <Cell label="Where" value={r.city?.name ?? (r.teaching_mode === "online" ? "Online" : "—")} />
+        <Cell label="Where" value={r.city?.name ?? (r.pincode ? `PIN ${r.pincode}` : r.teaching_mode === "online" ? "Online" : "—")} />
         <Cell label="Posted" value={new Date(r.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} />
       </dl>
 

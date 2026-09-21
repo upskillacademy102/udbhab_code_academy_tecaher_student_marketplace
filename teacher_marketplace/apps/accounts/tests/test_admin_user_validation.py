@@ -58,6 +58,14 @@ class AdminUserCreateValidationTests(APITestCase):
         self._post(400, email="e@x.test", mobile="919000000003", password="weak")
         self._post(400, email="f@x.test", mobile="919000000004", role="wizard")
 
+    def test_role_admin_is_rejected_even_for_superadmin(self):
+        # Admin accounts can only be created via the admin-account
+        # request/approval flow - not directly through this endpoint,
+        # even by a Super Admin. See apps.accounts.tests.test_admin_account_requests.
+        r = self._post(400, email="g@x.test", mobile="919000000005", role="admin")
+        self.assertIn("role", r.json()["error"]["details"])
+        self.assertFalse(User.objects.filter(email="g@x.test").exists())
+
     def test_duplicate_email_or_mobile(self):
         self._post(201)
         self._post(

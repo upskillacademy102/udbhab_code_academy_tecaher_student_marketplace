@@ -214,14 +214,55 @@ _SUPERADMIN_OVERSIGHT = {
             "icon": "alert-triangle",
             "match": "/super-admin/review-queue/",
         },
-        {"label": "Users", "url": "/super-admin/users/", "icon": "users"},
+        # Repointed at the new React screen (Phase 4) - the old
+        # /super-admin/users/ template still works by direct URL, it's just
+        # no longer linked from the nav.
+        {"label": "Users", "url": "/staff/superadmin/users/", "icon": "users"},
+        {
+            "label": "Bans & sanctions",
+            "url": "/staff/superadmin/sanctions/",
+            "icon": "alert-triangle",
+        },
+        {
+            "label": "Fake-lead reports",
+            "url": "/staff/superadmin/fake-lead-reports/",
+            "icon": "alert-triangle",
+        },
+        {
+            "label": "Leads & requirements",
+            "url": "/staff/superadmin/leads/",
+            "icon": "clipboard",
+        },
         {
             "label": "Admin access requests",
             "url": "/super-admin/admin-requests/",
             "icon": "shield",
             "badge": "admin_requests",
         },
-        {"label": "Audit log", "url": "/super-admin/audit/", "icon": "list"},
+        # Repointed at the new React screen (Phase 7) - the old
+        # /super-admin/audit/ template still works by direct URL.
+        {"label": "Audit log", "url": "/staff/superadmin/audit/", "icon": "list"},
+    ],
+}
+
+
+# New React-owned screens (Phase 3+), distinct from the "Admin access
+# requests" item above (which reviews single login attempts under the old
+# AdminLoginRequest flow) - this reviews AdminAccountRequest: self-service
+# requests to become an Admin at all, approved with a department in one step.
+_SUPERADMIN_PROVISIONING = {
+    "label": "Admin Provisioning",
+    "items": [
+        {
+            "label": "Account requests",
+            "url": "/staff/superadmin/admin-account-requests/",
+            "icon": "shield",
+        },
+        {
+            "label": "Departments",
+            "url": "/staff/superadmin/departments/",
+            "icon": "list",
+        },
     ],
 }
 
@@ -269,19 +310,61 @@ def _teacher_nav():
     return sections
 
 
+def _repoint(sections, overrides):
+    """
+    Repoint specific nav items (matched by label) at new React screens,
+    leaving the rest of the (still template-backed) admin surface
+    untouched. ``overrides`` maps a label to (new_url, exact) - exact=True
+    also sets a "$"-suffixed ``match`` (home-page style, only matches that
+    one path); exact=False just points ``url`` at the new screen and drops
+    any stale ``match`` override so prefix-matching (e.g. a detail page
+    nested under a list) still marks the item active. Returns a fresh
+    copy - never mutates the module-level section constants.
+    """
+    out = []
+    for section in sections:
+        items = []
+        for item in section["items"]:
+            it = dict(item)
+            if it["label"] in overrides:
+                new_url, exact = overrides[it["label"]]
+                it["url"] = new_url
+                if exact:
+                    it["match"] = f"{new_url}$"
+                else:
+                    it.pop("match", None)
+            items.append(it)
+        out.append({"label": section["label"], "items": items})
+    return out
+
+
 def nav_for(role):
     if role == "student":
         return _STUDENT
     if role == "teacher":
         return _teacher_nav()
     if role == "admin":
-        return _ADMIN_SECTIONS
+        return _repoint(
+            _ADMIN_SECTIONS,
+            {
+                "Dashboard": ("/staff/admin/", True),
+                "Users": ("/staff/admin/users/", False),
+                "Subjects": ("/staff/admin/subjects/", False),
+                "Languages": ("/staff/admin/languages/", False),
+            },
+        )
     if role == "superadmin":
         base = _rehome(_ADMIN_SECTIONS, "/admin-portal/", "/super-admin/")
+        base = _repoint(
+            base,
+            {
+                "Dashboard": ("/staff/superadmin/", True),
+                "Subjects": ("/staff/superadmin/subjects/", False),
+                "Languages": ("/staff/superadmin/languages/", False),
+            },
+        )
         # drop the plain "Users" link (superadmin gets the full management one
         # under Platform Oversight instead)
-        base[1]["items"] = [
-            i for i in base[1]["items"] if i.get("url") != "/super-admin/users/"
-        ]
-        return base[:-1] + [_SUPERADMIN_OVERSIGHT] + base[-1:]
+        base[1]["items"] = [i for i in base[1]["items"] if i.get("label") != "Users"]
+        return base[:-1] + [_SUPERADMIN_OVERSIGHT, _SUPERADMIN_PROVISIONING] + base[-1:]
     return []

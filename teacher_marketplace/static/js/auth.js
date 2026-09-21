@@ -5,8 +5,11 @@ document.addEventListener("alpine:init", () => {
   const ROLE_HOME = {
     student: "/student/",
     teacher: "/teacher/",
-    admin: "/admin-portal/",
-    superadmin: "/super-admin/",
+    // Repointed to the new React dashboards (Phase 4) - keep in sync with
+    // apps/web/guards.py's ROLE_HOME. The old /admin-portal/ and
+    // /super-admin/ templates still work by direct URL.
+    admin: "/staff/admin/",
+    superadmin: "/staff/superadmin/",
   };
 
   /* Where the pre-signup answers are parked between "create account" and the
@@ -549,7 +552,7 @@ document.addEventListener("alpine:init", () => {
         const r = await api.post("/auth/admin/login/", { email: this.email.trim(), password: this.password }, { silent: true });
         // r is the unwrapped `data`. Direct sign-in returns tokens+user.
         if (r && r.user) {
-          location.assign(ROLE_HOME[r.user.role] || "/admin-portal/");
+          location.assign(ROLE_HOME[r.user.role] || "/staff/admin/");
           return;
         }
         // pending approval
@@ -573,7 +576,7 @@ document.addEventListener("alpine:init", () => {
           const s = await api.get(`/auth/admin/login/${this._req.request_id}/status/`, {
             params: { token: this._req.poll_token }, silent: true,
           });
-          if (s && s.user) { this._stop(); location.assign(ROLE_HOME[s.user.role] || "/admin-portal/"); return; }
+          if (s && s.user) { this._stop(); location.assign(ROLE_HOME[s.user.role] || "/staff/admin/"); return; }
           if (s && s.status === "denied") { this._stop(); this.phase = "denied"; return; }
           if (s && s.status === "expired") { this._stop(); this.phase = "form"; this.error = "Your request expired. Please try again."; return; }
         } catch (e) { /* keep polling */ }
@@ -583,5 +586,162 @@ document.addEventListener("alpine:init", () => {
     _stop() { if (this._poll) { clearInterval(this._poll); this._poll = null; } },
     cancel() { this._stop(); this.phase = "form"; this.password = ""; this._req = null; },
     destroy() { this._stop(); },
+  }));
+
+  /* ============================================================
+     Hidden staff gateway direct login (triple-click the landing-page
+     logo -> /staff/gateway/). Distinct from `staffLogin` above, which is
+     the OLD approval-queue flow at /login/staff/ - these two sign in
+     immediately, no approval step.
+     ============================================================ */
+  window.Alpine.data("staffSuperAdminLogin", () => ({
+    email: "",
+    password: "",
+    showPw: false,
+    submitting: false,
+    error: "",
+
+    async submit() {
+      if (this.submitting) return;
+      this.submitting = true;
+      this.error = "";
+      try {
+        const r = await api.post(
+          "/auth/staff/login-superadmin/",
+          { email: this.email.trim(), password: this.password },
+          { silent: true }
+        );
+        location.assign((r && r.user && ROLE_HOME[r.user.role]) || "/");
+      } catch (e) {
+        this.error = e.status === 429
+          ? "Too many attempts from this network. Try again later."
+          : (e.status === 400 || e.status === 401)
+          ? "Incorrect email or password."
+          : (e.message || "Sign-in failed. Please try again.");
+      } finally {
+        this.submitting = false;
+      }
+    },
+  }));
+
+  window.Alpine.data("staffAdminLogin", () => ({
+    phase: "form", // form | reveal
+    accountName: "",
+    password: "",
+    showPw: false,
+    submitting: false,
+    error: "",
+    _dest: "/",
+
+    async submit() {
+      if (this.submitting) return;
+      this.submitting = true;
+      this.error = "";
+      try {
+        const r = await api.post(
+          "/auth/staff/login-admin/",
+          { account_name: this.accountName.trim(), password: this.password },
+          { silent: true }
+        );
+        this._dest = (r && r.user && ROLE_HOME[r.user.role]) || "/";
+        // The one-time credentials reveal is shown and dismissed
+        // explicitly (a button click), never auto-redirected past, so an
+        // impatient click can't skip it.
+        if (r && r.first_login_notice) {
+          this.phase = "reveal";
+        } else {
+          location.assign(this._dest);
+        }
+      } catch (e) {
+        this.error = e.status === 429
+          ? "Too many attempts from this network. Try again later."
+          : (e.status === 400 || e.status === 401)
+          ? "Incorrect account name or password."
+          : (e.message || "Sign-in failed. Please try again.");
+      } finally {
+        this.submitting = false;
+      }
+    },
+
+    continueToDashboard() {
+      location.assign(this._dest);
+    },
+  }));
+
+  /* ---- Self-service "become an Admin" request (staff gateway) ---- */
+  window.Alpine.data("createAdminAccountRequest", () => ({
+    phase: "form", // form | sent
+    model: { first_name: "", last_name: "", email: "", mobile: "", password: "", password_confirm: "" },
+    touched: {},
+    server: {},
+    showPw: false,
+    submitting: false,
+    formError: "",
+
+    get pwRules() {
+      const p = this.model.password || "";
+      return [
+        { key: "len", label: "At least 8 characters", ok: p.length >= 8 },
+        { key: "upper", label: "One uppercase letter", ok: /[A-Z]/.test(p) },
+        { key: "lower", label: "One lowercase letter", ok: /[a-z]/.test(p) },
+        { key: "digit", label: "One number", ok: /\d/.test(p) },
+        { key: "special", label: "One special character", ok: /[!@#$%^&*()\-_=+[\]{};:'",.<>/?\\|`~]/.test(p) },
+      ];
+    },
+
+    touch(f) { this.touched[f] = true; delete this.server[f]; },
+
+    _clientError(f) {
+      const m = this.model;
+      switch (f) {
+        case "first_name":
+        case "last_name":
+          if (!m[f]) return "Required.";
+          return NAME_RE.test(m[f]) ? "" : "Letters only.";
+        case "email":
+          if (!m.email) return "Required.";
+          return EMAIL_RE.test(m.email) ? "" : "Enter a valid email address.";
+        case "mobile":
+          if (!m.mobile) return "Required.";
+          return MOBILE_RE.test(m.mobile) ? "" : "10–15 digits, numbers only.";
+        case "password":
+          if (!m.password) return "Required.";
+          return this.pwRules.every((r) => r.ok) ? "" : "Password doesn't meet the requirements above.";
+        case "password_confirm":
+          if (!m.password_confirm) return "Required.";
+          return m.password_confirm === m.password ? "" : "Passwords do not match.";
+        default:
+          return "";
+      }
+    },
+    err(f) {
+      if (this.server[f]) return this.server[f];
+      if (!this.touched[f]) return "";
+      return this._clientError(f);
+    },
+    _valid() {
+      return ["first_name", "last_name", "email", "mobile", "password", "password_confirm"]
+        .every((f) => { this.touched[f] = true; return !this._clientError(f); });
+    },
+
+    async submit() {
+      if (this.submitting) return;
+      this.formError = "";
+      if (!this._valid()) return;
+      this.submitting = true;
+      try {
+        await api.post("/auth/staff/create-admin-account/", this.model, { silent: true });
+        this.phase = "sent";
+      } catch (e) {
+        const fe = e.fieldErrors || {};
+        if (Object.keys(fe).length) {
+          this.server = fe;
+        } else {
+          this.formError = e.message || "We couldn't send your request. Please try again.";
+        }
+      } finally {
+        this.submitting = false;
+      }
+    },
   }));
 });

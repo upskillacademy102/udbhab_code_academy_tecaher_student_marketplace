@@ -51,7 +51,9 @@ class RegistryUnitTests(APITestCase):
         )
 
     def test_method_level_grants(self):
-        self.assertTrue(
+        # Subjects/Languages writes are Super-Admin-only (not even plain
+        # Admin) - see apps.accounts.api_permissions's REFERENCE DATA block.
+        self.assertFalse(
             is_allowed(UserRole.ADMIN, "POST", "subjects:subject-list-create")
         )
         self.assertFalse(
@@ -149,14 +151,15 @@ class RoleMatrixTests(APITestCase):
         )
 
     # ---- admin ---------------------------------------------------------
-    def test_admin_can_search_people_and_write_reference(self):
+    def test_admin_can_search_people_but_not_write_reference(self):
         c = _client_for(self, self.admin)
         self.assertEqual(c.get("/api/v1/students/").status_code, OK)
         self.assertEqual(c.get("/api/v1/teachers/").status_code, OK)
         self.assertEqual(c.get("/api/v1/search/teachers/").status_code, OK)
-        self.assertNotIn(
-            c.post("/api/v1/subjects/", {}, format="json").status_code,
-            (UNAUTH, FORBIDDEN),
+        # Subjects/Languages writes are Super-Admin-only - plain Admin is
+        # read-only here, unlike the other admin-writable reference data.
+        self.assertEqual(
+            c.post("/api/v1/subjects/", {}, format="json").status_code, FORBIDDEN
         )
 
     def test_admin_denied_teacher_workflow(self):

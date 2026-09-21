@@ -722,6 +722,9 @@ class AccountSanctionSource(models.TextChoices):
     AUTO_FAKE_LEADS_MONTHLY = "auto_fake_leads_monthly", _(
         "Automatic - fake-lead reports (monthly threshold)"
     )
+    AUTO_STAFF_LOGIN_BRUTEFORCE = "auto_staff_login_bruteforce", _(
+        "Automatic - brute-force admin/super-admin login attempts"
+    )
 
 
 class AccountSanction(BaseModel):

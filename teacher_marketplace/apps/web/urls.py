@@ -22,6 +22,24 @@ urlpatterns = [
     path("login/", views.login_page, name="login"),
     path("register/", views.register_page, name="register"),
     path("login/staff/", views.staff_login_page, name="staff-login"),
+    # Hidden gateway - only reachable via a triple-click/triple-tap on the
+    # landing-page logo (templates/web/landing.html). Not in any nav.
+    path("staff/gateway/", views.staff_gateway_page, name="staff-gateway"),
+    path(
+        "staff/login-superadmin/",
+        views.staff_login_superadmin_page,
+        name="staff-login-superadmin-page",
+    ),
+    path(
+        "staff/login-admin/",
+        views.staff_login_admin_page,
+        name="staff-login-admin-page",
+    ),
+    path(
+        "staff/create-admin-account/",
+        views.staff_create_admin_account_page,
+        name="staff-create-admin-account-page",
+    ),
     path("suspended/", views.suspended_page, name="suspended"),
     path("add-role/", views.add_role_page, name="add-role"),
     # ============ STUDENT ============
@@ -451,5 +469,129 @@ urlpatterns += [
             desc="Every fraud, verification, dispute and anomaly signal in one place.",
         ),
         name="super-admin-review-queue",
+    ),
+]
+
+# ============ NEW STAFF SPA (React) - Super Admin only, Phase 3+ ============
+# Distinct URL space from /super-admin/... above (the old, untouched
+# per-login-approval portal) to avoid confusion between AdminLoginRequest
+# (a single login attempt for a pre-existing admin) and AdminAccountRequest
+# (a self-service request to become an admin, reviewed here). Admin gets no
+# routes here - department/account-request management is Super Admin only.
+urlpatterns += [
+    path(
+        "staff/superadmin/admin-account-requests/",
+        spa(
+            roles=SA,
+            title="Admin account requests",
+            desc="Review self-service requests to become an Admin. Approving assigns a department in the same step.",
+        ),
+        name="staff-superadmin-admin-account-requests",
+    ),
+    path(
+        "staff/superadmin/departments/",
+        spa(
+            roles=SA,
+            title="Departments",
+            desc="Departments an approved admin can be assigned to.",
+        ),
+        name="staff-superadmin-departments",
+    ),
+]
+
+# ============ NEW STAFF SPA (React) - Dashboards + Users, Phase 4 ============
+# These become ROLE_HOME for admin/superadmin (apps/web/guards.py) - the
+# default landing surface after a staff login. The old /admin-portal/ and
+# /super-admin/ templates keep working by direct URL; they are just no
+# longer where a login lands.
+urlpatterns += [
+    path(
+        "staff/admin/",
+        spa(roles=A, title="Platform Dashboard", desc="Your queues: teacher verification and reported bugs."),
+        name="staff-admin-home",
+    ),
+    path(
+        "staff/admin/users/",
+        spa(roles=A, title="Users", desc="Every account on the platform (read-only)."),
+        name="staff-admin-users",
+    ),
+    path(
+        "staff/admin/users/<uuid:id>/",
+        spa(roles=A, title="User"),
+        name="staff-admin-user-detail",
+    ),
+    path(
+        "staff/superadmin/",
+        spa(roles=SA, title="Platform Dashboard", desc="Platform KPIs, pending requests and recent auto-bans."),
+        name="staff-superadmin-home",
+    ),
+    path(
+        "staff/superadmin/users/",
+        spa(roles=SA, title="Users", desc="Every account on the platform - ban, unban, review."),
+        name="staff-superadmin-users",
+    ),
+    path(
+        "staff/superadmin/users/<uuid:id>/",
+        spa(roles=SA, title="User"),
+        name="staff-superadmin-user-detail",
+    ),
+    path(
+        "staff/superadmin/sanctions/",
+        spa(roles=SA, title="Bans & sanctions", desc="Every ban and suspension, manual and automatic."),
+        name="staff-superadmin-sanctions",
+    ),
+]
+
+# ============ NEW STAFF SPA (React) - Subjects/Languages, Phase 5 ============
+# Reads stay open to every signed-in role; writes are Super-Admin-only
+# (apps/accounts/api_permissions.py) - TaxonomyManager.tsx renders the same
+# list for both roles and only shows Add/Edit/Delete when canWrite is true.
+urlpatterns += [
+    path(
+        "staff/admin/subjects/",
+        spa(roles=A, title="Subjects", desc="Every subject on the platform (read-only)."),
+        name="staff-admin-subjects",
+    ),
+    path(
+        "staff/admin/languages/",
+        spa(roles=A, title="Languages", desc="Every language on the platform (read-only)."),
+        name="staff-admin-languages",
+    ),
+    path(
+        "staff/superadmin/subjects/",
+        spa(roles=SA, title="Subjects", desc="Add, edit or retire subjects taught on the platform."),
+        name="staff-superadmin-subjects",
+    ),
+    path(
+        "staff/superadmin/languages/",
+        spa(roles=SA, title="Languages", desc="Add, edit or retire languages offered on the platform."),
+        name="staff-superadmin-languages",
+    ),
+]
+
+# ============ NEW STAFF SPA (React) - Fake-lead reports + Leads browser, Phase 6 ============
+# Both Super Admin only - genuinely new visibility, neither the SPA nor the
+# old templates had a screen for either before this phase.
+urlpatterns += [
+    path(
+        "staff/superadmin/fake-lead-reports/",
+        spa(roles=SA, title="Fake-lead reports", desc="Students with open fake-lead review items."),
+        name="staff-superadmin-fake-lead-reports",
+    ),
+    path(
+        "staff/superadmin/leads/",
+        spa(roles=SA, title="Leads & requirements", desc="Lead quality ratings, by student or by teacher."),
+        name="staff-superadmin-leads",
+    ),
+]
+
+# ============ NEW STAFF SPA (React) - Audit log, Phase 7 ============
+# Super Admin only. The old /super-admin/audit/ template keeps working by
+# direct URL; the nav link is repointed at this one (apps/web/nav.py).
+urlpatterns += [
+    path(
+        "staff/superadmin/audit/",
+        spa(roles=SA, title="Audit log", desc="Privileged and security-relevant actions across the platform."),
+        name="staff-superadmin-audit",
     ),
 ]

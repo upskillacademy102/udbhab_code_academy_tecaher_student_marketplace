@@ -36,6 +36,11 @@ function friendly(status: number, code = "", detail = ""): string {
   if (status === 404) return detail || "We couldn't find what you were looking for.";
   if (status === 409) return detail || "That action conflicts with the current state.";
   if (status === 429) return "You're going a bit fast — please wait a moment and try again.";
+  // 503 is raised deliberately (e.g. ServiceUnavailableException) with a
+  // specific, already-safe-to-show message, like "Online payments are
+  // temporarily unavailable" - unlike a genuine unhandled 500, there's a
+  // real, more helpful detail here and it shouldn't be thrown away.
+  if (status === 503) return detail || "This is temporarily unavailable. Please try again shortly.";
   if (status >= 500) return "Something went wrong on our end. Please try again.";
   return detail || "Something went wrong. Please try again.";
 }
@@ -130,8 +135,24 @@ async function request<T>(method: string, path: string, opts: RequestOptions = {
 
   const err = ((payload as { error?: Record<string, unknown> })?.error ?? {}) as Record<string, unknown>;
   const code = (err.code as string) ?? "";
-  const detail = (err.message as string) ?? ((payload as { detail?: string })?.detail ?? "");
-  const fieldErrors = toFieldErrors(err.details);
+  // DRF puts a validation error that isn't about one specific field (e.g.
+  // "You already have an open requirement for this subject...") under
+  // `non_field_errors` inside `details`. Every caller in this app treats a
+  // non-null `fieldErrors` as "I rendered the problem next to a field, no
+  // need for a banner" — so leaving non_field_errors in there made those
+  // errors render nowhere at all. Pull it out and let it win as the
+  // headline message (it's always more specific than the generic "One or
+  // more fields failed validation." placeholder) instead.
+  const rawDetails =
+    err.details && typeof err.details === "object" ? { ...(err.details as Record<string, unknown>) } : null;
+  let nonFieldDetail = "";
+  if (rawDetails && "non_field_errors" in rawDetails) {
+    const v = rawDetails.non_field_errors;
+    nonFieldDetail = Array.isArray(v) ? v.join(" ") : String(v);
+    delete rawDetails.non_field_errors;
+  }
+  const detail = nonFieldDetail || (err.message as string) || ((payload as { detail?: string })?.detail ?? "");
+  const fieldErrors = toFieldErrors(rawDetails);
 
   if (res.status === 401 && !silent) {
     redirectToLogin(true);

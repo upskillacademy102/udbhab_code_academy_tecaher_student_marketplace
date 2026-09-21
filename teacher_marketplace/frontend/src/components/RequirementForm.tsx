@@ -66,7 +66,10 @@ export function draftFromRequirement(r: StudentRequirement): Draft {
     preferred_languages: r.preferred_languages?.map((l) => l.name) ?? [],
     no_language_preference: r.no_language_preference ?? false,
     teaching_mode: r.teaching_mode,
-    city: r.city?.name ?? "",
+    // A requirement located via the pincode escape hatch has city=null and
+    // only `pincode` set - fall back to that so editing doesn't present as
+    // "no location" and force the student to re-enter it from scratch.
+    city: r.city?.name ?? r.pincode ?? "",
     budget_min: r.budget_min ?? "",
     budget_max: r.budget_max ?? "",
     class_duration_minutes: r.class_duration_minutes ?? 60,
@@ -115,7 +118,12 @@ export function RequirementForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [nonField, setNonField] = useState("");
   const [saving, setSaving] = useState(false);
-  const [cityMode, setCityMode] = useState<"select" | "pincode">("select");
+  // A prefilled city that's all digits came from the pincode escape hatch
+  // (see draftFromRequirement) - open straight into that mode instead of
+  // showing an empty "Pick one" dropdown for a location that's actually set.
+  const [cityMode, setCityMode] = useState<"select" | "pincode">(
+    initial?.city && /^\d+$/.test(initial.city) ? "pincode" : "select",
+  );
   // Subject is free text server-side (validate_subject resolves or, for a
   // genuinely new one, creates it) - the select is just the fast path for
   // what's already in the taxonomy. "Something else" switches to typing it

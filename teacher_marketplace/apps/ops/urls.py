@@ -9,6 +9,8 @@ from apps.ops.views import (
     OpsRiskView,
     OpsSanctionLiftView,
     OpsSanctionListCreateView,
+    OpsStudentLeadQualityView,
+    OpsTeacherLeadReviewsView,
     ReviewQueueAssignView,
     ReviewQueueListView,
     ReviewQueueResolveView,
@@ -43,5 +45,15 @@ urlpatterns = [
         "sanctions/<uuid:id>/lift/",
         OpsSanctionLiftView.as_view(),
         name="sanction-lift",
+    ),
+    path(
+        "students-lead-quality/",
+        OpsStudentLeadQualityView.as_view(),
+        name="students-lead-quality",
+    ),
+    path(
+        "teacher-lead-reviews/",
+        OpsTeacherLeadReviewsView.as_view(),
+        name="teacher-lead-reviews",
     ),
 ]

@@ -1,10 +1,13 @@
 """
 Operations & audit API — Super Admin only.
 
-    GET /api/v1/ops/events/     audit-log feed (filter + paginate)
-    GET /api/v1/ops/overview/   platform KPIs + short time series
-    GET /api/v1/ops/health/     database / cache / celery / migrations
-    GET /api/v1/ops/errors/     tail of the error log (redacted)
+    GET /api/v1/ops/events/                  audit-log feed (filter + paginate)
+    GET /api/v1/ops/overview/                platform KPIs + short time series
+    GET /api/v1/ops/health/                  database / cache / celery / migrations
+    GET /api/v1/ops/errors/                  tail of the error log (redacted)
+    GET /api/v1/ops/students-lead-quality/   students by aggregated lead-quality verdicts;
+                                              ?student_id= returns that student's ratings instead
+    GET /api/v1/ops/teacher-lead-reviews/    lead-quality ratings, tagged offer vs. pooled enquiry
 
 Access is enforced centrally: none of these route names appear in
 apps.accounts.api_permissions._RULES, so every non-superadmin role is
@@ -93,7 +96,15 @@ class AuditEventListView(generics.ListAPIView):
 )
 class OpsOverviewView(APIView):
     def get(self, request):
-        from apps.accounts.models import AdminLoginRequest, User, UserRole
+        from apps.accounts.models import (
+            AdminAccountRequest,
+            AdminAccountRequestStatus,
+            AdminLoginRequest,
+            User,
+            UserRole,
+        )
+        from apps.languages.models import Language
+        from apps.subjects.models import Subject
 
         now = timezone.now()
         since_7 = now - dt.timedelta(days=7)
@@ -112,8 +123,15 @@ class OpsOverviewView(APIView):
                 "new_7d": users.filter(created_at__gte=since_7).count(),
                 "new_30d": users.filter(created_at__gte=since_30).count(),
             },
+            "taxonomy": {
+                "subjects": Subject.objects.filter(is_active=True).count(),
+                "languages": Language.objects.filter(is_active=True).count(),
+            },
             "pending_admin_logins": AdminLoginRequest.objects.filter(
                 status="pending", expires_at__gt=now
+            ).count(),
+            "pending_admin_account_requests": AdminAccountRequest.objects.filter(
+                status=AdminAccountRequestStatus.PENDING
             ).count(),
             "security_events_7d": AuditLog.objects.filter(
                 category__in=["security", "impersonation", "admin_login"],
@@ -540,6 +558,10 @@ class OpsSanctionListCreateView(generics.ListAPIView):
             qs = qs.filter(active=p["active"] == "true")
         if p.get("user"):
             qs = qs.filter(user_id=p["user"])
+        if p.get("source"):
+            qs = qs.filter(source=p["source"])
+        if p.get("source_prefix"):
+            qs = qs.filter(source__startswith=p["source_prefix"])
         return qs.order_by("-created_at")
 
     def list(self, request, *args, **kwargs):
@@ -688,3 +710,168 @@ class OpsRiskView(APIView):
                 ],
             }
         )
+
+
+# ==========================================================
+# LEADS / REQUIREMENTS VISIBILITY (Super Admin, Phase 6)
+# ==========================================================
+def _sanction_payload(sanction):
+    if sanction is None:
+        return None
+    return {
+        "id": str(sanction.id),
+        "kind": sanction.kind,
+        "source": sanction.source,
+        "is_automatic": sanction.is_automatic,
+        "reason": sanction.reason,
+        "at": sanction.created_at.isoformat(),
+    }
+
+
+@extend_schema(
+    tags=["Operations"],
+    responses={
+        200: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description=(
+                "Without ?student_id=: every student with at least one lead "
+                "quality rating, aggregated genuine/unreachable/fake counts. "
+                "With ?student_id=: that student's individual ratings."
+            ),
+        )
+    },
+)
+class OpsStudentLeadQualityView(APIView):
+    """
+    Feed for the Leads & Requirements browser's "By student" tab. The same
+    endpoint doubles as the detail view: pass ?student_id= to get that one
+    student's individual ratings instead of the aggregated summary row.
+    """
+
+    def get(self, request):
+        from django.db.models import Count, Q
+
+        from apps.accounts.models import User
+        from apps.trust.models import AccountSanction, LeadQualityRating, LeadQualityVerdict
+
+        student_id = request.query_params.get("student_id")
+
+        if student_id:
+            ratings = (
+                LeadQualityRating.objects.filter(student_id=student_id)
+                .select_related("teacher__user", "lead")
+                .order_by("-created_at")[:200]
+            )
+            return APIResponse.success(
+                data={
+                    "results": [
+                        {
+                            "id": str(r.id),
+                            "lead_id": str(r.lead_id),
+                            "teacher_id": str(r.teacher_id),
+                            "teacher_name": r.teacher.user.get_full_name(),
+                            "teacher_email": r.teacher.user.email,
+                            "verdict": r.verdict,
+                            "note": r.note,
+                            "clawed_back": r.clawed_back,
+                            "created_at": r.created_at.isoformat(),
+                        }
+                        for r in ratings
+                    ],
+                    "count": len(ratings),
+                }
+            )
+
+        rows = list(
+            LeadQualityRating.objects.values("student_id")
+            .annotate(
+                total=Count("id"),
+                genuine=Count("id", filter=Q(verdict=LeadQualityVerdict.GENUINE)),
+                unreachable=Count("id", filter=Q(verdict=LeadQualityVerdict.UNREACHABLE)),
+                fake=Count("id", filter=Q(verdict=LeadQualityVerdict.FAKE)),
+            )
+            .order_by("-fake", "-total")[:200]
+        )
+        student_ids = [row["student_id"] for row in rows]
+        students = {u.id: u for u in User.objects.filter(id__in=student_ids)}
+        sanctions = {
+            s.user_id: s
+            for s in AccountSanction.objects.filter(active=True, user_id__in=student_ids)
+        }
+
+        results = []
+        for row in rows:
+            user = students.get(row["student_id"])
+            results.append(
+                {
+                    "student_id": str(row["student_id"]),
+                    "student_email": user.email if user else "",
+                    "student_name": user.get_full_name() if user else "",
+                    "account_active": user.is_active if user else None,
+                    "total_ratings": row["total"],
+                    "genuine": row["genuine"],
+                    "unreachable": row["unreachable"],
+                    "fake": row["fake"],
+                    "sanction": _sanction_payload(sanctions.get(row["student_id"])),
+                }
+            )
+        return APIResponse.success(data={"results": results, "count": len(results)})
+
+
+@extend_schema(
+    tags=["Operations"],
+    responses={
+        200: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="Lead quality ratings, filterable by teacher/verdict, each tagged offer vs. pooled enquiry.",
+        )
+    },
+)
+class OpsTeacherLeadReviewsView(APIView):
+    """
+    Feed for the Leads & Requirements browser's "By teacher" tab. Each
+    rating is tagged with whether it came from a direct "Learn with this
+    teacher" offer or the ordinary pooled-enquiry cascade, via the matching
+    LeadAssignment row for the same (lead, teacher) pair.
+    """
+
+    def get(self, request):
+        from apps.matching.models import LeadAssignment
+        from apps.trust.models import LeadQualityRating
+
+        p = request.query_params
+        qs = LeadQualityRating.objects.select_related(
+            "teacher__user", "student", "lead"
+        ).order_by("-created_at")
+        if p.get("teacher_id"):
+            qs = qs.filter(teacher_id=p["teacher_id"])
+        if p.get("verdict"):
+            qs = qs.filter(verdict=p["verdict"])
+        ratings = list(qs[:200])
+
+        lead_ids = [r.lead_id for r in ratings]
+        teacher_ids = [r.teacher_id for r in ratings]
+        is_direct_by_pair = {
+            (a.lead_id, a.teacher_id): a.is_direct
+            for a in LeadAssignment.objects.filter(
+                lead_id__in=lead_ids, teacher_id__in=teacher_ids
+            )
+        }
+
+        results = [
+            {
+                "id": str(r.id),
+                "teacher_id": str(r.teacher_id),
+                "teacher_name": r.teacher.user.get_full_name(),
+                "teacher_email": r.teacher.user.email,
+                "student_id": str(r.student_id),
+                "student_name": r.student.get_full_name(),
+                "lead_id": str(r.lead_id),
+                "verdict": r.verdict,
+                "note": r.note,
+                "is_direct_offer": is_direct_by_pair.get((r.lead_id, r.teacher_id), False),
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in ratings
+        ]
+        return APIResponse.success(data={"results": results, "count": len(results)})

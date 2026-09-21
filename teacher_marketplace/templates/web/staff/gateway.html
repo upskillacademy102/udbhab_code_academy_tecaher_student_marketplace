@@ -1,0 +1,54 @@
+{% extends "web/base_public.html" %}
+{% load static web_extras %}
+
+{% block title %}Staff access · {{ SITE_NAME }}{% endblock %}
+{% block promo_title %}Staff access{% endblock %}
+{% block promo_body %}This area is for platform staff only. Every sign-in attempt here is logged.{% endblock %}
+{% block panel_width %}max-w-[28rem]{% endblock %}
+
+{% comment %}
+Hidden gateway - only reachable by triple-clicking/triple-tapping the logo
+on the public landing page (see the click handler in templates/web/landing.html).
+Not linked from any nav, not discoverable by browsing the site normally.
+{% endcomment %}
+
+{% block panel %}
+<a href="/" class="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-ink-500 hover:text-ink-800">
+  {% icon "arrow-left" "h-4 w-4" %} Back to the site
+</a>
+
+<div class="flex items-center gap-2">
+  <span class="grid h-9 w-9 place-items-center rounded-lg bg-pine-50 text-pine-700">{% icon "shield" %}</span>
+  <h1 class="u-h2">Staff access</h1>
+</div>
+<p class="u-fine mt-2">Choose what you need. This page is not linked anywhere else on the site.</p>
+
+<div class="mt-7 flex flex-col gap-3">
+  <a href="/staff/login-superadmin/" class="u-card u-card-pad flex items-center gap-4 transition hover:border-pine-400 hover:shadow-lift">
+    <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-pine-100 text-pine-700">{% icon "shield" "h-5 w-5" %}</span>
+    <span class="flex-1">
+      <span class="block text-[0.9375rem] font-semibold text-ink-900">Log in as Super Admin</span>
+      <span class="block text-[0.8125rem] text-ink-500">Direct sign-in with email and password.</span>
+    </span>
+    {% icon "chevron-right" "h-4 w-4 text-ink-400" %}
+  </a>
+
+  <a href="/staff/login-admin/" class="u-card u-card-pad flex items-center gap-4 transition hover:border-pine-400 hover:shadow-lift">
+    <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-pine-100 text-pine-700">{% icon "user" "h-5 w-5" %}</span>
+    <span class="flex-1">
+      <span class="block text-[0.9375rem] font-semibold text-ink-900">Log in as Admin</span>
+      <span class="block text-[0.8125rem] text-ink-500">Sign in with your admin account name and password.</span>
+    </span>
+    {% icon "chevron-right" "h-4 w-4 text-ink-400" %}
+  </a>
+
+  <a href="/staff/create-admin-account/" class="u-card u-card-pad flex items-center gap-4 transition hover:border-pine-400 hover:shadow-lift">
+    <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-marigold-100 text-marigold-700">{% icon "plus" "h-5 w-5" %}</span>
+    <span class="flex-1">
+      <span class="block text-[0.9375rem] font-semibold text-ink-900">Create an admin account</span>
+      <span class="block text-[0.8125rem] text-ink-500">Request admin access. A Super Admin will review it.</span>
+    </span>
+    {% icon "chevron-right" "h-4 w-4 text-ink-400" %}
+  </a>
+</div>
+{% endblock %}
