@@ -136,6 +136,9 @@ class RegisterSerializer(serializers.ModelSerializer):
     mobile = serializers.CharField(validators=[validate_mobile_number])
     first_name = serializers.CharField(validators=[validate_name])
     last_name = serializers.CharField(validators=[validate_name])
+    learning_partner_id = serializers.UUIDField(
+        required=False, allow_null=True, write_only=True
+    )
 
     class Meta:
         model = User
@@ -148,8 +151,21 @@ class RegisterSerializer(serializers.ModelSerializer):
             "role",
             "password",
             "password_confirm",
+            "learning_partner_id",
         )
         read_only_fields = ("id",)
+
+    def validate_learning_partner_id(self, value):
+        if value is None:
+            return None
+        if not User.objects.filter(
+            id=value,
+            role=UserRole.ADMIN,
+            is_active=True,
+            admin_department__is_learning_partner=True,
+        ).exists():
+            raise serializers.ValidationError("Select a valid learning partner, or none.")
+        return value
 
     def validate_role(self, value):
         allowed_self_registration_roles = {UserRole.STUDENT, UserRole.TEACHER}

@@ -9,6 +9,7 @@ Phase 2 scope: this model and its CRUD APIs are pure reference-data
 management - no matching/lead logic lives here (that's lead_engine).
 """
 
+from django.conf import settings
 from django.db import models
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
@@ -29,7 +30,6 @@ class Subject(BaseModel):
     name = models.CharField(
         _("name"),
         max_length=150,
-        unique=True,
         db_index=True,
         validators=[validate_taxonomy_name],
         help_text=_("Display name of the subject, e.g. 'Mathematics'."),
@@ -37,9 +37,25 @@ class Subject(BaseModel):
     slug = models.SlugField(
         _("slug"),
         max_length=170,
-        unique=True,
         blank=True,
         help_text=_("URL-friendly identifier, auto-generated from name if left blank."),
+    )
+    learning_partner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("learning partner"),
+        related_name="scoped_subjects",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        limit_choices_to={
+            "role": "admin",
+            "admin_department__is_learning_partner": True,
+        },
+        help_text=_(
+            "Null = platform-wide, visible to everyone. Set = a Learning "
+            "Partner-requested subject, visible only to that partner's own "
+            "students/teachers."
+        ),
     )
     description = models.CharField(
         _("description"),
@@ -101,6 +117,32 @@ class Subject(BaseModel):
                     )
                     & (models.Q(icon__isnull=True) | ~models.Q(icon__regex=r"^\s*$"))
                 ),
+            ),
+            # Unique while platform-wide (learning_partner IS NULL) - equivalent
+            # to the old bare unique=True for every row that existed before
+            # Learning Partner scoping, since every one of them has a null FK.
+            models.UniqueConstraint(
+                fields=["name"],
+                condition=models.Q(learning_partner__isnull=True),
+                name="subject_name_unique_global",
+            ),
+            models.UniqueConstraint(
+                fields=["slug"],
+                condition=models.Q(learning_partner__isnull=True),
+                name="subject_slug_unique_global",
+            ),
+            # A single partner can't have two subjects with the same name/slug
+            # (this does NOT make name/slug globally unique across partners -
+            # two different partners, or a partner and the global list, may
+            # both have e.g. "Mathematics", each independently visible only
+            # to its own audience).
+            models.UniqueConstraint(
+                fields=["name", "learning_partner"],
+                name="subject_name_unique_per_partner",
+            ),
+            models.UniqueConstraint(
+                fields=["slug", "learning_partner"],
+                name="subject_slug_unique_per_partner",
             ),
         ]
 

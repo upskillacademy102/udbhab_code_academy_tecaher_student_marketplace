@@ -25,8 +25,15 @@ def normalize_name_part(value: str) -> str:
     )
 
 
-def build_admin_account_name(first_name: str, last_name: str, department) -> str:
-    base = normalize_name_part(first_name) + normalize_name_part(last_name)
+def build_admin_account_name(
+    first_name: str, last_name: str, department, *, organization_name: str = ""
+) -> str:
+    if organization_name:
+        # A Learning Partner request: the whole org name is one token stream
+        # ("Learn Academy" -> "LearnAcademy"), not a first+last split.
+        base = normalize_name_part(organization_name)
+    else:
+        base = normalize_name_part(first_name) + normalize_name_part(last_name)
     return f"{base}@{department.canonical_name}"
 
 
@@ -46,7 +53,10 @@ def _approve_and_create_admin_once(request, *, department, reviewed_by):
         raise ValidationException(detail=f"This request is already {request.status}.")
 
     base_name = build_admin_account_name(
-        request.first_name, request.last_name, department
+        request.first_name,
+        request.last_name,
+        department,
+        organization_name=request.organization_name,
     )
     stem, _, dept_part = base_name.rpartition("@")
 
@@ -78,8 +88,11 @@ def _approve_and_create_admin_once(request, *, department, reviewed_by):
     user = User.objects.create(
         email=User.objects.normalize_email(request.email),
         mobile=request.mobile,
-        first_name=request.first_name,
-        last_name=request.last_name,
+        # A Learning Partner's "name" is its organisation name, held in one
+        # field so get_full_name()/any display call site shows it directly
+        # (e.g. "Learn Academy") rather than a first+last split.
+        first_name=request.organization_name or request.first_name,
+        last_name="" if request.organization_name else request.last_name,
         role=UserRole.ADMIN,
         admin_account_name=final_name,
         admin_department=department,

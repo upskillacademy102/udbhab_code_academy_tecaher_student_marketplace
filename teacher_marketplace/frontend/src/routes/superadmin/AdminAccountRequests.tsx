@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { AdminAccountRequest, AdminDepartment } from "@/lib/types";
@@ -28,7 +28,7 @@ export function AdminAccountRequests() {
 
   async function deny(req: AdminAccountRequest) {
     const ok = await confirmAction({
-      title: `Deny ${req.first_name} ${req.last_name}'s request?`,
+      title: `Deny ${req.organization_name || `${req.first_name} ${req.last_name}`}'s request?`,
       message: "They won't get an admin account. This can't be undone.",
       confirmLabel: "Deny request",
       danger: true,
@@ -124,7 +124,10 @@ function RequestCard({
     <article className="u-card u-card-pad flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <h2 className="truncate text-[0.9375rem] font-semibold text-ink-900">{req.first_name} {req.last_name}</h2>
+          <h2 className="truncate text-[0.9375rem] font-semibold text-ink-900">
+            {req.organization_name || `${req.first_name} ${req.last_name}`}
+          </h2>
+          {req.organization_name && <span className="u-badge u-badge-ink">Learning Partner</span>}
           <span className={badge}>{req.status[0]!.toUpperCase() + req.status.slice(1)}</span>
         </div>
         <p className="u-fine mt-1">{req.email} · {req.mobile}</p>
@@ -170,6 +173,16 @@ function ApproveDialog({
   });
   const departments = (deptData?.items ?? []).filter((d) => d.is_active);
 
+  // Pre-select (never lock — still an explicit choice) the Learning Partner
+  // department for a Learning Partner request, so the common case is one
+  // click, while the server still independently enforces the match.
+  useEffect(() => {
+    if (departmentId || !req.organization_name) return;
+    const lp = departments.find((d) => d.is_learning_partner);
+    if (lp) setDepartmentId(lp.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deptData]);
+
   async function approve() {
     // Mandatory, no shortcut - mirrors the server, which refuses to
     // approve without department_id at all.
@@ -194,7 +207,7 @@ function ApproveDialog({
     <div className="fixed inset-0 z-50 grid place-items-center p-4" role="dialog" aria-modal="true" aria-label="Approve request">
       <div className="absolute inset-0 bg-ink-900/40 backdrop-blur-[2px]" onClick={onClose} />
       <div className="relative w-full max-w-sm rounded-2xl border-[1.5px] border-ink-200 bg-paper p-5 shadow-raise">
-        <h2 className="u-h3">Approve {req.first_name} {req.last_name}</h2>
+        <h2 className="u-h3">Approve {req.organization_name || `${req.first_name} ${req.last_name}`}</h2>
         <p className="u-fine mt-2">
           Picking a department creates the admin account in the same step — there's no way to approve without one.
         </p>

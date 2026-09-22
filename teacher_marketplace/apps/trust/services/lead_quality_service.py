@@ -33,6 +33,7 @@ from apps.core.exceptions.custom_exceptions import ValidationException
 from apps.trust.models import (
     AccountSanctionKind,
     AccountSanctionSource,
+    FakeLeadEndorsement,
     LeadQualityRating,
     LeadQualityVerdict,
     ManualReviewKind,
@@ -123,6 +124,14 @@ class LeadQualityService:
         number of fake reports. Distinct-by-teacher is the anti-gaming
         property: a teacher who flags five of one student's leads counts
         once.
+
+        A Learning Partner's endorsement of this student's fake-lead signal
+        (apps.trust.models.FakeLeadEndorsement, one per partner per student)
+        adds LEARNING_PARTNER_FAKE_REPORT_WEIGHT to the SAME rolling-window
+        counts, on the same footing as a distinct teacher's report - see
+        that setting's definition for the exact arithmetic this implies.
+        `total_reports` is deliberately NOT weighted - it's a literal count
+        of teacher ratings, shown as-is on the dashboard.
         """
         now = timezone.now()
         weekly = now - timedelta(days=settings.FAKE_LEAD_REPORT_WEEKLY_WINDOW_DAYS)
@@ -130,21 +139,78 @@ class LeadQualityService:
         fake = LeadQualityRating.objects.filter(
             student=student, verdict=LeadQualityVerdict.FAKE
         )
+        endorsements = FakeLeadEndorsement.objects.filter(student=student)
+        weight = settings.LEARNING_PARTNER_FAKE_REPORT_WEIGHT
 
         def distinct_teachers(qs):
             return qs.aggregate(n=Count("teacher", distinct=True))["n"] or 0
 
+        def weighted(rating_qs, endorsement_qs):
+            return distinct_teachers(rating_qs) + endorsement_qs.count() * weight
+
         return {
-            "distinct_teachers_7d": distinct_teachers(fake.filter(updated_at__gte=weekly)),
-            "distinct_teachers_30d": distinct_teachers(
-                fake.filter(updated_at__gte=monthly)
+            "distinct_teachers_7d": weighted(
+                fake.filter(updated_at__gte=weekly),
+                endorsements.filter(created_at__gte=weekly),
             ),
-            "distinct_teachers_all": distinct_teachers(fake),
+            "distinct_teachers_30d": weighted(
+                fake.filter(updated_at__gte=monthly),
+                endorsements.filter(created_at__gte=monthly),
+            ),
+            "distinct_teachers_all": weighted(fake, endorsements),
             "total_reports": fake.count(),
         }
 
     @staticmethod
     def _reassess_fake_reports(student, *, latest_rating, latest_lead) -> None:
+        latest = {
+            "teacher_email": latest_rating.teacher.user.email,
+            "teacher_name": latest_rating.teacher.user.get_full_name(),
+            "lead_id": str(latest_lead.id),
+            "subject": getattr(
+                getattr(latest_lead.student_requirement, "subject", None), "name", ""
+            ),
+            "note": latest_rating.note,
+            "at": timezone.now().isoformat(),
+        }
+        LeadQualityService._apply_fake_report_assessment(student, latest_report=latest)
+
+    @staticmethod
+    def reassess_fake_reports_after_endorsement(student) -> None:
+        """
+        Triggered by apps.learning_partner.views.LPEndorseFakeReportView -
+        re-runs the exact same stats/threshold/auto-ban decision as a fresh
+        teacher report, since an endorsement's added weight (see
+        fake_report_stats) can by itself push a student over the auto-ban
+        threshold with no new teacher rating involved. `latest_report`
+        keeps whatever the existing review item already has - an
+        endorsement is not itself a new teacher report to describe.
+        """
+        from apps.trust.models import ManualReviewItem, ManualReviewStatus
+
+        existing_item = ManualReviewItem.objects.filter(
+            kind=ManualReviewKind.FAKE_LEAD_REPORT,
+            dedupe_key=f"flr:{student.id}",
+            status__in=[ManualReviewStatus.OPEN, ManualReviewStatus.IN_REVIEW],
+        ).first()
+        latest_report = (
+            (existing_item.payload or {}).get("latest_report")
+            if existing_item is not None
+            else None
+        )
+        LeadQualityService._apply_fake_report_assessment(
+            student, latest_report=latest_report
+        )
+
+    @staticmethod
+    def _apply_fake_report_assessment(student, *, latest_report) -> None:
+        """
+        Shared by both trigger paths above: compute stats, decide whether
+        the auto-ban threshold is crossed, and open/update the student's
+        FAKE_LEAD_REPORT review item either way. Kept as ONE place that
+        knows the threshold arithmetic, rather than two copies that could
+        silently drift apart.
+        """
         stats = LeadQualityService.fake_report_stats(student)
 
         from apps.trust.services.sanction_service import SanctionService
@@ -163,21 +229,11 @@ class LeadQualityService:
             and student.is_active
         )
 
-        latest = {
-            "teacher_email": latest_rating.teacher.user.email,
-            "teacher_name": latest_rating.teacher.user.get_full_name(),
-            "lead_id": str(latest_lead.id),
-            "subject": getattr(
-                getattr(latest_lead.student_requirement, "subject", None), "name", ""
-            ),
-            "note": latest_rating.note,
-            "at": timezone.now().isoformat(),
-        }
         payload = {
             **stats,
             "student_email": student.email,
             "student_name": student.get_full_name(),
-            "latest_report": latest,
+            "latest_report": latest_report,
             "auto_banned": bool(should_ban or already_banned),
         }
 

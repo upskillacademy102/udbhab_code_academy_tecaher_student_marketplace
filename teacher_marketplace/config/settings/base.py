@@ -79,6 +79,7 @@ LOCAL_APPS = [
     "apps.reviews",
     "apps.support",
     "apps.ops",
+    "apps.learning_partner",
     "apps.web",
 ]
 
@@ -885,6 +886,24 @@ FAKE_LEAD_REPORT_WEEKLY_WINDOW_DAYS = config(
 )
 FAKE_LEAD_REPORT_MONTHLY_WINDOW_DAYS = config(
     "FAKE_LEAD_REPORT_MONTHLY_WINDOW_DAYS", default=30, cast=int
+)
+
+# A Learning Partner can ENDORSE an existing fake-lead report on one of
+# their own referred students (apps.learning_partner.views.
+# LPEndorseFakeReportView) - they cannot originate one from nothing, only
+# add weight to a signal a real teacher already raised... except the
+# distinct-teacher counts above don't actually require that ordering, so
+# in practice an endorsement counts toward the SAME rolling-window totals
+# as a real teacher's fake rating, at this multiplier
+# (apps.trust.services.lead_quality_service.LeadQualityService.
+# fake_report_stats). With the defaults above (FAKE_LEAD_AUTOBAN_WEEKLY=10,
+# strict >), 2 endorsements alone (weight 10) sit exactly AT that line, not
+# over it - a 3rd endorsement or a real teacher report is what actually
+# tips it. Discuss with the user before changing this weight or the ">"
+# comparisons above - the sensitivity is a product decision, not a default
+# to silently tune.
+LEARNING_PARTNER_FAKE_REPORT_WEIGHT = config(
+    "LEARNING_PARTNER_FAKE_REPORT_WEIGHT", default=5, cast=int
 )
 
 # Brute-force protection on the admin/super-admin staff-login endpoints

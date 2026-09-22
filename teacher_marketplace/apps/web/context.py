@@ -2,7 +2,7 @@
 
 from django.conf import settings
 
-from apps.web.guards import ROLE_HOME
+from apps.web.guards import home_url_for
 
 
 def site(request):
@@ -14,7 +14,7 @@ def site(request):
         "API_BASE_URL": settings.API_BASE_URL,
         "web_user": web_user,
         "web_role": role,
-        "web_home": ROLE_HOME.get(role, "/"),
+        "web_home": home_url_for(web_user),
         "web_has_student_profile": bool(getattr(web_user, "has_student_profile", False)),
         "web_has_teacher_profile": bool(getattr(web_user, "has_teacher_profile", False)),
     }

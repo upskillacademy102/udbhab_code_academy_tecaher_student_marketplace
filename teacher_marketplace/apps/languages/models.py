@@ -10,6 +10,7 @@ Phase 2 scope: this model and its CRUD APIs are pure reference-data
 management - no matching/lead logic lives here (that's lead_engine).
 """
 
+from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -27,7 +28,6 @@ class Language(BaseModel):
     name = models.CharField(
         _("name"),
         max_length=100,
-        unique=True,
         db_index=True,
         validators=[validate_taxonomy_name],
         help_text=_("Display name of the language, e.g. 'English'."),
@@ -35,13 +35,29 @@ class Language(BaseModel):
     code = models.CharField(
         _("code"),
         max_length=10,
-        unique=True,
         db_index=True,
         validators=[validate_language_code],
         help_text=_(
             "Short language code, e.g. 'en', 'hi', 'es'. Recommended: "
             "ISO 639-1 two-letter codes for consistency, though not "
             "strictly enforced to allow regional variants if needed."
+        ),
+    )
+    learning_partner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("learning partner"),
+        related_name="scoped_languages",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        limit_choices_to={
+            "role": "admin",
+            "admin_department__is_learning_partner": True,
+        },
+        help_text=_(
+            "Null = platform-wide, visible to everyone. Set = a Learning "
+            "Partner-requested language, visible only to that partner's own "
+            "students/teachers."
         ),
     )
     is_active = models.BooleanField(
@@ -67,6 +83,26 @@ class Language(BaseModel):
             models.CheckConstraint(
                 name="language_code_format",
                 check=models.Q(code__regex=r"^[a-z][a-z0-9-]{1,9}$"),
+            ),
+            # Same partial-unique split as Subject - see that model's Meta
+            # for the full reasoning.
+            models.UniqueConstraint(
+                fields=["name"],
+                condition=models.Q(learning_partner__isnull=True),
+                name="language_name_unique_global",
+            ),
+            models.UniqueConstraint(
+                fields=["code"],
+                condition=models.Q(learning_partner__isnull=True),
+                name="language_code_unique_global",
+            ),
+            models.UniqueConstraint(
+                fields=["name", "learning_partner"],
+                name="language_name_unique_per_partner",
+            ),
+            models.UniqueConstraint(
+                fields=["code", "learning_partner"],
+                name="language_code_unique_per_partner",
             ),
         ]
 

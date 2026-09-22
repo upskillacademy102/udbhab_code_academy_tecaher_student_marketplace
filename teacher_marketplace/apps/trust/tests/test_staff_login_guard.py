@@ -53,6 +53,13 @@ class AccountAutoBanTests(APITestCase):
     def setUp(self):
         cache.clear()
 
+    def tearDown(self):
+        # A block/counter this test set (staff_login:ipblock:...) must never
+        # outlive it - LocMemCache is one process-wide instance for the
+        # whole test run, so leaving one set would silently fail whatever
+        # OTHER test hits /staff/login-*/ next.
+        cache.clear()
+
     def test_admin_account_auto_banned_after_threshold(self):
         admin = _make_named_admin()
         for _ in range(3):
@@ -127,6 +134,13 @@ class UnresolvedIdentifierIpBlockTests(APITestCase):
     def setUp(self):
         cache.clear()
 
+    def tearDown(self):
+        # A block/counter this test set (staff_login:ipblock:...) must never
+        # outlive it - LocMemCache is one process-wide instance for the
+        # whole test run, so leaving one set would silently fail whatever
+        # OTHER test hits /staff/login-*/ next.
+        cache.clear()
+
     def test_unknown_account_name_blocks_ip_not_any_account(self):
         for _ in range(3):
             r = self.client.post(
@@ -171,6 +185,13 @@ class UnresolvedIdentifierIpBlockTests(APITestCase):
 
 class GuardServiceUnitTests(TestCase):
     def setUp(self):
+        cache.clear()
+
+    def tearDown(self):
+        # A block/counter this test set (staff_login:ipblock:...) must never
+        # outlive it - LocMemCache is one process-wide instance for the
+        # whole test run, so leaving one set would silently fail whatever
+        # OTHER test hits /staff/login-*/ next.
         cache.clear()
 
     @override_settings(**_SMALL)

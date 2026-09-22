@@ -125,7 +125,8 @@ class TeacherSearchFilterSet(django_filters.FilterSet):
             SubjectMatchingService,
         )
 
-        result = SubjectMatchingService.match_by_text(value)
+        viewer = getattr(self.request, "user", None)
+        result = SubjectMatchingService.match_by_text(value, viewer=viewer)
         if not result.is_eligible or result.matched_subject is None:
             return queryset.none()
         return queryset.filter(subjects__id=result.matched_subject.id)
@@ -135,7 +136,8 @@ class TeacherSearchFilterSet(django_filters.FilterSet):
             LanguageMatchingService,
         )
 
-        result = LanguageMatchingService.match_by_text(value)
+        viewer = getattr(self.request, "user", None)
+        result = LanguageMatchingService.match_by_text(value, viewer=viewer)
         if not result.is_eligible or result.matched_subject is None:
             return queryset.none()
         return queryset.filter(languages__id=result.matched_subject.id)

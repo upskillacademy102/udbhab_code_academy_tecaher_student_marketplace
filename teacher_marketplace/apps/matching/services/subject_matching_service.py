@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from django.contrib.postgres.search import TrigramSimilarity
+from django.db.models import Q
 
 from apps.matching.services.config_service import get_config
 from apps.subjects.models import Subject
@@ -65,18 +66,32 @@ class SubjectMatchingService:
         return MatchResult(is_eligible=False, score=0, matched_via="none")
 
     @staticmethod
-    def match_by_text(query_text: str) -> MatchResult:
+    def match_by_text(query_text: str, *, viewer=None) -> MatchResult:
         """
         Free-text resolution path - e.g. a search box where a
         student types "Math" and the system must resolve that to
         the canonical Mathematics Subject. Tries exact name match,
         then SubjectAlias, then pg_trgm fuzzy similarity against
         Subject.name, in that order, per the spec's precedence.
+
+        `viewer` scopes visibility to Learning Partner-requested subjects
+        (apps.subjects.models.Subject.learning_partner): a global subject
+        (learning_partner=None) is always visible; a partner-scoped one only
+        to that partner itself and its own referred students/teachers (see
+        User.taxonomy_scope_id for why it's not simply `learning_partner_id`).
+        `getattr(viewer, "taxonomy_scope_id", None)` safely yields None for
+        an anonymous caller, a viewer with no partner, or no viewer at all -
+        all three collapse to "global subjects only", the pre-LP-3 behaviour.
         """
         config = get_config()
         normalized = query_text.strip()
+        scope_id = getattr(viewer, "taxonomy_scope_id", None)
+        visible = Q(learning_partner__isnull=True) | Q(learning_partner_id=scope_id)
 
-        exact = Subject.objects.filter(name__iexact=normalized, is_active=True).first()
+        exact = (
+            Subject.objects.filter(visible, name__iexact=normalized, is_active=True)
+            .first()
+        )
         if exact is not None:
             return MatchResult(
                 is_eligible=True, score=100, matched_via="exact", matched_subject=exact
@@ -84,9 +99,12 @@ class SubjectMatchingService:
 
         from apps.matching.models import SubjectAlias
 
+        subject_visible = Q(subject__learning_partner__isnull=True) | Q(
+            subject__learning_partner_id=scope_id
+        )
         alias = (
             SubjectAlias.objects.filter(
-                alias_text__iexact=normalized, subject__is_active=True
+                subject_visible, alias_text__iexact=normalized, subject__is_active=True
             )
             .select_related("subject")
             .first()
@@ -100,7 +118,7 @@ class SubjectMatchingService:
             )
 
         fuzzy_candidate = (
-            Subject.objects.filter(is_active=True)
+            Subject.objects.filter(visible, is_active=True)
             .annotate(similarity=TrigramSimilarity("name", normalized))
             .filter(similarity__gt=FUZZY_SCORE_FLOOR / 100)
             .order_by("-similarity")

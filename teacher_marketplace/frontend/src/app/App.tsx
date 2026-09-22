@@ -15,6 +15,7 @@ import { Availability } from "@/routes/teacher/Availability";
 import { Plan } from "@/routes/teacher/Plan";
 import { AdminAccountRequests } from "@/routes/superadmin/AdminAccountRequests";
 import { Departments } from "@/routes/superadmin/Departments";
+import { TaxonomyRequests } from "@/routes/superadmin/TaxonomyRequests";
 import { Dashboard as SuperAdminDashboard } from "@/routes/superadmin/Dashboard";
 import { Users as SuperAdminUsers } from "@/routes/superadmin/Users";
 import { UserDetail as SuperAdminUserDetail } from "@/routes/superadmin/UserDetail";
@@ -29,6 +30,16 @@ import { Languages as SuperAdminLanguages } from "@/routes/superadmin/Languages"
 import { FakeLeadReports } from "@/routes/superadmin/FakeLeadReports";
 import { LeadsBrowser } from "@/routes/superadmin/LeadsBrowser";
 import { AuditLog } from "@/routes/superadmin/AuditLog";
+import { Dashboard as LPDashboard } from "@/routes/learning-partner/Dashboard";
+import { Students as LPStudents } from "@/routes/learning-partner/Students";
+import { StudentDetail as LPStudentDetail } from "@/routes/learning-partner/StudentDetail";
+import { Teachers as LPTeachers } from "@/routes/learning-partner/Teachers";
+import { TeacherDetail as LPTeacherDetail } from "@/routes/learning-partner/TeacherDetail";
+import { Subjects as LPSubjects } from "@/routes/learning-partner/Subjects";
+import { Languages as LPLanguages } from "@/routes/learning-partner/Languages";
+import { FakeLeadReports as LPFakeLeadReports } from "@/routes/learning-partner/FakeLeadReports";
+import { LeadsBrowser as LPLeadsBrowser } from "@/routes/learning-partner/LeadsBrowser";
+import { AuditLog as LPAuditLog } from "@/routes/learning-partner/AuditLog";
 
 /**
  * Routes the SPA owns.
@@ -76,11 +87,26 @@ export function App() {
       <Route path="/staff/superadmin/sanctions/" element={<Sanctions />} />
       <Route path="/staff/superadmin/admin-account-requests/" element={<AdminAccountRequests />} />
       <Route path="/staff/superadmin/departments/" element={<Departments />} />
+      <Route path="/staff/superadmin/taxonomy-requests/" element={<TaxonomyRequests />} />
       <Route path="/staff/superadmin/subjects/" element={<SuperAdminSubjects />} />
       <Route path="/staff/superadmin/languages/" element={<SuperAdminLanguages />} />
       <Route path="/staff/superadmin/fake-lead-reports/" element={<FakeLeadReports />} />
       <Route path="/staff/superadmin/leads/" element={<LeadsBrowser />} />
       <Route path="/staff/superadmin/audit/" element={<AuditLog />} />
+
+      {/* Learning Partner only - role=admin whose department is the
+          Learning Partner one (apps.accounts.models.User.is_learning_partner_admin).
+          See apps/web/urls.py's "LEARNING PARTNER SPA" section. */}
+      <Route path="/staff/learning-partner/" element={<LPDashboard />} />
+      <Route path="/staff/learning-partner/students/" element={<LPStudents />} />
+      <Route path="/staff/learning-partner/students/:id/" element={<LPStudentDetail />} />
+      <Route path="/staff/learning-partner/teachers/" element={<LPTeachers />} />
+      <Route path="/staff/learning-partner/teachers/:id/" element={<LPTeacherDetail />} />
+      <Route path="/staff/learning-partner/subjects/" element={<LPSubjects />} />
+      <Route path="/staff/learning-partner/languages/" element={<LPLanguages />} />
+      <Route path="/staff/learning-partner/fake-lead-reports/" element={<LPFakeLeadReports />} />
+      <Route path="/staff/learning-partner/leads/" element={<LPLeadsBrowser />} />
+      <Route path="/staff/learning-partner/audit/" element={<LPAuditLog />} />
 
       <Route path="*" element={<Fallback />} />
     </Routes>
@@ -95,7 +121,15 @@ export function App() {
 function Fallback() {
   const role = document.body.dataset.role;
   if (role === "teacher") return <Navigate to="/teacher/" replace />;
-  if (role === "admin") return <Navigate to="/staff/admin/" replace />;
+  if (role === "admin") {
+    // A Learning Partner is role=admin under the hood - the shell stamps
+    // this separately (see templates/web/base.html) so a stale/unknown
+    // path lands them on their own dashboard, not the generic admin one.
+    if (document.body.dataset.isLearningPartner === "true") {
+      return <Navigate to="/staff/learning-partner/" replace />;
+    }
+    return <Navigate to="/staff/admin/" replace />;
+  }
   if (role === "superadmin") return <Navigate to="/staff/superadmin/" replace />;
   return <Navigate to="/student/" replace />;
 }

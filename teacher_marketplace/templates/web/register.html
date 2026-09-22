@@ -53,7 +53,7 @@ the moment you sign in.{% endblock %}
     </div>
     <p class="u-fine mt-2.5">
       Step <span class="u-num" x-text="stepIndex"></span> of <span class="u-num" x-text="progressSteps.length"></span>
-      <span x-show="step !== 'account'"> · no account needed yet</span>
+      <span x-show="step !== 'account' && step !== 'learning-partner'"> · no account needed yet</span>
     </p>
   </div>
 
@@ -402,7 +402,7 @@ the moment you sign in.{% endblock %}
         {% icon "x-circle" %}<span x-text="formError"></span>
       </div>
 
-      <form class="mt-6 flex flex-col gap-4" @submit.prevent="submit()" novalidate>
+      <form class="mt-6 flex flex-col gap-4" @submit.prevent="continueFromAccount()" novalidate>
         <div class="grid grid-cols-2 gap-3">
           <div class="u-field">
             <label class="u-label" for="rg-first">First name</label>
@@ -463,8 +463,8 @@ the moment you sign in.{% endblock %}
           <p class="u-error" x-show="err('password_confirm')" x-text="err('password_confirm')"></p>
         </div>
 
-        <button type="submit" class="u-btn-primary u-btn-lg mt-2 w-full" :data-loading="submitting" :disabled="submitting">
-          Create account
+        <button type="submit" class="u-btn-primary u-btn-lg mt-2 w-full">
+          Continue {% icon "chevron-right" %}
         </button>
       </form>
 
@@ -474,6 +474,54 @@ the moment you sign in.{% endblock %}
       <p class="mt-3 text-center text-[0.75rem] text-ink-400">
         Admin access is provisioned separately and is not available here.
       </p>
+    </div>
+  </template>
+
+  {# ============ STEP: learning partner (optional, last) ============ #}
+  <template x-if="step === 'learning-partner'">
+    <div>
+      <button type="button" @click="back()" class="u-btn-ghost u-btn-sm -ml-3 mb-5" x-show="canGoBack">
+        {% icon "arrow-left" "h-4 w-4" %} Back
+      </button>
+
+      <h1 class="u-h2">Are you under one of our learning partners?</h1>
+      <p class="u-lede mt-2 text-[0.9375rem]">Completely optional — only answer yes if a partner organisation referred you.</p>
+
+      <div class="mt-7 flex flex-col gap-3">
+        <button type="button" class="u-option" :class="isUnderLearningPartner === false ? 'border-pine-600 bg-pine-50' : ''"
+                @click="chooseLearningPartner(false)">
+          <span class="u-option-body">
+            <span class="u-option-title">No</span>
+            <span class="u-option-sub">I'm signing up on my own.</span>
+          </span>
+        </button>
+        <button type="button" class="u-option" :class="isUnderLearningPartner === true ? 'border-pine-600 bg-pine-50' : ''"
+                @click="chooseLearningPartner(true)">
+          <span class="u-option-body">
+            <span class="u-option-title">Yes</span>
+            <span class="u-option-sub">I was referred by a learning partner.</span>
+          </span>
+        </button>
+      </div>
+
+      <div class="mt-5" x-show="isUnderLearningPartner === true" x-collapse>
+        <label class="u-label" for="rg-lp">Learning partner</label>
+        <select id="rg-lp" class="u-select w-full" x-model="learningPartnerId" :disabled="learningPartnersLoading">
+          <option value="">Select your learning partner…</option>
+          <template x-for="p in learningPartners" :key="p.id">
+            <option :value="p.id" x-text="p.name"></option>
+          </template>
+        </select>
+        <p class="u-hint mt-1" x-show="learningPartnersLoading">Loading…</p>
+        <p class="u-error" x-show="learningPartnersError" x-text="learningPartnersError"></p>
+      </div>
+
+      <p class="u-error mt-2" x-show="lpError" x-text="lpError"></p>
+
+      <button type="button" class="u-btn-primary u-btn-lg mt-8 w-full" :data-loading="submitting"
+              :disabled="!canFinish || submitting" @click="submit()">
+        Create account
+      </button>
     </div>
   </template>
 </div>

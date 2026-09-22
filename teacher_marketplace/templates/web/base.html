@@ -13,7 +13,7 @@
   <link rel="preload" href="{% static 'fonts/inter-latin-wght-normal.woff2' %}" as="font" type="font/woff2" crossorigin>
   {% block font_extra %}{% endblock %}
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
-  <script>window.API_BASE_URL = "{{ API_BASE_URL }}";</script>
+  <script>window.API_BASE_URL = "{{ API_BASE_URL }}"; window.SITE_NAME = "{{ SITE_NAME|escapejs }}";</script>
   <script defer src="{% static 'js/api.js' %}"></script>
   <script defer src="{% static 'js/app.js' %}"></script>
   <script defer src="{% static 'js/pages.js' %}"></script>
@@ -23,7 +23,7 @@
   <script defer src="{% static 'js/vendor/alpine-focus.min.js' %}"></script>
   <script defer src="{% static 'js/vendor/alpine.min.js' %}"></script>
 </head>
-<body class="h-full"{% if web_role %} data-role="{{ web_role }}"{% endif %}>
+<body class="h-full"{% if web_role %} data-role="{{ web_role }}"{% endif %}{% if web_user.is_learning_partner_admin %} data-is-learning-partner="true"{% endif %}>
   {% include "web/_icons.html" %}
 
   <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow-pop">Skip to content</a>

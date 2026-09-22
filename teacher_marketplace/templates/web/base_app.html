@@ -91,7 +91,7 @@
     </div>
 
     <nav class="flex-1 overflow-y-auto px-3 py-2">
-      {% nav_for web_role as sections %}
+      {% nav_for web_role web_user as sections %}
       {% for section in sections %}
         <div class="{% if not forloop.first %}mt-6{% endif %}">
           {% if section.label %}

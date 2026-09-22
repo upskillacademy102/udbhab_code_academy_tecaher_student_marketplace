@@ -24,7 +24,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from apps.common.models import BaseModel
-from apps.utils.validators import validate_image_upload
+from apps.utils.validators import validate_image_upload, validate_taxonomy_name
 
 
 class RiskState(models.TextChoices):
@@ -1067,3 +1067,130 @@ class SuspensionAppeal(BaseModel):
     @property
     def is_open(self) -> bool:
         return self.status in self.OPEN_STATES
+
+
+# ======================================================================
+# Learning Partner taxonomy requests (Phase LP-3) - a Learning Partner has
+# no direct write access to Subject/Language (those stay Super-Admin-only,
+# apps.accounts.api_permissions); this is their only path to a subject/
+# language that doesn't exist yet, reviewed by a human before it becomes a
+# real (partner-scoped) row. Mirrors AdminAccountRequest's shape: nothing
+# is created until approved.
+# ======================================================================
+class TaxonomyRequestKind(models.TextChoices):
+    SUBJECT = "subject", _("Subject")
+    LANGUAGE = "language", _("Language")
+
+
+class TaxonomyRequestStatus(models.TextChoices):
+    PENDING = "pending", _("Pending")
+    APPROVED = "approved", _("Approved")
+    DENIED = "denied", _("Denied")
+
+
+class LearningPartnerTaxonomyRequest(BaseModel):
+    """
+    A Learning Partner's request for a new subject or language, scoped to
+    that partner alone once approved (apps.subjects.models.Subject.
+    learning_partner / apps.languages.models.Language.learning_partner) -
+    never platform-wide. Approving creates the real row and links it back
+    via `created_subject`/`created_language`; denying leaves no trace but
+    this request row itself.
+    """
+
+    learning_partner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("learning partner"),
+        related_name="taxonomy_requests",
+        on_delete=models.CASCADE,
+    )
+    kind = models.CharField(
+        _("kind"), max_length=10, choices=TaxonomyRequestKind.choices
+    )
+    name = models.CharField(
+        _("name"), max_length=150, validators=[validate_taxonomy_name]
+    )
+    note = models.CharField(_("note"), max_length=500, blank=True)
+    status = models.CharField(
+        _("status"),
+        max_length=10,
+        choices=TaxonomyRequestStatus.choices,
+        default=TaxonomyRequestStatus.PENDING,
+        db_index=True,
+    )
+    created_subject = models.ForeignKey(
+        "subjects.Subject",
+        verbose_name=_("created subject"),
+        related_name="+",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    created_language = models.ForeignKey(
+        "languages.Language",
+        verbose_name=_("created language"),
+        related_name="+",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("reviewed by"),
+        related_name="taxonomy_requests_reviewed",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    reviewed_at = models.DateTimeField(_("reviewed at"), null=True, blank=True)
+    deny_reason = models.CharField(_("deny reason"), max_length=500, blank=True)
+
+    class Meta:
+        verbose_name = _("Learning Partner taxonomy request")
+        verbose_name_plural = _("Learning Partner taxonomy requests")
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["status", "-created_at"])]
+
+    def __str__(self):
+        return f"{self.kind}:{self.name} ({self.status})"
+
+
+# ======================================================================
+# Fake-lead endorsement (Phase LP-4) - a Learning Partner can ENDORSE an
+# existing fake-lead signal on one of their own referred students, adding
+# LEARNING_PARTNER_FAKE_REPORT_WEIGHT worth of "distinct teachers" to that
+# student's rolling-window counts (LeadQualityService.fake_report_stats) -
+# they can never originate one from nothing: apps.learning_partner.views.
+# LPFakeLeadReportsView only ever lists students who already have an OPEN
+# FAKE_LEAD_REPORT review item from a real teacher's rating.
+# ======================================================================
+class FakeLeadEndorsement(BaseModel):
+    """One Learning Partner's endorsement of one of their own students' fake-lead signal - unique per (student, partner)."""
+
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("student"),
+        related_name="fake_lead_endorsements",
+        on_delete=models.CASCADE,
+    )
+    learning_partner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("learning partner"),
+        related_name="fake_lead_endorsements_made",
+        on_delete=models.CASCADE,
+    )
+    note = models.CharField(_("note"), max_length=500, blank=True)
+
+    class Meta:
+        verbose_name = _("Fake-lead endorsement")
+        verbose_name_plural = _("Fake-lead endorsements")
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["student", "learning_partner"],
+                name="one_endorsement_per_partner_per_student",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.learning_partner_id} endorses fake-lead signal on {self.student_id}"

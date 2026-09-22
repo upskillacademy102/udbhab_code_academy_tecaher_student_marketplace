@@ -9,8 +9,8 @@ register = template.Library()
 
 
 @register.simple_tag
-def nav_for(role):
-    return _nav_for(role)
+def nav_for(role, user=None):
+    return _nav_for(role, user)
 
 
 @register.simple_tag(takes_context=True)

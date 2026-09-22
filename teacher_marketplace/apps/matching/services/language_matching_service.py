@@ -5,6 +5,7 @@ docstring for the full three-tier precedence reasoning.
 """
 
 from django.contrib.postgres.search import TrigramSimilarity
+from django.db.models import Q
 
 from apps.languages.models import Language
 from apps.matching.services.config_service import get_config
@@ -64,11 +65,21 @@ class LanguageMatchingService:
         return MatchResult(is_eligible=False, score=0, matched_via="none")
 
     @staticmethod
-    def match_by_text(query_text: str) -> MatchResult:
+    def match_by_text(query_text: str, *, viewer=None) -> MatchResult:
+        """
+        See SubjectMatchingService.match_by_text's docstring for the full
+        `viewer` scoping reasoning - identical mechanism, applied to
+        Language.learning_partner instead of Subject.learning_partner.
+        """
         config = get_config()
         normalized = query_text.strip()
+        scope_id = getattr(viewer, "taxonomy_scope_id", None)
+        visible = Q(learning_partner__isnull=True) | Q(learning_partner_id=scope_id)
 
-        exact = Language.objects.filter(name__iexact=normalized, is_active=True).first()
+        exact = (
+            Language.objects.filter(visible, name__iexact=normalized, is_active=True)
+            .first()
+        )
         if exact is not None:
             return MatchResult(
                 is_eligible=True, score=100, matched_via="exact", matched_subject=exact
@@ -76,9 +87,12 @@ class LanguageMatchingService:
 
         from apps.matching.models import LanguageAlias
 
+        language_visible = Q(language__learning_partner__isnull=True) | Q(
+            language__learning_partner_id=scope_id
+        )
         alias = (
             LanguageAlias.objects.filter(
-                alias_text__iexact=normalized, language__is_active=True
+                language_visible, alias_text__iexact=normalized, language__is_active=True
             )
             .select_related("language")
             .first()
@@ -92,7 +106,7 @@ class LanguageMatchingService:
             )
 
         fuzzy_candidate = (
-            Language.objects.filter(is_active=True)
+            Language.objects.filter(visible, is_active=True)
             .annotate(similarity=TrigramSimilarity("name", normalized))
             .filter(similarity__gt=FUZZY_SCORE_FLOOR / 100)
             .order_by("-similarity")

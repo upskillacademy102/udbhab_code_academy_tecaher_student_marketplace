@@ -29,7 +29,11 @@ from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
 from apps.common.models import BaseModel
-from apps.utils.validators import validate_mobile_number, validate_name
+from apps.utils.validators import (
+    validate_mobile_number,
+    validate_name,
+    validate_taxonomy_name,
+)
 
 
 class UserRole(models.TextChoices):
@@ -191,8 +195,62 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
             "account-name-and-password reveal is never shown again."
         ),
     )
+    learning_partner = models.ForeignKey(
+        "self",
+        verbose_name=_("learning partner"),
+        related_name="referred_users",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        limit_choices_to={
+            "role": "admin",
+            "admin_department__is_learning_partner": True,
+        },
+        help_text=_(
+            "The Learning Partner organisation (an admin User whose "
+            "department is the Learning Partner department) this "
+            "student/teacher identified at signup. Null for everyone else."
+        ),
+    )
 
     objects = UserManager()
+
+    @property
+    def is_learning_partner_admin(self) -> bool:
+        """
+        True for an admin whose department is the one seeded Learning
+        Partner department - each such admin represents one partner
+        organisation rather than an internal staff member. Single source
+        of truth for this check (nav, routing, the learning_partner app's
+        permission gate) so it's never re-derived slightly differently in
+        more than one place.
+        """
+        return (
+            self.role == UserRole.ADMIN
+            and self.admin_department_id is not None
+            and self.admin_department.is_learning_partner
+        )
+
+    @property
+    def taxonomy_scope_id(self):
+        """
+        The id to compare against Subject.learning_partner_id /
+        Language.learning_partner_id for "what can this user see beyond the
+        global list" - apps.subjects.views._visible_subjects, its Language
+        counterpart, and SubjectMatchingService/LanguageMatchingService.
+        match_by_text's `viewer` scoping are the only readers of this.
+
+        A Learning Partner admin represents the partner, so it's their OWN
+        id (Subject.learning_partner points at the admin User row, not at
+        some other partner they "belong to" - they have none). A student/
+        teacher who identified a partner at signup has no such row of their
+        own to point at, so it's `learning_partner_id` instead. Anyone else
+        (a plain admin, or a student/teacher with no partner) sees the
+        global list only, hence None.
+        """
+        if self.is_learning_partner_admin:
+            return self.id
+        return self.learning_partner_id
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["mobile", "first_name", "last_name"]
@@ -479,6 +537,17 @@ class AdminDepartment(BaseModel):
     name = models.CharField(_("name"), max_length=80, unique=True, db_index=True)
     slug = models.SlugField(_("slug"), max_length=90, unique=True, blank=True)
     is_active = models.BooleanField(_("is active"), default=True, db_index=True)
+    is_learning_partner = models.BooleanField(
+        _("is learning partner"),
+        default=False,
+        db_index=True,
+        help_text=_(
+            "True for exactly one seeded department ('Learning Partner'). "
+            "Admins in this department each represent one partner "
+            "organisation (school/coaching centre) rather than an internal "
+            "staff member - never settable via the API."
+        ),
+    )
 
     class Meta:
         verbose_name = _("Admin department")
@@ -527,10 +596,23 @@ class AdminAccountRequest(BaseModel):
         _("mobile number"), max_length=17, validators=[validate_mobile_number]
     )
     first_name = models.CharField(
-        _("first name"), max_length=150, validators=[validate_name]
+        _("first name"), max_length=150, blank=True, validators=[validate_name]
     )
     last_name = models.CharField(
-        _("last name"), max_length=150, validators=[validate_name]
+        _("last name"), max_length=150, blank=True, validators=[validate_name]
+    )
+    organization_name = models.CharField(
+        _("organisation name"),
+        max_length=190,
+        blank=True,
+        default="",
+        validators=[validate_taxonomy_name],
+        help_text=_(
+            "Set only for a Learning Partner request (blank for a normal "
+            "admin request). Becomes the created admin's display name and "
+            "the basis of their generated account name, e.g. "
+            "'Learn Academy' -> 'LearnAcademy@LearningPartner'."
+        ),
     )
     # Hashed with django.contrib.auth.hashers.make_password the moment the
     # request is submitted - never stored or logged in plaintext, not even

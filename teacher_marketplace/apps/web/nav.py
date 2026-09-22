@@ -1,8 +1,10 @@
 """
 Single source of truth for role-aware navigation.
 
-`nav_for(role)` returns a list of sections; each section is
-{"label": str|None, "items": [NavItem, ...]}.
+`nav_for(role, user=None)` returns a list of sections; each section is
+{"label": str|None, "items": [NavItem, ...]}. `user` is only consulted for
+role == "admin", to tell a Learning Partner admin (a much narrower nav)
+apart from a plain admin - every other role ignores it.
 
 NavItem keys:
     label   visible text
@@ -246,6 +248,56 @@ _SUPERADMIN_OVERSIGHT = {
 }
 
 
+# A Learning Partner admin's own, much narrower nav - deliberately NOT the
+# generic admin sidebar re-scoped, since a Learning Partner never sees the
+# things a plain admin sees (Users, Onboarding Calls, Commerce, Matching
+# Engine, ...). Every item is real as of Phase LP-4 - Dashboard/Students/
+# Teachers (LP-2), Subjects/Languages (LP-3), Trust & Leads (LP-4).
+_LEARNING_PARTNER = [
+    {
+        "label": None,
+        "items": [
+            {
+                "label": "Dashboard",
+                "url": "/staff/learning-partner/",
+                "icon": "chart",
+                "match": "/staff/learning-partner/$",
+            },
+        ],
+    },
+    {
+        "label": "People",
+        "items": [
+            {"label": "Students", "url": "/staff/learning-partner/students/", "icon": "user"},
+            {"label": "Teachers", "url": "/staff/learning-partner/teachers/", "icon": "academic"},
+        ],
+    },
+    {
+        "label": "Reference Data",
+        "items": [
+            {"label": "Subjects", "url": "/staff/learning-partner/subjects/", "icon": "book"},
+            {"label": "Languages", "url": "/staff/learning-partner/languages/", "icon": "globe"},
+        ],
+    },
+    {
+        "label": "Trust & Leads",
+        "items": [
+            {
+                "label": "Fake-lead reports",
+                "url": "/staff/learning-partner/fake-lead-reports/",
+                "icon": "alert-triangle",
+            },
+            {
+                "label": "Leads & requirements",
+                "url": "/staff/learning-partner/leads/",
+                "icon": "clipboard",
+            },
+            {"label": "Audit log", "url": "/staff/learning-partner/audit/", "icon": "list"},
+        ],
+    },
+]
+
+
 # New React-owned screens (Phase 3+), distinct from the "Admin access
 # requests" item above (which reviews single login attempts under the old
 # AdminLoginRequest flow) - this reviews AdminAccountRequest: self-service
@@ -262,6 +314,11 @@ _SUPERADMIN_PROVISIONING = {
             "label": "Departments",
             "url": "/staff/superadmin/departments/",
             "icon": "list",
+        },
+        {
+            "label": "Taxonomy requests",
+            "url": "/staff/superadmin/taxonomy-requests/",
+            "icon": "book",
         },
     ],
 }
@@ -338,12 +395,14 @@ def _repoint(sections, overrides):
     return out
 
 
-def nav_for(role):
+def nav_for(role, user=None):
     if role == "student":
         return _STUDENT
     if role == "teacher":
         return _teacher_nav()
     if role == "admin":
+        if user is not None and user.is_learning_partner_admin:
+            return _LEARNING_PARTNER
         return _repoint(
             _ADMIN_SECTIONS,
             {

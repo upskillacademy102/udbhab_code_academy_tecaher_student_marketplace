@@ -21,8 +21,8 @@ Run: python manage.py test apps.web.tests.test_all_pages_render \
 
 from django.test import Client, TestCase
 
-from apps.accounts.models import UserRole
-from apps.accounts.tests.helpers import login, make_user
+from apps.accounts.models import AdminDepartment, UserRole
+from apps.accounts.tests.helpers import TEST_PASSWORD, login, make_user
 from apps.web import urls as web_urls
 
 # A syntactically valid UUID that matches nothing. Detail pages render their
@@ -69,6 +69,21 @@ def _role_for_path(path):
     return None
 
 
+def _login_lp(client, lp_user):
+    """
+    A Learning Partner is a new-flow admin (admin_account_name set) - it
+    signs in via /staff/login-admin/, not the shared login() helper, which
+    routes role=admin through the OLD /auth/admin/login/ flow that
+    explicitly rejects any account with admin_account_name set.
+    """
+    resp = client.post(
+        "/api/v1/auth/staff/login-admin/",
+        {"account_name": lp_user.admin_account_name, "password": TEST_PASSWORD},
+    )
+    assert resp.status_code == 200, resp.content
+    return resp
+
+
 def _fresh_client():
     # raise_request_exception=False so a broken page comes back as a 500
     # response we can collect, instead of aborting the whole sweep on the
@@ -87,6 +102,18 @@ class AllPagesRenderTests(TestCase):
                 role=UserRole.SUPERADMIN, email="sa@render.test"
             ),
         }
+        lp_dept, _ = AdminDepartment.objects.get_or_create(
+            name="Learning Partner", defaults={"is_learning_partner": True}
+        )
+        if not lp_dept.is_learning_partner:
+            lp_dept.is_learning_partner = True
+            lp_dept.save(update_fields=["is_learning_partner"])
+        cls.lp_user = make_user(
+            role=UserRole.ADMIN,
+            email="lp@render.test",
+            admin_department=lp_dept,
+            admin_account_name="RenderTest@LearningPartner",
+        )
 
     def _client_for(self, role):
         client = _fresh_client()
@@ -175,6 +202,52 @@ class AllPagesRenderTests(TestCase):
                         resolve(url)
                     except Resolver404:
                         failures.append(f"[{role}] {item['label']!r} -> {url}")
+        # nav_for("admin") only returns the Learning Partner nav when a real
+        # LP-flagged user is passed (see apps.accounts.models.User.
+        # is_learning_partner_admin) - the loop above, calling it with no
+        # user, never exercises that branch at all.
+        for section in nav_for("admin", self.lp_user):
+            for item in section["items"]:
+                url = item.get("url")
+                if not url:
+                    continue
+                try:
+                    resolve(url)
+                except Resolver404:
+                    failures.append(f"[learning_partner] {item['label']!r} -> {url}")
         self.assertFalse(
             failures, "nav items pointing at unregistered URLs:\n" + "\n".join(failures)
+        )
+
+    def test_learning_partner_pages_render_only_for_a_learning_partner(self):
+        """
+        /staff/learning-partner/* is guarded by learning_partner_required,
+        not plain role_required("admin") - a real Learning Partner admin
+        must get every page, and a PLAIN admin (same role, ordinary
+        department) must be cleanly refused rather than shown a shell whose
+        data calls all 403 underneath it.
+        """
+        lp_routes = [
+            (name, path) for name, path in _iter_routes() if path.startswith("/staff/learning-partner/")
+        ]
+        self.assertTrue(lp_routes, "no /staff/learning-partner/ routes were registered")
+
+        lp_client = _fresh_client()
+        _login_lp(lp_client, self.lp_user)
+        failures = [
+            f"{name or '(unnamed)'} {path} -> {r.status_code}"
+            for name, path in lp_routes
+            if (r := lp_client.get(path)).status_code != 200
+        ]
+        self.assertFalse(failures, "Learning Partner pages not rendering 200:\n" + "\n".join(failures))
+
+        plain_admin_client = self._client_for(UserRole.ADMIN)
+        failures = [
+            f"{name or '(unnamed)'} {path} -> {r.status_code}"
+            for name, path in lp_routes
+            if (r := plain_admin_client.get(path)).status_code != 403
+        ]
+        self.assertFalse(
+            failures,
+            "Learning Partner pages not refused (403) for a plain admin:\n" + "\n".join(failures),
         )

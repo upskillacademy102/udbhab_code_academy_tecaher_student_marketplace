@@ -14,6 +14,7 @@ Covers:
                                         city as plain UUID lists.
 """
 
+from django.db.models import Q
 from rest_framework import serializers
 
 from apps.languages.models import Language
@@ -130,6 +131,39 @@ class TeacherProfileWriteSerializer(serializers.ModelSerializer):
         many=True,
         required=False,
     )
+
+    def __init__(self, *args, **kwargs):
+        """
+        Rebuilds the subjects/languages querysets per-request so a teacher
+        can only pick from what they can actually see: global subjects/
+        languages, plus their own Learning Partner's, if any. The class-level
+        querysets above stay as the safe default (e.g. schema generation,
+        or a serializer built with no request in context) - without this,
+        the picker UI would correctly hide an out-of-scope subject, but a
+        teacher could still PATCH its id directly and have it accepted,
+        since PrimaryKeyRelatedField's own validation is the only thing
+        standing between "hidden in the UI" and "rejected by the API".
+
+        `many=True` above means DRF wraps each field in a ManyRelatedField
+        whose OWN `.queryset` attribute is inert - the real one actually
+        consulted during validation lives on `.child_relation`, so that's
+        what has to be reassigned here, not the field itself.
+        """
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        viewer = getattr(request, "user", None) if request is not None else None
+        if viewer is None:
+            return
+        scope_id = getattr(viewer, "taxonomy_scope_id", None)
+        visible = Q(learning_partner__isnull=True)
+        if scope_id:
+            visible |= Q(learning_partner_id=scope_id)
+        self.fields["subjects"].child_relation.queryset = Subject.objects.filter(
+            visible, is_active=True
+        )
+        self.fields["languages"].child_relation.queryset = Language.objects.filter(
+            visible, is_active=True
+        )
 
     class Meta:
         model = TeacherProfile

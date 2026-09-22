@@ -250,6 +250,7 @@ export interface AdminDepartment {
   name: string;
   slug: string;
   is_active: boolean;
+  is_learning_partner: boolean;
   admin_count: number;
   created_at: string;
   updated_at: string;
@@ -266,6 +267,7 @@ export interface AdminAccountRequest {
   mobile: string;
   first_name: string;
   last_name: string;
+  organization_name: string;
   status: "pending" | "approved" | "denied";
   department: string | null;
   department_name: string | null;
@@ -280,8 +282,12 @@ export interface AdminAccountRequest {
 
 /**
  * GET/POST /subjects/ , GET/PUT/PATCH/DELETE /subjects/{id}/ — writes are
- * Super-Admin-only (apps/accounts/api_permissions.py); GET stays open to
- * every signed-in role (and the public registration form).
+ * Super-Admin-only (apps/accounts/api_permissions.py); GET is scoped per
+ * caller (apps/subjects/views.py's _visible_subjects): global subjects for
+ * everyone, plus a Learning Partner's own for that partner, plus every
+ * partner's for Super Admin. `learning_partner` is null for a global
+ * subject, or that partner's admin id for one requested via the Learning
+ * Partner taxonomy-request flow.
  */
 export interface Subject {
   id: string;
@@ -291,19 +297,48 @@ export interface Subject {
   icon: string | null;
   is_active: boolean;
   is_skill_based: boolean;
+  learning_partner: string | null;
+  learning_partner_name: string | null;
   created_at: string;
   updated_at: string;
 }
 
 /** GET/POST /languages/ , GET/PUT/PATCH/DELETE /languages/{id}/ — same
- *  Super-Admin-only write rule as Subject. */
+ *  Super-Admin-only write rule and Learning Partner scoping as Subject. */
 export interface Language {
   id: string;
   name: string;
   code: string;
   is_active: boolean;
+  learning_partner: string | null;
+  learning_partner_name: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * GET/POST /lp/taxonomy-requests/ (a Learning Partner's own) and
+ * GET /auth/staff/taxonomy-requests/ + .../{id}/approve/ + .../{id}/deny/
+ * (Super Admin review) — a Learning Partner's request for a new subject or
+ * language, which becomes a real, partner-scoped Subject/Language only once
+ * approved.
+ */
+export interface LearningPartnerTaxonomyRequest {
+  id: string;
+  learning_partner: string;
+  learning_partner_name: string | null;
+  kind: "subject" | "language";
+  name: string;
+  note: string;
+  status: "pending" | "approved" | "denied";
+  created_subject: string | null;
+  created_subject_name: string | null;
+  created_language: string | null;
+  created_language_name: string | null;
+  reviewed_by_email: string | null;
+  reviewed_at: string | null;
+  deny_reason: string;
+  created_at: string;
 }
 
 /** Embedded in fake-lead-report and lead-quality summary rows. */
@@ -327,7 +362,15 @@ export interface LatestFakeReport {
   at: string;
 }
 
-/** GET /ops/fake-lead-reports/ — students with open fake-lead review items. */
+/**
+ * GET /ops/fake-lead-reports/ (Super Admin, every student) and
+ * GET /lp/fake-lead-reports/ (a Learning Partner, own students only) —
+ * students with open fake-lead review items. `already_endorsed` is only
+ * meaningful on the LP response - whether THIS partner has already used
+ * its one endorsement (apps.trust.models.FakeLeadEndorsement) on this
+ * student; undefined on the Super Admin response, which has no endorse
+ * concept at all.
+ */
 export interface FakeLeadReport {
   review_item_id: string;
   student_id: string | null;
@@ -341,6 +384,7 @@ export interface FakeLeadReport {
   latest_report: LatestFakeReport | null;
   auto_banned: boolean;
   sanction: SanctionSummary | null;
+  already_endorsed?: boolean;
   priority: string;
   updated_at: string;
 }
@@ -423,6 +467,13 @@ export interface AdminUser {
   profile_type: "student" | "teacher" | null;
   last_login: string | null;
   created_at: string;
+}
+
+/** GET /lp/dashboard/ — a Learning Partner's own overview. */
+export interface LPDashboard {
+  organization_name: string;
+  students_count: number;
+  teachers_count: number;
 }
 
 /**

@@ -12,6 +12,7 @@ Endpoints (wired up in apps/languages/urls.py, next file):
 
 import logging
 
+from django.db.models import Q
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics
@@ -24,14 +25,27 @@ from apps.languages.serializers import LanguageSerializer
 logger = logging.getLogger("apps.languages")
 
 
+def _visible_languages(user):
+    """
+    Mirrors apps.subjects.views._visible_subjects exactly, for Language -
+    see that function's docstring for the full reasoning.
+    """
+    qs = Language.objects.all()
+    if getattr(user, "role", None) == "superadmin":
+        return qs
+    scope_id = getattr(user, "taxonomy_scope_id", None)
+    if scope_id:
+        return qs.filter(Q(learning_partner__isnull=True) | Q(learning_partner_id=scope_id))
+    return qs.filter(learning_partner__isnull=True)
+
+
 @extend_schema(tags=["Languages"])
 class LanguageListCreateView(generics.ListCreateAPIView):
     """
-    GET: List all active, non-deleted languages (public).
+    GET: List languages visible to the caller (see _visible_languages).
     POST: Create a new language (Admin/SuperAdmin only).
     """
 
-    queryset = Language.objects.all()
     serializer_class = LanguageSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_fields = ["is_active"]
@@ -42,6 +56,9 @@ class LanguageListCreateView(generics.ListCreateAPIView):
     # silently truncate it, so it's opted out here rather than weakened
     # globally for the genuinely large, user-generated endpoints.
     pagination_class = None
+
+    def get_queryset(self):
+        return _visible_languages(self.request.user)
 
     def list(self, request, *args, **kwargs):
         response = super().list(request, *args, **kwargs)
@@ -63,14 +80,16 @@ class LanguageListCreateView(generics.ListCreateAPIView):
 @extend_schema(tags=["Languages"])
 class LanguageDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
-    GET: Retrieve a single language (public).
+    GET: Retrieve a single language the caller may see (see _visible_languages).
     PUT/PATCH: Update a language (Admin/SuperAdmin only).
     DELETE: Soft-delete a language (Admin/SuperAdmin only).
     """
 
-    queryset = Language.objects.all()
     serializer_class = LanguageSerializer
     lookup_field = "id"
+
+    def get_queryset(self):
+        return _visible_languages(self.request.user)
 
     def retrieve(self, request, *args, **kwargs):
         response = super().retrieve(request, *args, **kwargs)

@@ -12,7 +12,6 @@ Implements the spec's explicit validation requirements:
 """
 
 import logging
-import re
 
 from rest_framework import serializers
 
@@ -276,7 +275,8 @@ class StudentRequirementWriteSerializer(serializers.ModelSerializer):
         from apps.subjects.models import Subject
         from apps.utils.validators import validate_taxonomy_name
 
-        result = SubjectMatchingService.match_by_text(value)
+        viewer = getattr(self.context.get("request"), "user", None)
+        result = SubjectMatchingService.match_by_text(value, viewer=viewer)
         if result.is_eligible and result.matched_subject is not None:
             return result.matched_subject
 
@@ -333,12 +333,14 @@ class StudentRequirementWriteSerializer(serializers.ModelSerializer):
         from django.db import IntegrityError, transaction
 
         from apps.languages.models import Language
+        from apps.languages.services import derive_language_code
         from apps.matching.services.language_matching_service import (
             LanguageMatchingService,
         )
         from apps.utils.validators import validate_taxonomy_name
 
-        result = LanguageMatchingService.match_by_text(value)
+        viewer = getattr(self.context.get("request"), "user", None)
+        result = LanguageMatchingService.match_by_text(value, viewer=viewer)
         if result.is_eligible and result.matched_subject is not None:
             return result.matched_subject
 
@@ -350,7 +352,7 @@ class StudentRequirementWriteSerializer(serializers.ModelSerializer):
                 f"Language '{value}' not recognized. Please check the spelling or contact support."
             )
 
-        code = self._derive_language_code(name)
+        code = derive_language_code(name)
         try:
             with transaction.atomic():
                 language = Language.objects.create(name=name, code=code, is_active=True)
@@ -365,32 +367,6 @@ class StudentRequirementWriteSerializer(serializers.ModelSerializer):
                     f"Language '{value}' not recognized. Please check the spelling or contact support."
                 )
         return language
-
-    @staticmethod
-    def _derive_language_code(name: str) -> str:
-        """
-        Build a Language.code candidate for a student-typed name: 2-10
-        lowercase letters/digits, starting with a letter, unique. This
-        code has no ISO meaning - it is just a stable short identifier
-        satisfying the schema; a Super Admin can replace it with the
-        real ISO code from /super-admin/languages/ any time.
-        """
-        from apps.languages.models import Language
-
-        base = re.sub(r"[^a-z0-9]", "", name.lower())
-        if not base or not base[0].isalpha():
-            base = "x" + base
-        base = base[:10] or "xx"
-        if len(base) < 2:
-            base = base + "x"
-
-        candidate = base
-        suffix = 1
-        while Language.all_objects.filter(code=candidate).exists() and suffix < 50:
-            suffix_str = str(suffix)
-            candidate = base[: 10 - len(suffix_str)] + suffix_str
-            suffix += 1
-        return candidate
 
     def validate_city(self, value):
         if not value:

@@ -147,6 +147,9 @@ document.addEventListener("alpine:init", () => {
   const NAME_RE = /^[A-Za-z][A-Za-z\s'-]*$/;
   const MOBILE_RE = /^[0-9]{10,15}$/;
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  // Mirrors apps.utils.validators.validate_taxonomy_name — organisation
+  // names need digits/&/./, that NAME_RE deliberately excludes.
+  const ORG_NAME_RE = /^(?=.*[A-Za-z])[A-Za-z0-9][A-Za-z0-9 .,'\-/()&+#]{1,149}$/;
 
   const LEVELS = [
     "Class 1–5", "Class 6–8", "Class 9–10", "Class 11–12",
@@ -234,6 +237,46 @@ document.addEventListener("alpine:init", () => {
         server: {},
         model: { first_name: "", last_name: "", email: "", mobile: "", password: "", password_confirm: "" },
 
+        // Optional "are you under one of our learning partners?" step — the
+        // last one, after the account fields are filled but before the
+        // single /auth/register/ call actually fires. null = unanswered.
+        isUnderLearningPartner: null,
+        learningPartnerId: "",
+        learningPartners: [],
+        learningPartnersLoading: false,
+        learningPartnersError: "",
+        lpError: "",
+
+        async ensureLearningPartnersLoaded() {
+          if (this.learningPartners.length || this.learningPartnersLoading) return;
+          this.learningPartnersLoading = true;
+          try {
+            const data = await api.get("/auth/learning-partners/", { silent: true });
+            this.learningPartners = Array.isArray(data) ? data : [];
+          } catch (e) {
+            this.learningPartnersError = "Couldn't load the list — you can still say no and continue.";
+          } finally {
+            this.learningPartnersLoading = false;
+          }
+        },
+        chooseLearningPartner(v) {
+          this.isUnderLearningPartner = v;
+          this.lpError = "";
+          if (v) this.ensureLearningPartnersLoaded();
+          else this.learningPartnerId = "";
+        },
+        get canFinish() {
+          if (this.isUnderLearningPartner === null) return false;
+          return !this.isUnderLearningPartner || !!this.learningPartnerId;
+        },
+
+        continueFromAccount() {
+          this.formError = "";
+          this.emailTaken = false;
+          if (!this._valid()) return;
+          this.next();
+        },
+
         init() {
           // Carry over whatever the visitor already chose on the landing
           // page, so nobody is asked the same question twice.
@@ -309,9 +352,9 @@ document.addEventListener("alpine:init", () => {
         get steps() {
           if (!this.role) return ["role"];
           if (this.role === "teacher") {
-            return ["role", "teaches", "teach-languages", "teach-hours", "account"];
+            return ["role", "teaches", "teach-languages", "teach-hours", "account", "learning-partner"];
           }
-          return ["role", "subject", "language", "level", "when", "account"];
+          return ["role", "subject", "language", "level", "when", "account", "learning-partner"];
         },
         get step() { return this.steps[this.stepIndex] || "role"; },
         // the role fork is a branch, not progress
@@ -342,6 +385,7 @@ document.addEventListener("alpine:init", () => {
           this.stepIndex = Math.max(i, this.minIndex);
           this.formError = "";
           this.emailTaken = false;
+          this.lpError = "";
           this.cbClose();
         },
         get canGoBack() { return this.stepIndex > this.minIndex; },
@@ -487,13 +531,18 @@ document.addEventListener("alpine:init", () => {
         },
 
         async submit() {
-          if (this.submitting) return;
+          if (this.submitting || !this.canFinish) return;
           this.formError = "";
           this.emailTaken = false;
-          if (!this._valid()) return;
+          this.lpError = "";
           this.submitting = true;
           try {
-            await api.post("/auth/register/", { ...this.model, role: this.role }, { silent: true });
+            const payload = {
+              ...this.model,
+              role: this.role,
+              learning_partner_id: this.isUnderLearningPartner ? (this.learningPartnerId || null) : null,
+            };
+            await api.post("/auth/register/", payload, { silent: true });
 
             const intent = {
               role: this.role,
@@ -515,13 +564,17 @@ document.addEventListener("alpine:init", () => {
             location.assign("/login/?" + q.toString());
           } catch (e) {
             const fe = e.fieldErrors || {};
-            if (fe.email && /exist/i.test(fe.email)) {
+            if (fe.learning_partner_id) {
+              // Belongs on this step — that's where the input lives.
+              this.lpError = fe.learning_partner_id;
+            } else if (fe.email && /exist/i.test(fe.email)) {
+              this.stepIndex = this.steps.indexOf("account");
               this.emailTaken = true;
             } else if (Object.keys(fe).length) {
+              this.stepIndex = this.steps.indexOf("account");
               this.server = fe;
-              // Server-side field errors always belong to the account step.
-              this.stepIndex = this.steps.length - 1;
             } else {
+              this.stepIndex = this.steps.indexOf("account");
               this.formError = e.message || "We couldn't create your account. Please try again.";
             }
           } finally {
@@ -643,7 +696,9 @@ document.addEventListener("alpine:init", () => {
           { account_name: this.accountName.trim(), password: this.password },
           { silent: true }
         );
-        this._dest = (r && r.user && ROLE_HOME[r.user.role]) || "/";
+        this._dest = r && r.user && r.user.is_learning_partner_admin
+          ? "/staff/learning-partner/"
+          : (r && r.user && ROLE_HOME[r.user.role]) || "/";
         // The one-time credentials reveal is shown and dismissed
         // explicitly (a button click), never auto-redirected past, so an
         // impatient click can't skip it.
@@ -731,6 +786,81 @@ document.addEventListener("alpine:init", () => {
       this.submitting = true;
       try {
         await api.post("/auth/staff/create-admin-account/", this.model, { silent: true });
+        this.phase = "sent";
+      } catch (e) {
+        const fe = e.fieldErrors || {};
+        if (Object.keys(fe).length) {
+          this.server = fe;
+        } else {
+          this.formError = e.message || "We couldn't send your request. Please try again.";
+        }
+      } finally {
+        this.submitting = false;
+      }
+    },
+  }));
+
+  window.Alpine.data("becomeLearningPartner", () => ({
+    phase: "form", // form | sent
+    model: { organization_name: "", email: "", mobile: "", password: "", password_confirm: "" },
+    touched: {},
+    server: {},
+    showPw: false,
+    submitting: false,
+    formError: "",
+
+    get pwRules() {
+      const p = this.model.password || "";
+      return [
+        { key: "len", label: "At least 8 characters", ok: p.length >= 8 },
+        { key: "upper", label: "One uppercase letter", ok: /[A-Z]/.test(p) },
+        { key: "lower", label: "One lowercase letter", ok: /[a-z]/.test(p) },
+        { key: "digit", label: "One number", ok: /\d/.test(p) },
+        { key: "special", label: "One special character", ok: /[!@#$%^&*()\-_=+[\]{};:'",.<>/?\\|`~]/.test(p) },
+      ];
+    },
+
+    touch(f) { this.touched[f] = true; delete this.server[f]; },
+
+    _clientError(f) {
+      const m = this.model;
+      switch (f) {
+        case "organization_name":
+          if (!m.organization_name) return "Required.";
+          return ORG_NAME_RE.test(m.organization_name) ? "" : "Enter a valid organisation name.";
+        case "email":
+          if (!m.email) return "Required.";
+          return EMAIL_RE.test(m.email) ? "" : "Enter a valid email address.";
+        case "mobile":
+          if (!m.mobile) return "Required.";
+          return MOBILE_RE.test(m.mobile) ? "" : "10–15 digits, numbers only.";
+        case "password":
+          if (!m.password) return "Required.";
+          return this.pwRules.every((r) => r.ok) ? "" : "Password doesn't meet the requirements above.";
+        case "password_confirm":
+          if (!m.password_confirm) return "Required.";
+          return m.password_confirm === m.password ? "" : "Passwords do not match.";
+        default:
+          return "";
+      }
+    },
+    err(f) {
+      if (this.server[f]) return this.server[f];
+      if (!this.touched[f]) return "";
+      return this._clientError(f);
+    },
+    _valid() {
+      return ["organization_name", "email", "mobile", "password", "password_confirm"]
+        .every((f) => { this.touched[f] = true; return !this._clientError(f); });
+    },
+
+    async submit() {
+      if (this.submitting) return;
+      this.formError = "";
+      if (!this._valid()) return;
+      this.submitting = true;
+      try {
+        await api.post("/auth/become-learning-partner/", this.model, { silent: true });
         this.phase = "sent";
       } catch (e) {
         const fe = e.fieldErrors || {};

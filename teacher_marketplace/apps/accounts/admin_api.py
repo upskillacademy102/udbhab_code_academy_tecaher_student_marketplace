@@ -10,12 +10,24 @@ Privileged account APIs:
       POST   /{id}/deactivate/      deactivate + kill session (superadmin)
       POST   /{id}/impersonate/     start "act as user"    (superadmin)
 
+  Learning Partner onboarding  (/api/v1/auth/...)
+      POST   /become-learning-partner/     submit request (public)
+      GET    /learning-partners/           active partners, for signup dropdowns (public)
+
   Admin-login approval  (/api/v1/auth/admin/...)
       POST   /login/                        admin submits creds -> pending request (public)
       GET    /login/{id}/status/?token=     admin polls; issues tokens once approved (public)
       GET    /login-requests/               pending + recent           (superadmin)
       POST   /login-requests/{id}/approve/  (superadmin)
       POST   /login-requests/{id}/deny/     (superadmin)
+
+  Learning Partner taxonomy requests  (/api/v1/auth/staff/taxonomy-requests/...)
+      GET  /                     pending + recent, every partner (superadmin)
+      POST /{id}/approve/        creates the real, partner-scoped Subject/
+                                  Language row                  (superadmin)
+      POST /{id}/deny/                                          (superadmin)
+      (submission itself is POST /api/v1/lp/taxonomy-requests/ - see
+      apps.learning_partner.views, a Learning Partner's own endpoint)
 
 Every state change is written to the audit log.
 """
@@ -67,11 +79,22 @@ from apps.core.throttling import (
     RegisterRateThrottle,
     ResilientAnonRateThrottle,
 )
+from apps.languages.models import Language
 from apps.ops.models import AuditCategory, AuditStatus
 from apps.ops.services import AuditService
+from apps.subjects.models import Subject
+from apps.trust.models import (
+    LearningPartnerTaxonomyRequest,
+    TaxonomyRequestKind,
+    TaxonomyRequestStatus,
+)
 from apps.trust.services.captcha_service import CaptchaService
 from apps.trust.services.staff_login_guard_service import StaffLoginGuardService
-from apps.utils.validators import validate_mobile_number, validate_name
+from apps.utils.validators import (
+    validate_mobile_number,
+    validate_name,
+    validate_taxonomy_name,
+)
 
 _CREATABLE_BY_ADMIN = {UserRole.STUDENT, UserRole.TEACHER}
 
@@ -90,6 +113,7 @@ class AdminUserSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(source="get_full_name", read_only=True)
     has_active_session = serializers.SerializerMethodField()
     profile_type = serializers.SerializerMethodField()
+    is_learning_partner_admin = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = User
@@ -107,6 +131,7 @@ class AdminUserSerializer(serializers.ModelSerializer):
             "is_mobile_verified",
             "has_active_session",
             "profile_type",
+            "is_learning_partner_admin",
             "last_login",
             "created_at",
         )
@@ -308,6 +333,70 @@ class AdminAccountRequestCreateSerializer(serializers.Serializer):
         return attrs
 
 
+class BecomeLearningPartnerSerializer(serializers.Serializer):
+    """
+    Public "become a Learning Partner" submission - same underlying request
+    table as AdminAccountRequestCreateSerializer (AdminAccountRequest), but
+    for an organisation identity rather than a person: organization_name
+    instead of first/last name. Creates a request with organization_name
+    set; first_name/last_name are left blank. See
+    apps.accounts.services.admin_account_naming for how this becomes a
+    generated account name on approval.
+    """
+
+    organization_name = serializers.CharField(
+        max_length=190, validators=[validate_taxonomy_name]
+    )
+    email = serializers.EmailField()
+    mobile = serializers.CharField(max_length=17, validators=[validate_mobile_number])
+    password = serializers.CharField(write_only=True, style={"input_type": "password"})
+    password_confirm = serializers.CharField(
+        write_only=True, style={"input_type": "password"}
+    )
+
+    def validate_organization_name(self, value):
+        return " ".join(value.split())
+
+    def validate_email(self, value):
+        value = User.objects.normalize_email(value)
+        if User.all_objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        if AdminAccountRequest.objects.filter(
+            email__iexact=value, status=AdminAccountRequestStatus.PENDING
+        ).exists():
+            raise serializers.ValidationError(
+                "A request with this email is already awaiting review."
+            )
+        return value
+
+    def validate_mobile(self, value):
+        value = value.strip()
+        if User.all_objects.filter(mobile=value).exists():
+            raise serializers.ValidationError(
+                "A user with this mobile number already exists."
+            )
+        if AdminAccountRequest.objects.filter(
+            mobile=value, status=AdminAccountRequestStatus.PENDING
+        ).exists():
+            raise serializers.ValidationError(
+                "A request with this mobile number is already awaiting review."
+            )
+        return value
+
+    def validate_password(self, value):
+        from django.contrib.auth import password_validation
+
+        password_validation.validate_password(value)
+        return value
+
+    def validate(self, attrs):
+        if attrs["password"] != attrs["password_confirm"]:
+            raise serializers.ValidationError(
+                {"password_confirm": "Passwords do not match."}
+            )
+        return attrs
+
+
 class AdminAccountRequestSerializer(serializers.ModelSerializer):
     department_name = serializers.CharField(
         source="department.name", read_only=True, default=None
@@ -327,6 +416,7 @@ class AdminAccountRequestSerializer(serializers.ModelSerializer):
             "mobile",
             "first_name",
             "last_name",
+            "organization_name",
             "status",
             "department",
             "department_name",
@@ -351,17 +441,34 @@ class AdminDepartmentSerializer(serializers.ModelSerializer):
             "name",
             "slug",
             "is_active",
+            "is_learning_partner",
             "admin_count",
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "slug", "admin_count", "created_at", "updated_at")
+        read_only_fields = (
+            "id",
+            "slug",
+            "is_learning_partner",
+            "admin_count",
+            "created_at",
+            "updated_at",
+        )
 
     def get_admin_count(self, obj) -> int:
         return obj.admins.filter(is_active=True).count()
 
     def validate_name(self, value):
         value = value.strip() if isinstance(value, str) else value
+        if (
+            self.instance is not None
+            and self.instance.is_learning_partner
+            and value != self.instance.name
+        ):
+            raise serializers.ValidationError(
+                "The Learning Partner department is required by the "
+                "platform and cannot be renamed."
+            )
         qs = AdminDepartment.all_objects.filter(name__iexact=value)
         if self.instance is not None:
             qs = qs.exclude(pk=self.instance.pk)
@@ -1096,6 +1203,78 @@ class AdminAccountRequestCreateView(APIView):
         )
 
 
+class BecomeLearningPartnerView(APIView):
+    """
+    Public "become a Learning Partner" submission. Creates the same
+    AdminAccountRequest row as the admin-account flow, but with
+    organization_name set (first_name/last_name left blank) - see
+    apps.accounts.services.admin_account_naming for how this becomes a
+    generated 'OrgName@LearningPartner' account name on approval, and
+    AdminAccountRequestDecisionView for the department-type enforcement
+    that keeps this request approvable only into the Learning Partner
+    department.
+    """
+
+    permission_classes = []
+    authentication_classes = []
+    throttle_classes = [ResilientAnonRateThrottle, RegisterRateThrottle]
+
+    def post(self, request):
+        CaptchaService.verify_or_raise(request)
+
+        serializer = BecomeLearningPartnerSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        req = AdminAccountRequest.objects.create(
+            email=data["email"],
+            mobile=data["mobile"],
+            organization_name=data["organization_name"],
+            password_hash=make_password(data["password"]),
+            requested_ip=request.META.get("REMOTE_ADDR"),
+            requested_user_agent=request.META.get("HTTP_USER_AGENT", "")[:400],
+        )
+        AuditService.record(
+            request=request,
+            category=AuditCategory.ADMIN_LOGIN,
+            action="admin_account_request.submitted",
+            status=AuditStatus.PENDING,
+            target=req,
+            message=f"{req.email} requested a Learning Partner account "
+            f"({req.organization_name})",
+        )
+        return APIResponse.created(
+            data={"id": str(req.id), "status": req.status},
+            message="Your request has been sent to the Super Admin — they "
+            "will review it and reach out.",
+        )
+
+
+class LearningPartnerListView(APIView):
+    """
+    Public list of active Learning Partner organisations - powers the
+    "Are you under one of our learning partners?" dropdown at student/
+    teacher signup, which is asked before any session exists.
+    """
+
+    permission_classes = []
+    authentication_classes = []
+
+    def get(self, request):
+        partners = (
+            User.objects.filter(
+                role=UserRole.ADMIN,
+                is_active=True,
+                admin_department__is_learning_partner=True,
+            )
+            .order_by("first_name")
+            .values("id", "first_name")
+        )
+        return APIResponse.success(
+            data=[{"id": str(p["id"]), "name": p["first_name"]} for p in partners]
+        )
+
+
 @extend_schema(
     tags=["User Management"],
     summary="Pending + recent admin-account requests (super admin)",
@@ -1150,6 +1329,13 @@ class AdminAccountRequestDecisionView(APIView):
             ).first()
             if department is None:
                 raise ValidationException(detail="Select a valid, active department.")
+
+            is_lp_request = bool(req.organization_name)
+            if is_lp_request != department.is_learning_partner:
+                raise ValidationException(
+                    detail="Learning Partner requests can only be approved "
+                    "into the Learning Partner department, and vice versa."
+                )
 
             user = approve_and_create_admin(
                 req, department=department, reviewed_by=_actor(request)
@@ -1277,6 +1463,11 @@ class AdminDepartmentDetailView(APIView):
 
     def delete(self, request, id):
         department = self._get_department(id)
+        if department.is_learning_partner:
+            raise ConflictException(
+                detail="The Learning Partner department is required by the "
+                "platform and cannot be removed."
+            )
         if department.admins.filter(is_active=True).exists():
             raise ConflictException(
                 detail="This department has active admins assigned to it and "
@@ -1292,3 +1483,191 @@ class AdminDepartmentDetailView(APIView):
             message=f"Department deleted: {name}",
         )
         return APIResponse.no_content(message="Department deleted.")
+
+
+# ======================================================================
+# Learning Partner taxonomy requests (Phase LP-3) - a Learning Partner
+# submits these via GET/POST /api/v1/lp/taxonomy-requests/
+# (apps.learning_partner.views.LPTaxonomyRequestListCreateView, which
+# imports LearningPartnerTaxonomyRequestSerializer from this module, same
+# way it already imports AdminUserSerializer). Everything below is the
+# Super Admin's review side.
+# ======================================================================
+class LearningPartnerTaxonomyRequestSerializer(serializers.ModelSerializer):
+    learning_partner_name = serializers.CharField(
+        source="learning_partner.first_name", read_only=True, default=None
+    )
+    reviewed_by_email = serializers.CharField(
+        source="reviewed_by.email", read_only=True, default=None
+    )
+    created_subject_name = serializers.CharField(
+        source="created_subject.name", read_only=True, default=None
+    )
+    created_language_name = serializers.CharField(
+        source="created_language.name", read_only=True, default=None
+    )
+
+    class Meta:
+        model = LearningPartnerTaxonomyRequest
+        fields = (
+            "id",
+            "learning_partner",
+            "learning_partner_name",
+            "kind",
+            "name",
+            "note",
+            "status",
+            "created_subject",
+            "created_subject_name",
+            "created_language",
+            "created_language_name",
+            "reviewed_by_email",
+            "reviewed_at",
+            "deny_reason",
+            "created_at",
+        )
+        read_only_fields = (
+            "id",
+            "learning_partner",
+            "learning_partner_name",
+            "status",
+            "created_subject",
+            "created_subject_name",
+            "created_language",
+            "created_language_name",
+            "reviewed_by_email",
+            "reviewed_at",
+            "deny_reason",
+            "created_at",
+        )
+
+    def validate_name(self, value):
+        value = value.strip() if isinstance(value, str) else value
+        try:
+            validate_taxonomy_name(value)
+        except Exception:
+            raise serializers.ValidationError(
+                "Enter a valid subject/language name."
+            )
+        return value
+
+
+@extend_schema(
+    tags=["User Management"],
+    summary="Pending + recent Learning Partner taxonomy requests (super admin)",
+    responses=LearningPartnerTaxonomyRequestSerializer(many=True),
+)
+class TaxonomyRequestListView(APIView):
+    def get(self, request):
+        qs = LearningPartnerTaxonomyRequest.objects.select_related(
+            "learning_partner", "reviewed_by", "created_subject", "created_language"
+        ).order_by("-created_at")
+        status_param = request.query_params.get("status")
+        if status_param:
+            qs = qs.filter(status=status_param)
+        kind_param = request.query_params.get("kind")
+        if kind_param:
+            qs = qs.filter(kind=kind_param)
+        return APIResponse.success(
+            data=LearningPartnerTaxonomyRequestSerializer(qs[:200], many=True).data
+        )
+
+
+@extend_schema(
+    tags=["User Management"],
+    summary="Approve (creates the real, partner-scoped row) or deny a "
+    "Learning Partner taxonomy request (super admin)",
+    request=inline_serializer(
+        "TaxonomyRequestDecisionBody",
+        {"reason": drf_serializers.CharField(required=False, allow_blank=True)},
+    ),
+    responses={200: LearningPartnerTaxonomyRequestSerializer},
+)
+class TaxonomyRequestDecisionView(APIView):
+    approve = True
+
+    def post(self, request, id):
+        req = LearningPartnerTaxonomyRequest.objects.filter(id=id).first()
+        if req is None:
+            raise ResourceNotFoundException(detail="Request not found.")
+        if req.status != TaxonomyRequestStatus.PENDING:
+            raise ValidationException(detail=f"This request is already {req.status}.")
+
+        if self.approve:
+            if req.kind == TaxonomyRequestKind.SUBJECT:
+                obj = Subject.all_objects.filter(
+                    name__iexact=req.name, learning_partner=req.learning_partner
+                ).first()
+                if obj is None:
+                    obj = Subject.objects.create(
+                        name=req.name,
+                        is_active=True,
+                        learning_partner=req.learning_partner,
+                    )
+                req.created_subject = obj
+            else:
+                from apps.languages.services import derive_language_code
+
+                obj = Language.all_objects.filter(
+                    name__iexact=req.name, learning_partner=req.learning_partner
+                ).first()
+                if obj is None:
+                    obj = Language.objects.create(
+                        name=req.name,
+                        code=derive_language_code(req.name),
+                        is_active=True,
+                        learning_partner=req.learning_partner,
+                    )
+                req.created_language = obj
+
+            req.status = TaxonomyRequestStatus.APPROVED
+            req.reviewed_by = _actor(request)
+            req.reviewed_at = timezone.now()
+            req.save(
+                update_fields=[
+                    "status",
+                    "created_subject",
+                    "created_language",
+                    "reviewed_by",
+                    "reviewed_at",
+                    "updated_at",
+                ]
+            )
+            AuditService.record(
+                request=request,
+                category=AuditCategory.USER,
+                action="lp_taxonomy_request.approved",
+                target=obj,
+                message=f"{req.kind} '{req.name}' approved for "
+                f"{req.learning_partner.admin_account_name}",
+            )
+            return APIResponse.success(
+                data=LearningPartnerTaxonomyRequestSerializer(req).data,
+                message=f"Approved. '{req.name}' is now visible to "
+                f"{req.learning_partner.first_name}.",
+            )
+
+        req.status = TaxonomyRequestStatus.DENIED
+        req.deny_reason = (request.data.get("reason") or "")[:500]
+        req.reviewed_by = _actor(request)
+        req.reviewed_at = timezone.now()
+        req.save(
+            update_fields=[
+                "status",
+                "deny_reason",
+                "reviewed_by",
+                "reviewed_at",
+                "updated_at",
+            ]
+        )
+        AuditService.record(
+            request=request,
+            category=AuditCategory.USER,
+            action="lp_taxonomy_request.denied",
+            target=req,
+            message=f"{req.kind} '{req.name}' denied",
+        )
+        return APIResponse.success(
+            data=LearningPartnerTaxonomyRequestSerializer(req).data,
+            message="Request denied.",
+        )

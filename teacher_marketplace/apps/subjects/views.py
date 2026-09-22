@@ -17,6 +17,7 @@ Only mutations require Admin/SuperAdmin role.
 
 import logging
 
+from django.db.models import Q
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics
@@ -29,14 +30,32 @@ from apps.subjects.serializers import SubjectSerializer
 logger = logging.getLogger("apps.subjects")
 
 
+def _visible_subjects(user):
+    """
+    Global subjects (learning_partner=None) are visible to everyone; a
+    Learning Partner-requested subject is visible only to that partner
+    itself (browsing its own Subjects screen) and its own referred students/
+    teachers, and Super Admin sees the full, unscoped set for oversight.
+    Shared by both views below so list and detail can never disagree about
+    what a given caller may see. See User.taxonomy_scope_id for why this
+    isn't simply `user.learning_partner_id`.
+    """
+    qs = Subject.objects.all()
+    if getattr(user, "role", None) == "superadmin":
+        return qs
+    scope_id = getattr(user, "taxonomy_scope_id", None)
+    if scope_id:
+        return qs.filter(Q(learning_partner__isnull=True) | Q(learning_partner_id=scope_id))
+    return qs.filter(learning_partner__isnull=True)
+
+
 @extend_schema(tags=["Subjects"])
 class SubjectListCreateView(generics.ListCreateAPIView):
     """
-    GET: List all active, non-deleted subjects (public).
+    GET: List subjects visible to the caller (see _visible_subjects).
     POST: Create a new subject (Admin/SuperAdmin only).
     """
 
-    queryset = Subject.objects.all()
     serializer_class = SubjectSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_fields = ["is_active"]
@@ -47,6 +66,9 @@ class SubjectListCreateView(generics.ListCreateAPIView):
     # silently truncate it, so it's opted out here rather than weakened
     # globally for the genuinely large, user-generated endpoints.
     pagination_class = None
+
+    def get_queryset(self):
+        return _visible_subjects(self.request.user)
 
     def list(self, request, *args, **kwargs):
         response = super().list(request, *args, **kwargs)
@@ -68,14 +90,16 @@ class SubjectListCreateView(generics.ListCreateAPIView):
 @extend_schema(tags=["Subjects"])
 class SubjectDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
-    GET: Retrieve a single subject (public).
+    GET: Retrieve a single subject the caller may see (see _visible_subjects).
     PUT/PATCH: Update a subject (Admin/SuperAdmin only).
     DELETE: Soft-delete a subject (Admin/SuperAdmin only).
     """
 
-    queryset = Subject.objects.all()
     serializer_class = SubjectSerializer
     lookup_field = "id"
+
+    def get_queryset(self):
+        return _visible_subjects(self.request.user)
 
     def retrieve(self, request, *args, **kwargs):
         response = super().retrieve(request, *args, **kwargs)

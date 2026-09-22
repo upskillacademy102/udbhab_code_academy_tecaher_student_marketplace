@@ -37,6 +37,7 @@ api_v1_patterns = [
     ),
     path("admin/support-tickets/", include("apps.support.admin_urls")),
     path("ops/", include("apps.ops.urls")),
+    path("lp/", include("apps.learning_partner.urls")),
     path("students/", include("apps.students.urls")),
     path(
         "students/me/preferences/",

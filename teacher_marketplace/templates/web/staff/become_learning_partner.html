@@ -1,0 +1,106 @@
+{% extends "web/base_public.html" %}
+{% load static web_extras %}
+
+{% block title %}Become a Learning Partner · {{ SITE_NAME }}{% endblock %}
+{% block head_extra %}<script defer src="{% static 'js/auth.js' %}"></script>{% endblock %}
+{% block promo_title %}Become a Learning Partner{% endblock %}
+{% block promo_body %}A Super Admin reviews every request by hand before your organisation's account is created.{% endblock %}
+
+{% block panel %}
+<div x-data="becomeLearningPartner()">
+
+  {# ---- request form ---- #}
+  <div x-show="phase === 'form'">
+    <a href="/" class="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-ink-500 hover:text-ink-800">
+      {% icon "arrow-left" "h-4 w-4" %} Back
+    </a>
+
+    <div class="flex items-center gap-2">
+      <span class="grid h-9 w-9 place-items-center rounded-lg bg-marigold-100 text-marigold-700">{% icon "plus" %}</span>
+      <h1 class="u-h2">Become a Learning Partner</h1>
+    </div>
+    <p class="u-lede mt-2 text-[0.9375rem]">Tell us about your organisation. Nothing is created yet — a Super Admin reviews every request before an account exists, and your students/teachers will be able to identify your organisation at sign-up once it's approved.</p>
+
+    <div class="u-alert u-alert-error mt-6" x-show="formError" x-cloak>
+      {% icon "x-circle" %}<span x-text="formError"></span>
+    </div>
+
+    <form class="mt-6 flex flex-col gap-4" @submit.prevent="submit()" novalidate>
+      <div class="u-field">
+        <label class="u-label" for="lp-org">Organisation name</label>
+        <input id="lp-org" class="u-input" autocomplete="organization" x-model.trim="model.organization_name"
+               @blur="touch('organization_name')" :aria-invalid="!!err('organization_name')"
+               placeholder="e.g. Learn Academy">
+        <p class="u-error" x-show="err('organization_name')" x-text="err('organization_name')"></p>
+      </div>
+
+      <div class="u-field">
+        <label class="u-label" for="lp-email">Contact email address</label>
+        <input id="lp-email" type="email" class="u-input" autocomplete="email" x-model.trim="model.email"
+               @blur="touch('email')" :aria-invalid="!!err('email')" placeholder="you@example.com">
+        <p class="u-error" x-show="err('email')" x-text="err('email')"></p>
+      </div>
+
+      <div class="u-field">
+        <label class="u-label" for="lp-mobile">Mobile number</label>
+        <input id="lp-mobile" inputmode="numeric" class="u-input" autocomplete="tel" x-model.trim="model.mobile"
+               @blur="touch('mobile')" @input="model.mobile = model.mobile.replace(/[^0-9]/g,'')"
+               :aria-invalid="!!err('mobile')" placeholder="10 digits, no spaces">
+        <p class="u-error" x-show="err('mobile')" x-text="err('mobile')"></p>
+      </div>
+
+      <div class="u-field">
+        <label class="u-label" for="lp-pw">Password</label>
+        <div class="relative">
+          <input id="lp-pw" :type="showPw ? 'text' : 'password'" class="u-input pr-11" autocomplete="new-password"
+                 x-model="model.password" @blur="touch('password')" @input="touch('password')"
+                 :aria-invalid="!!err('password')" placeholder="••••••••">
+          <button type="button" class="absolute inset-y-0 right-0 grid w-11 place-items-center text-ink-400 hover:text-ink-700"
+                  @click="showPw = !showPw" :aria-label="showPw ? 'Hide password' : 'Show password'">
+            {% icon "eye" "h-4 w-4" %}
+          </button>
+        </div>
+        <ul class="mt-1 grid grid-cols-2 gap-x-3 gap-y-1">
+          <template x-for="r in pwRules" :key="r.key">
+            <li class="flex items-center gap-1.5 text-[0.75rem]" :class="r.ok ? 'text-success' : 'text-ink-400'">
+              <span x-text="r.ok ? '✓' : '○'"></span><span x-text="r.label"></span>
+            </li>
+          </template>
+        </ul>
+        <p class="u-error" x-show="err('password')" x-text="err('password')"></p>
+      </div>
+
+      <div class="u-field">
+        <label class="u-label" for="lp-pw2">Confirm password</label>
+        <input id="lp-pw2" :type="showPw ? 'text' : 'password'" class="u-input" autocomplete="new-password"
+               x-model="model.password_confirm" @blur="touch('password_confirm')"
+               :aria-invalid="!!err('password_confirm')" placeholder="••••••••">
+        <p class="u-error" x-show="err('password_confirm')" x-text="err('password_confirm')"></p>
+      </div>
+
+      <p class="u-fine">
+        This is the password your organisation will use to sign in once approved — the Super Admin never sees it.
+      </p>
+
+      <button type="submit" class="u-btn-primary u-btn-lg mt-2 w-full" :data-loading="submitting" :disabled="submitting">
+        Send request
+      </button>
+    </form>
+  </div>
+
+  {# ---- confirmation (no redirect - there is no session yet) ---- #}
+  <div x-show="phase === 'sent'" x-cloak>
+    <div class="flex items-center gap-2">
+      <span class="grid h-9 w-9 place-items-center rounded-lg bg-success/10 text-success">{% icon "check-circle" %}</span>
+      <h1 class="u-h2">Request sent</h1>
+    </div>
+
+    <div class="u-alert u-alert-success mt-6">
+      {% icon "check-circle" %}
+      <p>Your request has been sent to the Super Admin — they will review it and reach out. You'll sign in with the account name they generate for you, once it's approved.</p>
+    </div>
+
+    <a href="/" class="u-btn-secondary u-btn-lg mt-6 w-full">Back to the site</a>
+  </div>
+</div>
+{% endblock %}

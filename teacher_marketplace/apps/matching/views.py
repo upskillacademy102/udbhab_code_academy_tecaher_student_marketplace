@@ -166,7 +166,9 @@ class EligibleTeacherSearchView(APIView):
         if not subject_text:
             raise ValidationException(detail="subject is required.")
 
-        subject_result = SubjectMatchingService.match_by_text(subject_text)
+        subject_result = SubjectMatchingService.match_by_text(
+            subject_text, viewer=request.user
+        )
         if not subject_result.is_eligible or subject_result.matched_subject is None:
             raise ValidationException(
                 detail=f"Subject '{subject_text}' not recognized. Please check the spelling."
@@ -176,7 +178,9 @@ class EligibleTeacherSearchView(APIView):
         language_id = None
         language_text = params.get("language")
         if language_text:
-            language_result = LanguageMatchingService.match_by_text(language_text)
+            language_result = LanguageMatchingService.match_by_text(
+                language_text, viewer=request.user
+            )
             if (
                 not language_result.is_eligible
                 or language_result.matched_subject is None

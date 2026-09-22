@@ -82,6 +82,8 @@ PUBLIC_ROUTE_NAMES = frozenset(
         "accounts:staff-login-superadmin",  # hidden-gateway Super Admin direct sign-in
         "accounts:staff-login-admin",  # hidden-gateway Admin sign-in (account name + password)
         "accounts:staff-create-admin-account",  # public "become an Admin" request submission
+        "accounts:become-learning-partner",  # public "become a Learning Partner" request submission
+        "accounts:learning-partners",  # public list, for signup dropdowns
         "public:stats",  # anonymous landing-page counts, no PII
         "payments:webhook",  # server-to-server, HMAC-verified
         "schema",  # OpenAPI - prod additionally gates to staff
@@ -147,8 +149,9 @@ _RULES: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
     # admin_onboarding_calls:schedule + admin_support:assign + ops:* +
     # subjects:subject-{list-create,detail} write methods +
     # languages:language-{list-create,detail} write methods +
-    # accounts:staff-admin-account-requests* + accounts:staff-departments* are
-    # intentionally unlisted -> Super Admin only (is_allowed short-circuit).
+    # accounts:staff-admin-account-requests* + accounts:staff-departments* +
+    # accounts:staff-taxonomy-requests* are intentionally unlisted -> Super
+    # Admin only (is_allowed short-circuit).
     # ===== Notifications - every authenticated role ========================
     ("notifications:notification-list", ("GET",), _ANY_AUTHED),
     ("notifications:mark-read", ("POST",), _ANY_AUTHED),
@@ -289,6 +292,25 @@ _RULES: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
     ("matching:subject-alias-list-create", ("GET", "POST"), _ADMIN),
     ("matching:language-alias-list-create", ("GET", "POST"), _ADMIN),
     ("matching:config-list-create", ("GET", "POST"), _ADMIN),
+    # ======================================================================
+    # LEARNING PARTNER DASHBOARD - role=admin gets past this central gate;
+    # apps.learning_partner.views.LearningPartnerAPIView.initial() is the
+    # real check that a plain admin isn't also a Learning Partner - see
+    # apps.accounts.models.User.is_learning_partner_admin. A plain admin
+    # granted _ADMIN here still gets a clean 403 from that object-level
+    # check, never real data.
+    # ======================================================================
+    ("lp:dashboard", ("GET",), _ADMIN),
+    ("lp:student-list", ("GET",), _ADMIN),
+    ("lp:student-detail", ("GET",), _ADMIN),
+    ("lp:teacher-list", ("GET",), _ADMIN),
+    ("lp:teacher-detail", ("GET",), _ADMIN),
+    ("lp:taxonomy-request-list-create", ("GET", "POST"), _ADMIN),
+    ("lp:fake-lead-reports", ("GET",), _ADMIN),
+    ("lp:fake-lead-report-endorse", ("POST",), _ADMIN),
+    ("lp:students-lead-quality", ("GET",), _ADMIN),
+    ("lp:teacher-lead-reviews", ("GET",), _ADMIN),
+    ("lp:audit", ("GET",), _ADMIN),
 ]
 
 

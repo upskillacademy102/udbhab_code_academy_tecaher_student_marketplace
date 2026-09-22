@@ -185,6 +185,23 @@ def staff_create_admin_account_page(request):
     )
 
 
+def become_learning_partner_page(request):
+    """
+    Self-service "become a Learning Partner" request form. Deliberately
+    NOT under /staff/ - that prefix signals the hidden triple-click
+    gateway; this is a link given directly to a partner organisation, not
+    a "you shouldn't be here unless you know the trick" page.
+    """
+    user = resolve_web_user(request)
+    if user is not None:
+        return redirect(home_url_for(user))
+    return render(
+        request,
+        "web/staff/become_learning_partner.html",
+        {"page_title": "Become a Learning Partner"},
+    )
+
+
 @role_required("teacher")
 def teacher_profile(request):
     """
@@ -258,7 +275,7 @@ def page(template, *, roles, title, desc="", **extra):
     return view
 
 
-def spa(*, roles, title, desc=""):
+def spa(*, roles, title, desc="", guard=None):
     """
     A page owned by the React app instead of a Django template.
 
@@ -266,10 +283,17 @@ def spa(*, roles, title, desc=""):
     the shell, and the DRF API still re-authorises every call the browser
     makes. The only difference is that the body is mounted by React rather
     than rendered here, so pages can move across one at a time.
+
+    `guard` overrides the default role_required(*roles) decorator for a
+    mount that needs a narrower check than role alone (e.g. the Learning
+    Partner dashboard, which also needs admin_department.is_learning_partner
+    - see apps.web.guards.learning_partner_required).
     """
     from apps.web.vite import spa_assets
 
-    @role_required(*roles)
+    decorator = guard or role_required(*roles)
+
+    @decorator
     def view(request, **kwargs):
         assets = spa_assets()
         ctx = {

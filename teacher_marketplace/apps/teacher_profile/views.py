@@ -113,7 +113,10 @@ class TeacherProfileView(APIView):
         existing = self.get_object(request)
         teacher = self.get_teacher(request)
         serializer = TeacherProfileWriteSerializer(
-            existing, data=request.data, partial=existing is not None
+            existing,
+            data=request.data,
+            partial=existing is not None,
+            context={"request": request},
         )
         serializer.is_valid(raise_exception=True)
         profile = (
@@ -166,7 +169,7 @@ class TeacherProfileView(APIView):
             )
 
         serializer = TeacherProfileWriteSerializer(
-            profile, data=request.data, partial=partial
+            profile, data=request.data, partial=partial, context={"request": request}
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()

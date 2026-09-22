@@ -41,6 +41,8 @@ def resolve_web_user(request):
 
 
 def home_url_for(user):
+    if getattr(user, "is_learning_partner_admin", False):
+        return "/staff/learning-partner/"
     return ROLE_HOME.get(getattr(user, "role", None), "/")
 
 
@@ -111,3 +113,29 @@ def role_required(*roles):
         return wrapped
 
     return decorator
+
+
+def learning_partner_required(view):
+    """
+    Like role_required("admin"), but ALSO requires the admin's department
+    to be the Learning Partner one - a plain admin (or superadmin, who
+    bypasses role_required everywhere else) gets a clean 403 here rather
+    than a broken-looking SPA shell whose data calls all 403 underneath it.
+    """
+
+    @wraps(view)
+    def wrapped(request, *args, **kwargs):
+        user = resolve_web_user(request)
+        if user is None:
+            return _login_redirect(request)
+        request.web_user = user
+        if not user.is_learning_partner_admin:
+            return render(
+                request,
+                "web/errors/403.html",
+                {"home_url": home_url_for(user)},
+                status=403,
+            )
+        return view(request, *args, **kwargs)
+
+    return wrapped
