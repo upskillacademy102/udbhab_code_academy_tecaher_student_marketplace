@@ -9,6 +9,9 @@
 # .env.example IS committed - it is the redacted template.
 !.env.example
 
+# dumpdata exports contain real user PII - never commit
+data.json
+
 # ==========================================================
 # Python
 # ==========================================================
