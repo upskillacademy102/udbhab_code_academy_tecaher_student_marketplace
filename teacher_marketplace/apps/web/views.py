@@ -202,6 +202,47 @@ def become_learning_partner_page(request):
     )
 
 
+def learning_partner_gateway_page(request):
+    """
+    Landing spot for the "I am a Learning Partner" nav link: a simple
+    choice between requesting a new partner account and signing in to an
+    existing one. Deliberately not under /staff/, same reasoning as
+    become_learning_partner_page above.
+    """
+    user = resolve_web_user(request)
+    if user is not None:
+        return redirect(home_url_for(user))
+    return render(
+        request,
+        "web/learning_partner/gateway.html",
+        {"page_title": "Learning Partner access"},
+    )
+
+
+def learning_partner_login_page(request):
+    """
+    Learning Partner sign-in (account name + password) - separate from
+    staff_login_admin_page, so a partner never signs in from the Admin
+    page and vice versa. See StaffLearningPartnerLoginView /
+    StaffAdminLoginView in apps.accounts.admin_api.
+
+    ``?notice=wrong-portal`` is set by static/js/auth.js when someone typed
+    a Learning Partner account name into the Admin sign-in page and got
+    bounced here instead - shown once as a banner, not silently dropped.
+    """
+    user = resolve_web_user(request)
+    if user is not None:
+        return redirect(home_url_for(user))
+    return render(
+        request,
+        "web/learning_partner/login.html",
+        {
+            "page_title": "Learning Partner sign-in",
+            "wrong_portal_notice": request.GET.get("notice") == "wrong-portal",
+        },
+    )
+
+
 @role_required("teacher")
 def teacher_profile(request):
     """

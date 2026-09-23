@@ -1,0 +1,48 @@
+{% extends "web/base_public.html" %}
+{% load static web_extras %}
+
+{% block title %}Learning Partner access · {{ SITE_NAME }}{% endblock %}
+{% block promo_title %}Learning Partner access{% endblock %}
+{% block promo_body %}Choose whether you're setting up a new partner account or signing in to one that's already approved.{% endblock %}
+{% block panel_width %}max-w-[28rem]{% endblock %}
+
+{% comment %}
+Reached from the "I am a Learning Partner" link on the landing page. Splits
+what used to be a single link (straight to become-learning-partner/) into
+a choice, since an already-approved partner needs a sign-in door too - and
+that door must be separate from the Admin staff-login page (see
+StaffLearningPartnerLoginView / StaffAdminLoginView in
+apps.accounts.admin_api for why they're kept apart).
+{% endcomment %}
+
+{% block panel %}
+<a href="/" class="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-ink-500 hover:text-ink-800">
+  {% icon "arrow-left" "h-4 w-4" %} Back to the site
+</a>
+
+<div class="flex items-center gap-2">
+  <span class="grid h-9 w-9 place-items-center rounded-lg bg-marigold-100 text-marigold-700">{% icon "globe" %}</span>
+  <h1 class="u-h2">Learning Partner</h1>
+</div>
+<p class="u-fine mt-2">Are you setting up a new partner account, or signing in to one that's already approved?</p>
+
+<div class="mt-7 flex flex-col gap-3">
+  <a href="/become-learning-partner/" class="u-card u-card-pad flex items-center gap-4 transition hover:border-marigold-400 hover:shadow-lift">
+    <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-marigold-100 text-marigold-700">{% icon "plus" "h-5 w-5" %}</span>
+    <span class="flex-1">
+      <span class="block text-[0.9375rem] font-semibold text-ink-900">Become a Learning Partner</span>
+      <span class="block text-[0.8125rem] text-ink-500">Request an account for your school or coaching centre. A Super Admin reviews every request.</span>
+    </span>
+    {% icon "chevron-right" "h-4 w-4 text-ink-400" %}
+  </a>
+
+  <a href="/learning-partner/login/" class="u-card u-card-pad flex items-center gap-4 transition hover:border-pine-400 hover:shadow-lift">
+    <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-pine-100 text-pine-700">{% icon "user" "h-5 w-5" %}</span>
+    <span class="flex-1">
+      <span class="block text-[0.9375rem] font-semibold text-ink-900">Login as a Learning Partner</span>
+      <span class="block text-[0.8125rem] text-ink-500">Already approved? Sign in with your organisation's account name and password.</span>
+    </span>
+    {% icon "chevron-right" "h-4 w-4 text-ink-400" %}
+  </a>
+</div>
+{% endblock %}

@@ -1,10 +1,11 @@
 """
-StaffLoginGuardService - brute-force protection for the admin/super-admin
-login endpoints (``/api/v1/auth/staff/login-admin/`` and
-``/staff/login-superadmin/``).
+StaffLoginGuardService - brute-force protection for the admin/super-admin/
+learning-partner login endpoints (``/api/v1/auth/staff/login-admin/``,
+``/staff/login-superadmin/`` and ``/staff/login-learning-partner/``).
 
 Two independent mechanisms, both keyed per (page, ...) so an admin-page
-attack never affects the superadmin-page counters or vice versa:
+attack never affects the superadmin-page or learning-partner-page counters
+or vice versa:
 
   * Per-identifier failure counter (cache, 24h rolling window). When a
     *real* account's login identifier (email for superadmin, account_name
@@ -123,7 +124,14 @@ class StaffLoginGuardService:
 
     @staticmethod
     def _identifier_for(user, page: str) -> str:
-        return user.admin_account_name if page == "admin" else user.email
+        # Both the Admin and Learning Partner staff-login pages authenticate
+        # by admin_account_name, not email - everything else (superadmin)
+        # signs in by email.
+        return (
+            user.admin_account_name
+            if page in ("admin", "learning_partner")
+            else user.email
+        )
 
     @staticmethod
     def _audit_failure(request, *, page: str, identifier: str) -> None:

@@ -24,6 +24,7 @@ Included from config/urls.py at the `api/v1/auth/` prefix.
 
     POST /api/v1/auth/staff/login-superadmin/           Super Admin direct sign-in
     POST /api/v1/auth/staff/login-admin/                Admin sign-in (account name + password)
+    POST /api/v1/auth/staff/login-learning-partner/     Learning Partner sign-in (account name + password)
 
     POST /api/v1/auth/staff/create-admin-account/               submit request (public)
     GET  /api/v1/auth/staff/admin-account-requests/              pending + recent   (Super Admin)
@@ -49,13 +50,16 @@ from apps.accounts.admin_api import (
     AdminAccountRequestListView,
     AdminDepartmentDetailView,
     AdminDepartmentListCreateView,
+    AdminDepartmentPublicListView,
     AdminLoginRequestDecisionView,
     AdminLoginRequestListView,
     AdminLoginStatusView,
     AdminLoginView,
     BecomeLearningPartnerView,
+    LearningPartnerAdminListView,
     LearningPartnerListView,
     StaffAdminLoginView,
+    StaffLearningPartnerLoginView,
     StaffSuperAdminLoginView,
     TaxonomyRequestDecisionView,
     TaxonomyRequestListView,
@@ -168,6 +172,13 @@ urlpatterns = [
         StaffAdminLoginView.as_view(),
         name="staff-login-admin",
     ),
+    # ---- Learning Partner sign-in (separate from the admin gateway above -
+    # reached from the normal "I am a Learning Partner" landing-page link) ----
+    path(
+        "staff/login-learning-partner/",
+        StaffLearningPartnerLoginView.as_view(),
+        name="staff-login-learning-partner",
+    ),
     # ---- admin-account requests (self-service "become an Admin") ----
     path(
         "staff/create-admin-account/",
@@ -191,6 +202,11 @@ urlpatterns = [
     ),
     # ---- admin departments (super admin, fixed-but-editable list) ----
     path(
+        "staff/departments/public/",
+        AdminDepartmentPublicListView.as_view(),
+        name="staff-departments-public",
+    ),
+    path(
         "staff/departments/",
         AdminDepartmentListCreateView.as_view(),
         name="staff-departments",
@@ -199,6 +215,12 @@ urlpatterns = [
         "staff/departments/<uuid:id>/",
         AdminDepartmentDetailView.as_view(),
         name="staff-department-detail",
+    ),
+    # ---- Learning Partner accounts (super admin, "Active" tab) ----
+    path(
+        "staff/learning-partners/",
+        LearningPartnerAdminListView.as_view(),
+        name="staff-learning-partners",
     ),
     # ---- Learning Partner taxonomy requests (super admin review) ----
     path(

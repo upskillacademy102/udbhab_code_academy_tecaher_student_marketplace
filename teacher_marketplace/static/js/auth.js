@@ -696,12 +696,62 @@ document.addEventListener("alpine:init", () => {
           { account_name: this.accountName.trim(), password: this.password },
           { silent: true }
         );
-        this._dest = r && r.user && r.user.is_learning_partner_admin
-          ? "/staff/learning-partner/"
-          : (r && r.user && ROLE_HOME[r.user.role]) || "/";
+        this._dest = (r && r.user && ROLE_HOME[r.user.role]) || "/";
         // The one-time credentials reveal is shown and dismissed
         // explicitly (a button click), never auto-redirected past, so an
         // impatient click can't skip it.
+        if (r && r.first_login_notice) {
+          this.phase = "reveal";
+        } else {
+          location.assign(this._dest);
+        }
+      } catch (e) {
+        // A Learning Partner account name typed here - this page never
+        // signs one in (see LearningPartnerWrongPortalException /
+        // StaffAdminLoginView). Send them to their own door instead of
+        // showing the error inline.
+        if (e.code === "LEARNING_PARTNER_WRONG_PORTAL") {
+          location.assign("/learning-partner/login/?notice=wrong-portal");
+          return;
+        }
+        this.error = e.status === 429
+          ? "Too many attempts from this network. Try again later."
+          : (e.status === 400 || e.status === 401)
+          ? "Incorrect account name or password."
+          : (e.message || "Sign-in failed. Please try again.");
+      } finally {
+        this.submitting = false;
+      }
+    },
+
+    continueToDashboard() {
+      location.assign(this._dest);
+    },
+  }));
+
+  /* ---- Learning Partner sign-in (account name + password) - separate
+     from staffAdminLogin above; see StaffLearningPartnerLoginView /
+     StaffAdminLoginView in apps.accounts.admin_api for why they're two
+     distinct endpoints rather than one shared with the Admin page. ---- */
+  window.Alpine.data("staffLearningPartnerLogin", () => ({
+    phase: "form", // form | reveal
+    accountName: "",
+    password: "",
+    showPw: false,
+    submitting: false,
+    error: "",
+    _dest: "/staff/learning-partner/",
+
+    async submit() {
+      if (this.submitting) return;
+      this.submitting = true;
+      this.error = "";
+      try {
+        const r = await api.post(
+          "/auth/staff/login-learning-partner/",
+          { account_name: this.accountName.trim(), password: this.password },
+          { silent: true }
+        );
         if (r && r.first_login_notice) {
           this.phase = "reveal";
         } else {
@@ -726,12 +776,30 @@ document.addEventListener("alpine:init", () => {
   /* ---- Self-service "become an Admin" request (staff gateway) ---- */
   window.Alpine.data("createAdminAccountRequest", () => ({
     phase: "form", // form | sent
-    model: { first_name: "", last_name: "", email: "", mobile: "", password: "", password_confirm: "" },
+    model: { first_name: "", last_name: "", requested_department_id: "", email: "", mobile: "", password: "", password_confirm: "" },
     touched: {},
     server: {},
     showPw: false,
     submitting: false,
     formError: "",
+    departments: [],
+    departmentsLoading: false,
+    departmentsError: "",
+
+    init() {
+      this.loadDepartments();
+    },
+    async loadDepartments() {
+      this.departmentsLoading = true;
+      try {
+        const data = await api.get("/auth/staff/departments/public/", { silent: true });
+        this.departments = Array.isArray(data) ? data : [];
+      } catch (e) {
+        this.departmentsError = "Couldn't load departments — please refresh and try again.";
+      } finally {
+        this.departmentsLoading = false;
+      }
+    },
 
     get pwRules() {
       const p = this.model.password || "";
@@ -753,6 +821,8 @@ document.addEventListener("alpine:init", () => {
         case "last_name":
           if (!m[f]) return "Required.";
           return NAME_RE.test(m[f]) ? "" : "Letters only.";
+        case "requested_department_id":
+          return m.requested_department_id ? "" : "Select a department.";
         case "email":
           if (!m.email) return "Required.";
           return EMAIL_RE.test(m.email) ? "" : "Enter a valid email address.";
@@ -775,7 +845,7 @@ document.addEventListener("alpine:init", () => {
       return this._clientError(f);
     },
     _valid() {
-      return ["first_name", "last_name", "email", "mobile", "password", "password_confirm"]
+      return ["first_name", "last_name", "requested_department_id", "email", "mobile", "password", "password_confirm"]
         .every((f) => { this.touched[f] = true; return !this._clientError(f); });
     },
 

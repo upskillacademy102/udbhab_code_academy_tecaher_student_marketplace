@@ -21,7 +21,7 @@ Run: python manage.py test apps.web.tests.test_all_pages_render \
 
 from django.test import Client, TestCase
 
-from apps.accounts.models import AdminDepartment, UserRole
+from apps.accounts.models import UserRole
 from apps.accounts.tests.helpers import TEST_PASSWORD, login, make_user
 from apps.web import urls as web_urls
 
@@ -51,6 +51,8 @@ _PUBLIC = (
     ("/register/", False),
     ("/login/staff/", False),
     ("/suspended/", True),
+    ("/learning-partner/", False),
+    ("/learning-partner/login/", False),
 )
 
 
@@ -71,13 +73,14 @@ def _role_for_path(path):
 
 def _login_lp(client, lp_user):
     """
-    A Learning Partner is a new-flow admin (admin_account_name set) - it
-    signs in via /staff/login-admin/, not the shared login() helper, which
-    routes role=admin through the OLD /auth/admin/login/ flow that
-    explicitly rejects any account with admin_account_name set.
+    A Learning Partner signs in with its admin_account_name at its own
+    dedicated endpoint, /staff/login-learning-partner/ - not the shared
+    login() helper (routes role=admin through the OLD /auth/admin/login/
+    flow) and not /staff/login-admin/ either, which now rejects a Learning
+    Partner account name outright (see StaffAdminLoginView).
     """
     resp = client.post(
-        "/api/v1/auth/staff/login-admin/",
+        "/api/v1/auth/staff/login-learning-partner/",
         {"account_name": lp_user.admin_account_name, "password": TEST_PASSWORD},
     )
     assert resp.status_code == 200, resp.content
@@ -102,16 +105,9 @@ class AllPagesRenderTests(TestCase):
                 role=UserRole.SUPERADMIN, email="sa@render.test"
             ),
         }
-        lp_dept, _ = AdminDepartment.objects.get_or_create(
-            name="Learning Partner", defaults={"is_learning_partner": True}
-        )
-        if not lp_dept.is_learning_partner:
-            lp_dept.is_learning_partner = True
-            lp_dept.save(update_fields=["is_learning_partner"])
         cls.lp_user = make_user(
-            role=UserRole.ADMIN,
+            role=UserRole.LEARNING_PARTNER,
             email="lp@render.test",
-            admin_department=lp_dept,
             admin_account_name="RenderTest@LearningPartner",
         )
 
@@ -192,7 +188,7 @@ class AllPagesRenderTests(TestCase):
         from apps.web.nav import nav_for
 
         failures = []
-        for role in ("student", "teacher", "admin", "superadmin"):
+        for role in ("student", "teacher", "admin", "superadmin", "learning_partner"):
             for section in nav_for(role):
                 for item in section["items"]:
                     url = item.get("url")
@@ -202,19 +198,6 @@ class AllPagesRenderTests(TestCase):
                         resolve(url)
                     except Resolver404:
                         failures.append(f"[{role}] {item['label']!r} -> {url}")
-        # nav_for("admin") only returns the Learning Partner nav when a real
-        # LP-flagged user is passed (see apps.accounts.models.User.
-        # is_learning_partner_admin) - the loop above, calling it with no
-        # user, never exercises that branch at all.
-        for section in nav_for("admin", self.lp_user):
-            for item in section["items"]:
-                url = item.get("url")
-                if not url:
-                    continue
-                try:
-                    resolve(url)
-                except Resolver404:
-                    failures.append(f"[learning_partner] {item['label']!r} -> {url}")
         self.assertFalse(
             failures, "nav items pointing at unregistered URLs:\n" + "\n".join(failures)
         )

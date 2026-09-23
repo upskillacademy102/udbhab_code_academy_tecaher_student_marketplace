@@ -160,9 +160,8 @@ class RegisterSerializer(serializers.ModelSerializer):
             return None
         if not User.objects.filter(
             id=value,
-            role=UserRole.ADMIN,
+            role=UserRole.LEARNING_PARTNER,
             is_active=True,
-            admin_department__is_learning_partner=True,
         ).exists():
             raise serializers.ValidationError("Select a valid learning partner, or none.")
         return value

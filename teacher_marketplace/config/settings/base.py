@@ -207,6 +207,11 @@ GEOS_LIBRARY_PATH = config(
 _gdal_dir = os.path.dirname(GDAL_LIBRARY_PATH)
 if _gdal_dir and os.path.isdir(_gdal_dir):
     os.environ["PATH"] = _gdal_dir + os.pathsep + os.environ.get("PATH", "")
+    # Python 3.8+ no longer searches PATH for a loaded DLL's dependencies
+    # on Windows (the safe DLL search change) - ctypes.CDLL() would still
+    # fail to resolve GDAL's sibling DLLs without this.
+    if hasattr(os, "add_dll_directory"):
+        os.add_dll_directory(_gdal_dir)
     _proj_data = config("PROJ_DATA", default="") or config("PROJ_LIB", default="")
     if not _proj_data:
         for _cand in (

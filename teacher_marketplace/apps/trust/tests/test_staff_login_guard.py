@@ -17,7 +17,11 @@ from rest_framework.test import APITestCase
 
 from apps.accounts.models import AdminDepartment, User, UserRole
 from apps.accounts.services.admin_account_naming import build_admin_account_name
-from apps.accounts.tests.helpers import TEST_PASSWORD, make_user
+from apps.accounts.tests.helpers import (
+    TEST_PASSWORD,
+    make_learning_partner_admin,
+    make_user,
+)
 from apps.trust.models import AccountSanction, AccountSanctionSource
 from apps.trust.services.staff_login_guard_service import StaffLoginGuardService
 
@@ -25,6 +29,7 @@ _SMALL = dict(STAFF_LOGIN_BRUTEFORCE_THRESHOLD=3, STAFF_LOGIN_IP_BLOCK_MINUTES=6
 
 SUPERADMIN_LOGIN = "/api/v1/auth/staff/login-superadmin/"
 ADMIN_LOGIN = "/api/v1/auth/staff/login-admin/"
+LEARNING_PARTNER_LOGIN = "/api/v1/auth/staff/login-learning-partner/"
 
 
 def _make_named_admin(**over):
@@ -127,6 +132,58 @@ class AccountAutoBanTests(APITestCase):
             format="json",
         )
         self.assertEqual(blocked.status_code, 429)
+
+    def test_learning_partner_account_auto_banned_after_threshold(self):
+        lp = make_learning_partner_admin("GuardOrg", mobile="919000000310")
+        for _ in range(3):
+            r = self.client.post(
+                LEARNING_PARTNER_LOGIN,
+                {"account_name": lp.admin_account_name, "password": "wrong"},
+                format="json",
+            )
+            self.assertEqual(r.status_code, 400)
+
+        lp.refresh_from_db()
+        self.assertFalse(lp.is_active)
+        self.assertTrue(
+            AccountSanction.objects.filter(
+                user=lp,
+                active=True,
+                source=AccountSanctionSource.AUTO_STAFF_LOGIN_BRUTEFORCE,
+            ).exists()
+        )
+
+    def test_admin_page_failures_do_not_count_against_the_learning_partner_page(self):
+        """
+        Each staff-login page keys its counters separately (page="admin" vs
+        page="learning_partner") - a Learning Partner account name rejected
+        at the Admin door (LearningPartnerWrongPortalException, raised
+        before any guard bookkeeping) must never itself count as a failed
+        attempt anywhere, and a real Learning Partner account's own
+        failures on ITS page must still count normally afterwards.
+        """
+        lp = make_learning_partner_admin("IsolationOrg", mobile="919000000311")
+        for _ in range(5):
+            r = self.client.post(
+                ADMIN_LOGIN,
+                {"account_name": lp.admin_account_name, "password": TEST_PASSWORD},
+                format="json",
+            )
+            self.assertEqual(r.status_code, 400)
+        lp.refresh_from_db()
+        self.assertTrue(lp.is_active)
+        self.assertFalse(AccountSanction.objects.filter(user=lp).exists())
+
+        # Threshold is 3 - three real failures on the Learning Partner's
+        # OWN page still ban it normally.
+        for _ in range(3):
+            self.client.post(
+                LEARNING_PARTNER_LOGIN,
+                {"account_name": lp.admin_account_name, "password": "wrong"},
+                format="json",
+            )
+        lp.refresh_from_db()
+        self.assertFalse(lp.is_active)
 
 
 @override_settings(**_SMALL)

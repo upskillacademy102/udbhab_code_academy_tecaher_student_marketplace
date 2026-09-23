@@ -15,6 +15,7 @@ import { Availability } from "@/routes/teacher/Availability";
 import { Plan } from "@/routes/teacher/Plan";
 import { AdminAccountRequests } from "@/routes/superadmin/AdminAccountRequests";
 import { Departments } from "@/routes/superadmin/Departments";
+import { LearningPartners } from "@/routes/superadmin/LearningPartners";
 import { TaxonomyRequests } from "@/routes/superadmin/TaxonomyRequests";
 import { Dashboard as SuperAdminDashboard } from "@/routes/superadmin/Dashboard";
 import { Users as SuperAdminUsers } from "@/routes/superadmin/Users";
@@ -87,6 +88,7 @@ export function App() {
       <Route path="/staff/superadmin/sanctions/" element={<Sanctions />} />
       <Route path="/staff/superadmin/admin-account-requests/" element={<AdminAccountRequests />} />
       <Route path="/staff/superadmin/departments/" element={<Departments />} />
+      <Route path="/staff/superadmin/learning-partners/" element={<LearningPartners />} />
       <Route path="/staff/superadmin/taxonomy-requests/" element={<TaxonomyRequests />} />
       <Route path="/staff/superadmin/subjects/" element={<SuperAdminSubjects />} />
       <Route path="/staff/superadmin/languages/" element={<SuperAdminLanguages />} />

@@ -250,7 +250,6 @@ export interface AdminDepartment {
   name: string;
   slug: string;
   is_active: boolean;
-  is_learning_partner: boolean;
   admin_count: number;
   created_at: string;
   updated_at: string;
@@ -269,6 +268,8 @@ export interface AdminAccountRequest {
   last_name: string;
   organization_name: string;
   status: "pending" | "approved" | "denied";
+  requested_department: string | null;
+  requested_department_name: string | null;
   department: string | null;
   department_name: string | null;
   created_admin_account_name: string | null;
@@ -277,6 +278,22 @@ export interface AdminAccountRequest {
   deny_reason: string;
   requested_ip: string | null;
   requested_user_agent: string;
+  created_at: string;
+}
+
+/**
+ * GET /auth/staff/learning-partners/ — every Learning Partner account
+ * (active or not), for the superadmin's Learning Partners > Active tab.
+ */
+export interface LearningPartnerAdmin {
+  id: string;
+  organization_name: string;
+  email: string;
+  mobile: string;
+  admin_account_name: string;
+  is_active: boolean;
+  students_count: number;
+  teachers_count: number;
   created_at: string;
 }
 
@@ -458,7 +475,7 @@ export interface AdminUser {
   first_name: string;
   last_name: string;
   full_name: string;
-  role: "student" | "teacher" | "admin" | "superadmin";
+  role: "student" | "teacher" | "admin" | "superadmin" | "learning_partner";
   is_active: boolean;
   is_staff: boolean;
   is_email_verified: boolean;
@@ -517,6 +534,7 @@ export interface OpsOverview {
   taxonomy: { subjects: number; languages: number };
   pending_admin_logins: number;
   pending_admin_account_requests: number;
+  pending_learning_partner_requests: number;
   security_events_7d: number;
   leads?: { total: number; new_7d: number };
   revenue?: { total: string; last_30d: string };

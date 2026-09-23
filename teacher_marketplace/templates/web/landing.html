@@ -75,6 +75,19 @@ Honesty constraints held throughout:
           I'm a teacher
           <span aria-hidden="true" class="text-pine-600 transition group-hover:translate-x-0.5">→</span>
         </a>
+        {% comment %}Marigold, not pine - a Learning Partner is a different kind of
+        visitor again (an organisation, reviewed by hand, not a
+        student/teacher self-registering), and the header otherwise uses
+        no marigold, so this reads as its own distinct door rather than a
+        third near-identical role choice. Links to the /learning-partner/
+        gateway (become vs. login), not straight to the request form -
+        an already-approved partner needs a sign-in door too.{% endcomment %}
+        <a href="/learning-partner/"
+           class="group inline-flex items-center gap-1.5 rounded-full border-[1.5px] border-marigold-300 bg-marigold-50 py-1.5 pl-3 pr-2.5 text-[0.875rem] font-semibold text-marigold-800 transition duration-150 ease-enter hover:border-marigold-600 hover:bg-marigold-100">
+          {% icon "globe" "h-4 w-4" %}
+          I am a Learning Partner
+          <span aria-hidden="true" class="text-marigold-600 transition group-hover:translate-x-0.5">→</span>
+        </a>
       </nav>
       <div class="flex items-center gap-2">
         <a href="/login/" class="u-btn-ghost u-btn-sm sm:min-h-[40px] sm:px-4 sm:text-[0.9375rem]">Log in</a>

@@ -400,9 +400,9 @@ def nav_for(role, user=None):
         return _STUDENT
     if role == "teacher":
         return _teacher_nav()
+    if role == "learning_partner":
+        return _LEARNING_PARTNER
     if role == "admin":
-        if user is not None and user.is_learning_partner_admin:
-            return _LEARNING_PARTNER
         return _repoint(
             _ADMIN_SECTIONS,
             {
@@ -425,5 +425,22 @@ def nav_for(role, user=None):
         # drop the plain "Users" link (superadmin gets the full management one
         # under Platform Oversight instead)
         base[1]["items"] = [i for i in base[1]["items"] if i.get("label") != "Users"]
+        # "Learning Partners" is superadmin-only governance (review/approve
+        # partner orgs), not something a plain admin manages - inserted here
+        # rather than in the shared _ADMIN_SECTIONS so plain admins never
+        # see it. Placed right after Teachers, per the People section's
+        # existing "who is on the platform" ordering.
+        people_items = base[1]["items"]
+        teachers_idx = next(
+            i for i, item in enumerate(people_items) if item["label"] == "Teachers"
+        )
+        people_items.insert(
+            teachers_idx + 1,
+            {
+                "label": "Learning Partners",
+                "url": "/staff/superadmin/learning-partners/",
+                "icon": "globe",
+            },
+        )
         return base[:-1] + [_SUPERADMIN_OVERSIGHT, _SUPERADMIN_PROVISIONING] + base[-1:]
     return []

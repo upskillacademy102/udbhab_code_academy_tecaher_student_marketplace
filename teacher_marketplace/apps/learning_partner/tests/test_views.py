@@ -20,7 +20,7 @@ Run: python manage.py test apps.learning_partner.tests.test_views \
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.accounts.models import AdminDepartment, User, UserRole
+from apps.accounts.models import User, UserRole
 from apps.accounts.tests.helpers import TEST_PASSWORD, login, make_user
 from apps.trust.models import LearningPartnerTaxonomyRequest, TaxonomyRequestStatus
 
@@ -32,15 +32,16 @@ TAXONOMY_REQUESTS_URL = "/api/v1/lp/taxonomy-requests/"
 
 def _login_lp(client, lp_admin):
     """
-    A Learning Partner is a new-flow admin (admin_account_name set) - it
-    signs in via /staff/login-admin/ (account name + password), not the
-    shared login() helper, which routes role=admin through the OLD
+    A Learning Partner signs in with its admin_account_name at its own
+    dedicated endpoint, /staff/login-learning-partner/ - not the shared
+    login() helper, which routes role=admin through the OLD
     /auth/admin/login/ approval flow that explicitly rejects any account
-    with admin_account_name set (see AdminLoginView.post). Same pattern
-    apps.accounts.tests.test_staff_dashboards/test_staff_login already use.
+    with admin_account_name set (see AdminLoginView.post), and not
+    /staff/login-admin/ either, which now rejects a Learning Partner
+    account name outright (see StaffAdminLoginView).
     """
     r = client.post(
-        "/api/v1/auth/staff/login-admin/",
+        "/api/v1/auth/staff/login-learning-partner/",
         {"account_name": lp_admin.admin_account_name, "password": TEST_PASSWORD},
         format="json",
     )
@@ -49,20 +50,13 @@ def _login_lp(client, lp_admin):
 
 
 def _lp_admin(name, mobile):
-    dept, _ = AdminDepartment.objects.get_or_create(
-        name="Learning Partner", defaults={"is_learning_partner": True}
-    )
-    if not dept.is_learning_partner:
-        dept.is_learning_partner = True
-        dept.save(update_fields=["is_learning_partner"])
     return User.objects.create_user(
         password=TEST_PASSWORD,
         email=f"{name.lower()}@example.com",
         mobile=mobile,
         first_name=name,
         last_name="",
-        role=UserRole.ADMIN,
-        admin_department=dept,
+        role=UserRole.LEARNING_PARTNER,
         admin_account_name=f"{name}@LearningPartner",
     )
 

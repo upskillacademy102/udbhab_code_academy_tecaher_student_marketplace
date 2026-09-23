@@ -126,10 +126,7 @@ export function Departments() {
             <tbody className="divide-y divide-ink-100">
               {items.map((d) => (
                 <tr key={d.id}>
-                  <td className="px-4 py-3 font-medium text-ink-900">
-                    {d.name}
-                    {d.is_learning_partner && <span className="u-badge u-badge-ink ml-2">Learning Partner</span>}
-                  </td>
+                  <td className="px-4 py-3 font-medium text-ink-900">{d.name}</td>
                   <td className="px-4 py-3 text-ink-600">{d.admin_count}</td>
                   <td className="px-4 py-3">
                     <span className={d.is_active ? "u-badge u-badge-pine" : "u-badge u-badge-ink"}>
@@ -138,13 +135,7 @@ export function Departments() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        className="u-btn-ghost u-btn-sm"
-                        disabled={d.is_learning_partner}
-                        title={d.is_learning_partner ? "Required by the platform — can't be renamed" : undefined}
-                        onClick={() => openRename(d)}
-                      >
+                      <button type="button" className="u-btn-ghost u-btn-sm" onClick={() => openRename(d)}>
                         Rename
                       </button>
                       <button type="button" className="u-btn-ghost u-btn-sm" onClick={() => toggleActive(d)}>
@@ -153,14 +144,8 @@ export function Departments() {
                       <button
                         type="button"
                         className="u-btn-ghost u-btn-sm text-danger hover:bg-danger/5"
-                        disabled={d.admin_count > 0 || d.is_learning_partner}
-                        title={
-                          d.is_learning_partner
-                            ? "Required by the platform — can't be removed"
-                            : d.admin_count > 0
-                              ? "Has active admins assigned"
-                              : undefined
-                        }
+                        disabled={d.admin_count > 0}
+                        title={d.admin_count > 0 ? "Has active admins assigned" : undefined}
                         onClick={() => remove(d)}
                       >
                         Delete

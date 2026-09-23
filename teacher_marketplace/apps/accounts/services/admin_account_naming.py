@@ -30,11 +30,16 @@ def build_admin_account_name(
 ) -> str:
     if organization_name:
         # A Learning Partner request: the whole org name is one token stream
-        # ("Learn Academy" -> "LearnAcademy"), not a first+last split.
+        # ("Learn Academy" -> "LearnAcademy"), not a first+last split. A
+        # Learning Partner has no department (it's a role, not a department
+        # membership - see UserRole.LEARNING_PARTNER), so the "@Department"
+        # suffix is the fixed literal every partner account shares.
         base = normalize_name_part(organization_name)
+        dept_part = "LearningPartner"
     else:
         base = normalize_name_part(first_name) + normalize_name_part(last_name)
-    return f"{base}@{department.canonical_name}"
+        dept_part = department.canonical_name
+    return f"{base}@{dept_part}"
 
 
 @transaction.atomic
@@ -93,7 +98,7 @@ def _approve_and_create_admin_once(request, *, department, reviewed_by):
         # (e.g. "Learn Academy") rather than a first+last split.
         first_name=request.organization_name or request.first_name,
         last_name="" if request.organization_name else request.last_name,
-        role=UserRole.ADMIN,
+        role=UserRole.LEARNING_PARTNER if request.organization_name else UserRole.ADMIN,
         admin_account_name=final_name,
         admin_department=department,
         # Already-hashed (make_password) at request-submission time - copied

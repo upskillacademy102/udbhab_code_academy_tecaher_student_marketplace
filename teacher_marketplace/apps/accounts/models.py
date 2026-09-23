@@ -38,7 +38,7 @@ from apps.utils.validators import (
 
 class UserRole(models.TextChoices):
     """
-    Enumerates the four roles supported by the platform. Stored as
+    Enumerates the five roles supported by the platform. Stored as
     a plain CharField choice (not a separate table) since roles are
     a small, fixed, rarely-changing set - a full RBAC/permissions
     table would be over-engineering for this platform's needs.
@@ -48,6 +48,11 @@ class UserRole(models.TextChoices):
     TEACHER = "teacher", _("Teacher")
     ADMIN = "admin", _("Admin")
     SUPERADMIN = "superadmin", _("Super Admin")
+    # A partner organisation (school/coaching centre), not internal staff -
+    # see User.is_learning_partner_admin. Previously modelled as role=admin
+    # plus a magic protected AdminDepartment; split into its own role so
+    # "which department" and "is this a partner org" aren't the same field.
+    LEARNING_PARTNER = "learning_partner", _("Learning Partner")
 
 
 class UserManager(BaseUserManager):
@@ -202,14 +207,11 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        limit_choices_to={
-            "role": "admin",
-            "admin_department__is_learning_partner": True,
-        },
+        limit_choices_to={"role": "learning_partner"},
         help_text=_(
-            "The Learning Partner organisation (an admin User whose "
-            "department is the Learning Partner department) this "
-            "student/teacher identified at signup. Null for everyone else."
+            "The Learning Partner organisation (a User with "
+            "role=learning_partner) this student/teacher identified at "
+            "signup. Null for everyone else."
         ),
     )
 
@@ -218,18 +220,13 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
     @property
     def is_learning_partner_admin(self) -> bool:
         """
-        True for an admin whose department is the one seeded Learning
-        Partner department - each such admin represents one partner
-        organisation rather than an internal staff member. Single source
-        of truth for this check (nav, routing, the learning_partner app's
-        permission gate) so it's never re-derived slightly differently in
-        more than one place.
+        True for a Learning Partner account - each one represents one
+        partner organisation (school/coaching centre) rather than an
+        internal staff member. Single source of truth for this check (nav,
+        routing, the learning_partner app's permission gate) so it's never
+        re-derived slightly differently in more than one place.
         """
-        return (
-            self.role == UserRole.ADMIN
-            and self.admin_department_id is not None
-            and self.admin_department.is_learning_partner
-        )
+        return self.role == UserRole.LEARNING_PARTNER
 
     @property
     def taxonomy_scope_id(self):
@@ -537,17 +534,6 @@ class AdminDepartment(BaseModel):
     name = models.CharField(_("name"), max_length=80, unique=True, db_index=True)
     slug = models.SlugField(_("slug"), max_length=90, unique=True, blank=True)
     is_active = models.BooleanField(_("is active"), default=True, db_index=True)
-    is_learning_partner = models.BooleanField(
-        _("is learning partner"),
-        default=False,
-        db_index=True,
-        help_text=_(
-            "True for exactly one seeded department ('Learning Partner'). "
-            "Admins in this department each represent one partner "
-            "organisation (school/coaching centre) rather than an internal "
-            "staff member - never settable via the API."
-        ),
-    )
 
     class Meta:
         verbose_name = _("Admin department")
@@ -626,6 +612,21 @@ class AdminAccountRequest(BaseModel):
         choices=AdminAccountRequestStatus.choices,
         default=AdminAccountRequestStatus.PENDING,
         db_index=True,
+    )
+    requested_department = models.ForeignKey(
+        "accounts.AdminDepartment",
+        verbose_name=_("requested department"),
+        related_name="requested_account_requests",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        help_text=_(
+            "The department the requester asked to join at submission time "
+            "(mandatory on the public request form; auto-set to Learning "
+            "Partner for a Learning Partner request). Distinct from "
+            "`department`, which is set at approval and may point elsewhere "
+            "if a Super Admin assigns a different department."
+        ),
     )
     department = models.ForeignKey(
         "accounts.AdminDepartment",

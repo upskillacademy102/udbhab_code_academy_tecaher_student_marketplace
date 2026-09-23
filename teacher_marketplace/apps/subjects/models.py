@@ -47,10 +47,7 @@ class Subject(BaseModel):
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        limit_choices_to={
-            "role": "admin",
-            "admin_department__is_learning_partner": True,
-        },
+        limit_choices_to={"role": "learning_partner"},
         help_text=_(
             "Null = platform-wide, visible to everyone. Set = a Learning "
             "Partner-requested subject, visible only to that partner's own "

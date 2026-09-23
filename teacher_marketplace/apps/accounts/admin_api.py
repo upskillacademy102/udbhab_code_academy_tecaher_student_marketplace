@@ -183,11 +183,12 @@ class AdminUserCreateSerializer(serializers.Serializer):
         return value
 
     def validate_role(self, value):
-        if value == UserRole.ADMIN:
+        if value in (UserRole.ADMIN, UserRole.LEARNING_PARTNER):
             raise serializers.ValidationError(
-                "Admin accounts can only be created through the admin-account "
-                "request/approval flow (Super Admin dashboard -> Admin "
-                "account requests), not created directly here."
+                "Admin and Learning Partner accounts can only be created "
+                "through the admin-account request/approval flow (Super "
+                "Admin dashboard -> Admin account requests / Learning "
+                "Partners), not created directly here."
             )
         actor = (
             self.context["request"].web_user
@@ -217,12 +218,13 @@ class AdminUserUpdateSerializer(serializers.Serializer):
     role = serializers.ChoiceField(choices=UserRole.choices, required=False)
 
     def validate_role(self, value):
-        if value == UserRole.ADMIN:
+        if value in (UserRole.ADMIN, UserRole.LEARNING_PARTNER):
             raise serializers.ValidationError(
-                "A user can only become an Admin through the admin-account "
-                "request/approval flow (Super Admin dashboard -> Admin "
-                "account requests) - role can't be changed to admin here, "
-                "even by a Super Admin. Moving an existing Admin OUT of the "
+                "A user can only become an Admin or Learning Partner through "
+                "the admin-account request/approval flow (Super Admin "
+                "dashboard -> Admin account requests / Learning Partners) - "
+                "role can't be changed to either here, even by a Super "
+                "Admin. Moving an existing Admin/Learning Partner OUT of the "
                 "role (e.g. back to teacher) is unaffected."
             )
         return value
@@ -282,6 +284,11 @@ class AdminAccountRequestCreateSerializer(serializers.Serializer):
     mobile = serializers.CharField(max_length=17, validators=[validate_mobile_number])
     first_name = serializers.CharField(max_length=150, validators=[validate_name])
     last_name = serializers.CharField(max_length=150, validators=[validate_name])
+    requested_department_id = serializers.PrimaryKeyRelatedField(
+        source="requested_department",
+        queryset=AdminDepartment.objects.filter(is_active=True),
+        help_text="The department the requester wants to join.",
+    )
     password = serializers.CharField(write_only=True, style={"input_type": "password"})
     password_confirm = serializers.CharField(
         write_only=True, style={"input_type": "password"}
@@ -401,6 +408,9 @@ class AdminAccountRequestSerializer(serializers.ModelSerializer):
     department_name = serializers.CharField(
         source="department.name", read_only=True, default=None
     )
+    requested_department_name = serializers.CharField(
+        source="requested_department.name", read_only=True, default=None
+    )
     reviewed_by_email = serializers.CharField(
         source="reviewed_by.email", read_only=True, default=None
     )
@@ -418,6 +428,8 @@ class AdminAccountRequestSerializer(serializers.ModelSerializer):
             "last_name",
             "organization_name",
             "status",
+            "requested_department",
+            "requested_department_name",
             "department",
             "department_name",
             "created_admin_account_name",
@@ -441,7 +453,6 @@ class AdminDepartmentSerializer(serializers.ModelSerializer):
             "name",
             "slug",
             "is_active",
-            "is_learning_partner",
             "admin_count",
             "created_at",
             "updated_at",
@@ -449,7 +460,6 @@ class AdminDepartmentSerializer(serializers.ModelSerializer):
         read_only_fields = (
             "id",
             "slug",
-            "is_learning_partner",
             "admin_count",
             "created_at",
             "updated_at",
@@ -460,15 +470,6 @@ class AdminDepartmentSerializer(serializers.ModelSerializer):
 
     def validate_name(self, value):
         value = value.strip() if isinstance(value, str) else value
-        if (
-            self.instance is not None
-            and self.instance.is_learning_partner
-            and value != self.instance.name
-        ):
-            raise serializers.ValidationError(
-                "The Learning Partner department is required by the "
-                "platform and cannot be renamed."
-            )
         qs = AdminDepartment.all_objects.filter(name__iexact=value)
         if self.instance is not None:
             qs = qs.exclude(pk=self.instance.pk)
@@ -1008,8 +1009,13 @@ class AdminLoginRequestDecisionView(APIView):
 # ======================================================================
 # Staff gateway direct login (Super Admin: direct; Admin: account-name +
 # password, one-time-approved at account-creation - see
-# apps.accounts.services.admin_account_naming). Reached only via the
-# hidden triple-click gateway, never linked from any nav.
+# apps.accounts.services.admin_account_naming). Super Admin and Admin are
+# reached only via the hidden triple-click gateway, never linked from any
+# nav. Learning Partner sign-in (further below) is a separate, dedicated
+# endpoint and page - reached from the normal "I am a Learning Partner"
+# link on the landing page, not the hidden gateway - so a partner never
+# needs to type an admin account name to get in, and an admin account
+# name is never accepted there either.
 # ======================================================================
 @extend_schema(
     tags=["Authentication"],
@@ -1061,6 +1067,102 @@ class StaffSuperAdminLoginView(APIView):
         return _issue_session_response(user, request, "Signed in.")
 
 
+class LearningPartnerWrongPortalException(ValidationException):
+    """
+    Raised when a Learning Partner account name is submitted at the Admin
+    staff-login page. Learning Partner accounts get their own dedicated
+    sign-in page (StaffLearningPartnerLoginView / /learning-partner/login/)
+    so they are never mixed in with genuine Admin sign-in attempts (or the
+    Admin page's ban-deterrent copy, which is aimed at someone impersonating
+    staff, not a partner organisation at the wrong door). The frontend
+    (static/js/auth.js's staffAdminLogin) redirects to the Learning Partner
+    login page on this error_code rather than showing it inline.
+    """
+
+    default_detail = "Learning Partner accounts sign in from the Learning Partner login page."
+    error_code = "LEARNING_PARTNER_WRONG_PORTAL"
+
+
+_STAFF_ACCOUNT_LOGIN_LABEL = {
+    UserRole.ADMIN: "Admin",
+    UserRole.LEARNING_PARTNER: "Learning Partner",
+}
+
+
+def _staff_login_by_account_name(request, *, role, page):
+    """
+    Shared account-name + password sign-in, used by both
+    StaffAdminLoginView (role=admin) and StaffLearningPartnerLoginView
+    (role=learning_partner) - identical mechanics, scoped to exactly one
+    role each so an account of the "wrong" kind is never authenticated on
+    the "wrong" page even if it somehow reaches this far.
+
+    Cannot use django.contrib.auth.authenticate() - USERNAME_FIELD is
+    "email", not admin_account_name - so the lookup + password check are
+    done directly here instead.
+    """
+    StaffLoginGuardService.check_ip_block(request, page=page)
+    CaptchaService.verify_or_raise(request)
+
+    account_name = (request.data.get("account_name") or "").strip()
+    password = request.data.get("password") or ""
+
+    user = User.objects.filter(admin_account_name=account_name, role=role).first()
+
+    if user is None:
+        # Constant-time-ish: still run a hash comparison against a
+        # dummy value so "no such account name" and "wrong password"
+        # take comparable time (mirrors Django's own ModelBackend,
+        # which does the same when a username doesn't resolve).
+        check_password(password, make_password(None))
+        valid = False
+    else:
+        valid = user.is_active and user.check_password(password)
+
+    if not valid:
+        StaffLoginGuardService.record_failure(
+            request, page=page, identifier=account_name, resolved_user=user
+        )
+        raise ValidationException(detail="Incorrect account name or password.")
+
+    CaptchaService.record_account_use(request, user.id)
+    StaffLoginGuardService.record_success(page=page, identifier=account_name)
+
+    with transaction.atomic():
+        user = User.objects.select_for_update().get(pk=user.pk)
+        first_login = not user.has_seen_admin_credentials_notice
+        if first_login:
+            user.has_seen_admin_credentials_notice = True
+            user.save(
+                update_fields=["has_seen_admin_credentials_notice", "updated_at"]
+            )
+        session = UserSession.start(
+            user, device_info=request.META.get("HTTP_USER_AGENT")
+        )
+
+    access, refresh = issue_pair(user, sid=session.session_id)
+    label = _STAFF_ACCOUNT_LOGIN_LABEL[role]
+    AuditService.record(
+        request=request,
+        category=AuditCategory.AUTH,
+        action=f"staff_login.{page}",
+        actor=user,
+        message=f"{label} {user.admin_account_name} signed in via the staff gateway",
+        first_login=first_login,
+    )
+    resp = APIResponse.success(
+        data={
+            "access": access,
+            "refresh": refresh,
+            "user": AdminUserSerializer(user).data,
+            "first_login_notice": first_login,
+        },
+        message="Signed in.",
+    )
+    set_auth_cookies(resp, access, refresh)
+    return resp
+
+
 @extend_schema(
     tags=["Authentication"],
     summary="Admin sign-in with the generated account name (staff gateway)",
@@ -1084,70 +1186,50 @@ class StaffAdminLoginView(APIView):
     throttle_classes = [ResilientAnonRateThrottle, AdminLoginRateThrottle]
 
     def post(self, request):
-        StaffLoginGuardService.check_ip_block(request, page="admin")
-        CaptchaService.verify_or_raise(request)
-
         account_name = (request.data.get("account_name") or "").strip()
-        password = request.data.get("password") or ""
+        # Prohibited outright - a Learning Partner account name never signs
+        # in here, correct password or not. See LearningPartnerWrongPortalException.
+        if User.objects.filter(
+            admin_account_name=account_name, role=UserRole.LEARNING_PARTNER
+        ).exists():
+            raise LearningPartnerWrongPortalException()
+        return _staff_login_by_account_name(request, role=UserRole.ADMIN, page="admin")
 
-        # Cannot use django.contrib.auth.authenticate() - USERNAME_FIELD is
-        # "email", not admin_account_name - so the lookup + password check
-        # are done directly here instead.
-        user = User.objects.filter(
-            admin_account_name=account_name, role=UserRole.ADMIN
-        ).first()
 
-        if user is None:
-            # Constant-time-ish: still run a hash comparison against a
-            # dummy value so "no such account name" and "wrong password"
-            # take comparable time (mirrors Django's own ModelBackend,
-            # which does the same when a username doesn't resolve).
-            check_password(password, make_password(None))
-            valid = False
-        else:
-            valid = user.is_active and user.check_password(password)
-
-        if not valid:
-            StaffLoginGuardService.record_failure(
-                request, page="admin", identifier=account_name, resolved_user=user
-            )
-            raise ValidationException(detail="Incorrect account name or password.")
-
-        CaptchaService.record_account_use(request, user.id)
-        StaffLoginGuardService.record_success(page="admin", identifier=account_name)
-
-        with transaction.atomic():
-            user = User.objects.select_for_update().get(pk=user.pk)
-            first_login = not user.has_seen_admin_credentials_notice
-            if first_login:
-                user.has_seen_admin_credentials_notice = True
-                user.save(
-                    update_fields=["has_seen_admin_credentials_notice", "updated_at"]
-                )
-            session = UserSession.start(
-                user, device_info=request.META.get("HTTP_USER_AGENT")
-            )
-
-        access, refresh = issue_pair(user, sid=session.session_id)
-        AuditService.record(
-            request=request,
-            category=AuditCategory.AUTH,
-            action="staff_login.admin",
-            actor=user,
-            message=f"Admin {user.admin_account_name} signed in via the staff gateway",
-            first_login=first_login,
+@extend_schema(
+    tags=["Authentication"],
+    summary="Learning Partner sign-in with the generated account name",
+    request=inline_serializer(
+        "StaffLearningPartnerLoginRequest",
+        {
+            "account_name": drf_serializers.CharField(),
+            "password": drf_serializers.CharField(),
+        },
+    ),
+    responses={
+        200: OpenApiResponse(
+            description="Signed in; auth cookies set. `data.first_login_notice` "
+            "is true exactly once, on this partner's very first successful login."
         )
-        resp = APIResponse.success(
-            data={
-                "access": access,
-                "refresh": refresh,
-                "user": AdminUserSerializer(user).data,
-                "first_login_notice": first_login,
-            },
-            message="Signed in.",
+    },
+)
+class StaffLearningPartnerLoginView(APIView):
+    """
+    Dedicated Learning Partner sign-in, separate from StaffAdminLoginView -
+    a Learning Partner account name (always "...@LearningPartner") is never
+    accepted on the Admin page (see LearningPartnerWrongPortalException
+    above), and this page never accepts a plain Admin's account name either
+    (the role filter below is exact, not role__in).
+    """
+
+    permission_classes = []
+    authentication_classes = []
+    throttle_classes = [ResilientAnonRateThrottle, AdminLoginRateThrottle]
+
+    def post(self, request):
+        return _staff_login_by_account_name(
+            request, role=UserRole.LEARNING_PARTNER, page="learning_partner"
         )
-        set_auth_cookies(resp, access, refresh)
-        return resp
 
 
 # ======================================================================
@@ -1184,6 +1266,7 @@ class AdminAccountRequestCreateView(APIView):
             mobile=data["mobile"],
             first_name=data["first_name"],
             last_name=data["last_name"],
+            requested_department=data["requested_department"],
             password_hash=make_password(data["password"]),
             requested_ip=request.META.get("REMOTE_ADDR"),
             requested_user_agent=request.META.get("HTTP_USER_AGENT", "")[:400],
@@ -1194,7 +1277,8 @@ class AdminAccountRequestCreateView(APIView):
             action="admin_account_request.submitted",
             status=AuditStatus.PENDING,
             target=req,
-            message=f"{req.email} requested an admin account",
+            message=f"{req.email} requested an admin account "
+            f"({req.requested_department.name})",
         )
         return APIResponse.created(
             data={"id": str(req.id), "status": req.status},
@@ -1262,17 +1346,48 @@ class LearningPartnerListView(APIView):
 
     def get(self, request):
         partners = (
-            User.objects.filter(
-                role=UserRole.ADMIN,
-                is_active=True,
-                admin_department__is_learning_partner=True,
-            )
+            User.objects.filter(role=UserRole.LEARNING_PARTNER, is_active=True)
             .order_by("first_name")
             .values("id", "first_name")
         )
         return APIResponse.success(
             data=[{"id": str(p["id"]), "name": p["first_name"]} for p in partners]
         )
+
+
+@extend_schema(
+    tags=["User Management"],
+    summary="List Learning Partner accounts (super admin)",
+)
+class LearningPartnerAdminListView(APIView):
+    """
+    Every Learning Partner account (active or not) for the superadmin's
+    "Learning Partners" > Active tab - distinct from the public
+    LearningPartnerListView above (active-only, minimal shape, for the
+    signup dropdown).
+    """
+
+    def get(self, request):
+        partners = User.objects.filter(role=UserRole.LEARNING_PARTNER).order_by(
+            "-created_at"
+        )
+        data = []
+        for p in partners:
+            referred = User.objects.filter(learning_partner=p)
+            data.append(
+                {
+                    "id": str(p.id),
+                    "organization_name": p.first_name,
+                    "email": p.email,
+                    "mobile": p.mobile,
+                    "admin_account_name": p.admin_account_name,
+                    "is_active": p.is_active,
+                    "students_count": referred.filter(role=UserRole.STUDENT).count(),
+                    "teachers_count": referred.filter(role=UserRole.TEACHER).count(),
+                    "created_at": p.created_at,
+                }
+            )
+        return APIResponse.success(data=data)
 
 
 @extend_schema(
@@ -1288,6 +1403,14 @@ class AdminAccountRequestListView(APIView):
         status_param = request.query_params.get("status")
         if status_param:
             qs = qs.filter(status=status_param)
+        # Learning Partner requests (organization_name set) live in their
+        # own dedicated review tab (Learning Partners > Requests), not this
+        # generic staff-department queue - default excludes them; pass
+        # ?kind=learning_partner to fetch only them instead.
+        if request.query_params.get("kind") == "learning_partner":
+            qs = qs.exclude(organization_name="")
+        else:
+            qs = qs.filter(organization_name="")
         return APIResponse.success(
             data=AdminAccountRequestSerializer(qs[:200], many=True).data
         )
@@ -1316,26 +1439,23 @@ class AdminAccountRequestDecisionView(APIView):
             raise ValidationException(detail=f"This request is already {req.status}.")
 
         if self.approve:
-            department_id = request.data.get("department_id")
-            if not department_id:
-                # The "no way around it" requirement, enforced server-side:
-                # approval and department assignment are one action, not two.
-                raise ValidationException(
-                    detail="Select a department to approve this request — "
-                    "approval and department assignment happen together."
-                )
-            department = AdminDepartment.objects.filter(
-                id=department_id, is_active=True
-            ).first()
-            if department is None:
-                raise ValidationException(detail="Select a valid, active department.")
-
             is_lp_request = bool(req.organization_name)
-            if is_lp_request != department.is_learning_partner:
-                raise ValidationException(
-                    detail="Learning Partner requests can only be approved "
-                    "into the Learning Partner department, and vice versa."
-                )
+            department = None
+            if not is_lp_request:
+                # A Learning Partner request has nothing to pick - it's a
+                # role, not a department membership. A regular staff request
+                # still needs one; "no way around it" is enforced server-side.
+                department_id = request.data.get("department_id")
+                if not department_id:
+                    raise ValidationException(
+                        detail="Select a department to approve this request — "
+                        "approval and department assignment happen together."
+                    )
+                department = AdminDepartment.objects.filter(
+                    id=department_id, is_active=True
+                ).first()
+                if department is None:
+                    raise ValidationException(detail="Select a valid, active department.")
 
             user = approve_and_create_admin(
                 req, department=department, reviewed_by=_actor(request)
@@ -1345,8 +1465,10 @@ class AdminAccountRequestDecisionView(APIView):
                 category=AuditCategory.ADMIN_LOGIN,
                 action="admin_account_request.approved",
                 target=user,
-                message=f"{req.email} approved as admin ({user.admin_account_name})",
-                department=department.slug,
+                message=f"{req.email} approved as "
+                f"{'Learning Partner' if is_lp_request else 'admin'} "
+                f"({user.admin_account_name})",
+                department=department.slug if department else "learning_partner",
                 generated_account_name=user.admin_account_name,
             )
             return APIResponse.success(
@@ -1376,6 +1498,33 @@ class AdminAccountRequestDecisionView(APIView):
         )
         return APIResponse.success(
             data=AdminAccountRequestSerializer(req).data, message="Request denied."
+        )
+
+
+@extend_schema(
+    tags=["Authentication"],
+    summary="List active admin departments (public, for the request-access form)",
+)
+class AdminDepartmentPublicListView(APIView):
+    """
+    Public list of active departments - powers the mandatory department
+    dropdown on the "Request admin access" signup page (staff gateway).
+    Deliberately separate from AdminDepartmentListCreateView (Super Admin
+    only, full detail incl. admin_count) - this is a minimal, anonymous-safe
+    shape, same pattern as LearningPartnerListView.
+    """
+
+    permission_classes = []
+    authentication_classes = []
+
+    def get(self, request):
+        depts = (
+            AdminDepartment.objects.filter(is_active=True)
+            .order_by("name")
+            .values("id", "name")
+        )
+        return APIResponse.success(
+            data=[{"id": str(d["id"]), "name": d["name"]} for d in depts]
         )
 
 
@@ -1463,11 +1612,6 @@ class AdminDepartmentDetailView(APIView):
 
     def delete(self, request, id):
         department = self._get_department(id)
-        if department.is_learning_partner:
-            raise ConflictException(
-                detail="The Learning Partner department is required by the "
-                "platform and cannot be removed."
-            )
         if department.admins.filter(is_active=True).exists():
             raise ConflictException(
                 detail="This department has active admins assigned to it and "

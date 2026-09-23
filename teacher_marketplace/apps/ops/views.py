@@ -130,9 +130,16 @@ class OpsOverviewView(APIView):
             "pending_admin_logins": AdminLoginRequest.objects.filter(
                 status="pending", expires_at__gt=now
             ).count(),
+            # Excludes Learning Partner requests - they have their own card/
+            # queue below, matching AdminAccountRequestListView's default
+            # (organization_name="") so this count matches what that page
+            # actually shows when you click through.
             "pending_admin_account_requests": AdminAccountRequest.objects.filter(
-                status=AdminAccountRequestStatus.PENDING
+                status=AdminAccountRequestStatus.PENDING, organization_name=""
             ).count(),
+            "pending_learning_partner_requests": AdminAccountRequest.objects.filter(
+                status=AdminAccountRequestStatus.PENDING
+            ).exclude(organization_name="").count(),
             "security_events_7d": AuditLog.objects.filter(
                 category__in=["security", "impersonation", "admin_login"],
                 created_at__gte=since_7,

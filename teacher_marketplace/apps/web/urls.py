@@ -15,6 +15,7 @@ S = ("student",)
 T = ("teacher",)
 A = ("admin",)
 SA = ("superadmin",)
+LP = ("learning_partner",)
 
 app_name = "web"
 
@@ -47,6 +48,19 @@ urlpatterns = [
         "become-learning-partner/",
         views.become_learning_partner_page,
         name="become-learning-partner-page",
+    ),
+    # "I am a Learning Partner" (landing-page nav) lands here first: choose
+    # between requesting an account and signing in to an existing one. Not
+    # under /staff/ for the same reason as become-learning-partner/ above.
+    path(
+        "learning-partner/",
+        views.learning_partner_gateway_page,
+        name="learning-partner-gateway-page",
+    ),
+    path(
+        "learning-partner/login/",
+        views.learning_partner_login_page,
+        name="learning-partner-login-page",
     ),
     path("suspended/", views.suspended_page, name="suspended"),
     path("add-role/", views.add_role_page, name="add-role"),
@@ -506,6 +520,15 @@ urlpatterns += [
         name="staff-superadmin-departments",
     ),
     path(
+        "staff/superadmin/learning-partners/",
+        spa(
+            roles=SA,
+            title="Learning Partners",
+            desc="Active partner organisations, and requests to become one.",
+        ),
+        name="staff-superadmin-learning-partners",
+    ),
+    path(
         "staff/superadmin/taxonomy-requests/",
         spa(
             roles=SA,
@@ -614,16 +637,18 @@ urlpatterns += [
 ]
 
 # ============ LEARNING PARTNER SPA (React), Phase LP-2 ============
-# A Learning Partner is role=admin whose department is the Learning Partner
-# one (apps.accounts.models.User.is_learning_partner_admin) - mounted with
-# learning_partner_required rather than role_required("admin") so a plain
-# admin gets a clean 403 instead of a shell whose data calls all 403
-# underneath it (see apps.web.guards.learning_partner_required).
+# A Learning Partner is role=learning_partner (apps.accounts.models.User.
+# is_learning_partner_admin) - mounted with learning_partner_required
+# rather than role_required("learning_partner") so a non-LP user gets a
+# clean 403 instead of a shell whose data calls all 403 underneath it (see
+# apps.web.guards.learning_partner_required). roles=LP below is otherwise
+# unused at runtime (guard wins over roles - see spa()) and exists only to
+# document intent.
 urlpatterns += [
     path(
         "staff/learning-partner/",
         spa(
-            roles=A,
+            roles=LP,
             title="Learning Partner dashboard",
             desc="Your own referred students and teachers.",
             guard=learning_partner_required,
@@ -632,29 +657,29 @@ urlpatterns += [
     ),
     path(
         "staff/learning-partner/students/",
-        spa(roles=A, title="Students", desc="Students who identified your organisation at sign-up.", guard=learning_partner_required),
+        spa(roles=LP, title="Students", desc="Students who identified your organisation at sign-up.", guard=learning_partner_required),
         name="staff-learning-partner-students",
     ),
     path(
         "staff/learning-partner/students/<uuid:id>/",
-        spa(roles=A, title="Student detail", guard=learning_partner_required),
+        spa(roles=LP, title="Student detail", guard=learning_partner_required),
         name="staff-learning-partner-student-detail",
     ),
     path(
         "staff/learning-partner/teachers/",
-        spa(roles=A, title="Teachers", desc="Teachers who identified your organisation at sign-up.", guard=learning_partner_required),
+        spa(roles=LP, title="Teachers", desc="Teachers who identified your organisation at sign-up.", guard=learning_partner_required),
         name="staff-learning-partner-teachers",
     ),
     path(
         "staff/learning-partner/teachers/<uuid:id>/",
-        spa(roles=A, title="Teacher detail", guard=learning_partner_required),
+        spa(roles=LP, title="Teacher detail", guard=learning_partner_required),
         name="staff-learning-partner-teacher-detail",
     ),
     # ---- Phase LP-3: request-only Subjects/Languages ----
     path(
         "staff/learning-partner/subjects/",
         spa(
-            roles=A,
+            roles=LP,
             title="Subjects",
             desc="Subjects visible to your students/teachers. Request a new one for Super Admin review.",
             guard=learning_partner_required,
@@ -664,7 +689,7 @@ urlpatterns += [
     path(
         "staff/learning-partner/languages/",
         spa(
-            roles=A,
+            roles=LP,
             title="Languages",
             desc="Languages visible to your students/teachers. Request a new one for Super Admin review.",
             guard=learning_partner_required,
@@ -675,7 +700,7 @@ urlpatterns += [
     path(
         "staff/learning-partner/fake-lead-reports/",
         spa(
-            roles=A,
+            roles=LP,
             title="Fake-lead reports",
             desc="Your own students with an open fake-lead review item.",
             guard=learning_partner_required,
@@ -685,7 +710,7 @@ urlpatterns += [
     path(
         "staff/learning-partner/leads/",
         spa(
-            roles=A,
+            roles=LP,
             title="Leads & requirements",
             desc="Lead quality ratings on your own students, by student or by teacher.",
             guard=learning_partner_required,
@@ -695,7 +720,7 @@ urlpatterns += [
     path(
         "staff/learning-partner/audit/",
         spa(
-            roles=A,
+            roles=LP,
             title="Audit log",
             desc="Privileged actions involving your own referred students/teachers.",
             guard=learning_partner_required,

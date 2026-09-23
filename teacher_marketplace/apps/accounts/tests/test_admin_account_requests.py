@@ -28,12 +28,24 @@ CREATE_URL = "/api/v1/auth/staff/create-admin-account/"
 LIST_URL = "/api/v1/auth/staff/admin-account-requests/"
 
 
+def _requested_department_id():
+    # requested_department_id became required on the submission form once
+    # a requester started picking their target department up front (see
+    # AdminAccountRequestCreateSerializer) - reused get_or_create so every
+    # call in this file lands on the same row instead of racing to create
+    # duplicates. Independent of the `department_id` an approval chooses
+    # (AdminAccountRequestDecisionView never cross-checks the two), so any
+    # valid, active department works here.
+    return str(AdminDepartment.objects.get_or_create(name="Finance")[0].id)
+
+
 def _payload(**over):
     defaults = dict(
         first_name="Priya",
         last_name="Sharma",
         email="priya.request@example.com",
         mobile="919100000001",
+        requested_department_id=_requested_department_id(),
         password=TEST_PASSWORD,
         password_confirm=TEST_PASSWORD,
     )

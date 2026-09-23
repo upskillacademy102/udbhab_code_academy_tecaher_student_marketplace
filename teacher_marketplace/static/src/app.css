@@ -400,6 +400,14 @@
   .u-btn-pine {
     @apply u-btn bg-pine-700 text-white shadow-soft hover:bg-pine-600 active:bg-pine-800;
   }
+  /* A distinct, vivid "go" green for a direct, one-click positive action
+     (e.g. approving a request exactly as submitted) - deliberately more
+     saturated than the muted pine/success tokens so it reads unmistakably
+     as the fast-path option next to u-btn-primary (the "customize" path). */
+  .u-btn-success {
+    @apply u-btn bg-emerald-600 text-white shadow-soft
+           hover:bg-emerald-500 active:bg-emerald-700;
+  }
   .u-btn-ghost { @apply u-btn text-ink-600 hover:bg-ink-100 hover:text-ink-900; }
   .u-btn-lg { @apply min-h-[52px] px-7 text-base; }
   .u-btn-sm { @apply min-h-[32px] rounded-lg px-3 text-[0.8125rem]; }
@@ -410,6 +418,7 @@
     @apply absolute h-[18px] w-[18px] animate-spin rounded-full border-2 border-ink-900/70 border-r-transparent;
   }
   .u-btn-pine[data-loading="true"]::after { @apply border-white/80 border-r-transparent; }
+  .u-btn-success[data-loading="true"]::after { @apply border-white/80 border-r-transparent; }
 
   /* Text link that still reads as an action without spending the accent. */
   .u-link {
@@ -512,6 +521,15 @@
   .u-badge-marigold { @apply bg-marigold-100 text-marigold-800 ring-marigold-300; }
   .u-badge-danger { @apply bg-danger/10 text-danger ring-danger/30; }
   .u-badge svg { @apply h-3.5 w-3.5 shrink-0; }
+
+  /* A small, eye-catching block for one piece of information that needs to
+     stand out from surrounding body text without being mistaken for a
+     status badge (pine/marigold/danger already mean approved/pending/
+     denied elsewhere) - e.g. "which department did they ask to join". */
+  .u-callout {
+    @apply inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-2.5 py-1
+           text-[0.8125rem] font-semibold text-sky-800 ring-1 ring-inset ring-sky-300;
+  }
 
   /* --- Alerts -------------------------------------------------------- */
   .u-alert { @apply flex gap-3 rounded-xl border p-4 text-[0.875rem]; }

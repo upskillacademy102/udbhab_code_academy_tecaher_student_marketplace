@@ -26,6 +26,11 @@ ROLE_HOME = {
     # they're just no longer where a staff login lands.
     "admin": "/staff/admin/",
     "superadmin": "/staff/superadmin/",
+    # Defensive fallback only - home_url_for()'s is_learning_partner_admin
+    # branch below is what actually routes a Learning Partner; this just
+    # keeps ROLE_HOME.get() from silently falling through to "/" if that
+    # branch is ever bypassed.
+    "learning_partner": "/staff/learning-partner/",
 }
 
 

@@ -26,6 +26,7 @@ export function Dashboard() {
 
   const o = overview.data;
   const pendingRequests = o?.pending_admin_account_requests ?? 0;
+  const pendingLpRequests = o?.pending_learning_partner_requests ?? 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -38,16 +39,17 @@ export function Dashboard() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
         <Tile label="Students" value={o?.users.by_role.student} loading={overview.isLoading} />
         <Tile label="Teachers" value={o?.users.by_role.teacher} loading={overview.isLoading} />
         <Tile label="Admins" value={o?.users.by_role.admin} loading={overview.isLoading} />
+        <Tile label="Learning Partners" value={o?.users.by_role.learning_partner} loading={overview.isLoading} />
         <Tile label="Super Admins" value={o?.users.by_role.superadmin} loading={overview.isLoading} />
         <Tile label="Subjects" value={o?.taxonomy.subjects} loading={overview.isLoading} />
         <Tile label="Languages" value={o?.taxonomy.languages} loading={overview.isLoading} />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-4">
         <Link
           to="/staff/superadmin/admin-account-requests/"
           className="u-card flex flex-col gap-1 p-4 transition hover:border-pine-300 hover:shadow-raise"
@@ -56,6 +58,17 @@ export function Dashboard() {
           <span className="u-h2">{overview.isLoading ? "…" : pendingRequests}</span>
           <span className="text-[0.8125rem] text-ink-600">
             {pendingRequests === 1 ? "request awaiting review" : "requests awaiting review"}
+          </span>
+        </Link>
+
+        <Link
+          to="/staff/superadmin/learning-partners/"
+          className="u-card flex flex-col gap-1 p-4 transition hover:border-pine-300 hover:shadow-raise"
+        >
+          <span className="text-[0.75rem] font-semibold uppercase tracking-wide text-ink-500">Learning Partners</span>
+          <span className="u-h2">{overview.isLoading ? "…" : pendingLpRequests}</span>
+          <span className="text-[0.8125rem] text-ink-600">
+            {pendingLpRequests === 1 ? "request awaiting review" : "requests awaiting review"}
           </span>
         </Link>
 

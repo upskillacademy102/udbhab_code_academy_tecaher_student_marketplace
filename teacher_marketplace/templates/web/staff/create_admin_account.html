@@ -42,6 +42,20 @@
       </div>
 
       <div class="u-field">
+        <label class="u-label" for="ca-dept">Department</label>
+        <select id="ca-dept" class="u-select" x-model="model.requested_department_id"
+                @change="touch('requested_department_id')" :aria-invalid="!!err('requested_department_id')"
+                :disabled="departmentsLoading">
+          <option value="" x-text="departmentsLoading ? 'Loading…' : 'Select a department'"></option>
+          <template x-for="d in departments" :key="d.id">
+            <option :value="d.id" x-text="d.name"></option>
+          </template>
+        </select>
+        <p class="u-fine" x-show="departmentsError" x-text="departmentsError"></p>
+        <p class="u-error" x-show="err('requested_department_id')" x-text="err('requested_department_id')"></p>
+      </div>
+
+      <div class="u-field">
         <label class="u-label" for="ca-email">Email address</label>
         <input id="ca-email" type="email" class="u-input" autocomplete="email" x-model.trim="model.email"
                @blur="touch('email')" :aria-invalid="!!err('email')" placeholder="you@example.com">
