@@ -251,6 +251,8 @@ export interface AdminDepartment {
   slug: string;
   is_active: boolean;
   admin_count: number;
+  /** Human-readable "what this department can do" list (read-only). */
+  capabilities: string[];
   created_at: string;
   updated_at: string;
 }
@@ -482,6 +484,9 @@ export interface AdminUser {
   is_mobile_verified: boolean;
   has_active_session: boolean;
   profile_type: "student" | "teacher" | null;
+  /** Set only when role === "admin"; null for every other role. */
+  admin_department_id: string | null;
+  admin_department_name: string | null;
   last_login: string | null;
   created_at: string;
 }
@@ -491,6 +496,70 @@ export interface LPDashboard {
   organization_name: string;
   students_count: number;
   teachers_count: number;
+  wallet_balance: string;
+  available_balance: string;
+  total_commission_earned: string;
+}
+
+/** GET /commissions/wallet/ — a Learning Partner's own commission wallet. */
+export interface LearningPartnerWallet {
+  id: string;
+  balance: string;
+  available_balance: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** GET /commissions/wallet/transactions/ — one ledger row. */
+export interface LearningPartnerWalletTransaction {
+  id: string;
+  transaction_type: "credit" | "debit" | "reversal";
+  amount: string;
+  balance_after: string;
+  reference_id: string | null;
+  description: string;
+  created_at: string;
+}
+
+/** GET /commissions/earnings/ — a Learning Partner's own view of a Commission row. */
+export interface CommissionEarning {
+  id: string;
+  teacher_name: string;
+  teacher_email: string;
+  payment_type: "token_purchase" | "subscription";
+  base_amount: string;
+  partner_share: string;
+  status: "active" | "reversed";
+  reversed_at: string | null;
+  created_at: string;
+}
+
+/** GET/PUT /commissions/bank-account/ */
+export interface LearningPartnerBankAccount {
+  id: string;
+  account_holder_name: string;
+  account_number: string;
+  ifsc_code: string;
+  bank_name: string;
+  updated_at: string;
+}
+
+export type PayoutStatus = "pending" | "approved" | "rejected" | "paid";
+
+/** GET/POST /commissions/payouts/ */
+export interface PayoutRequest {
+  id: string;
+  amount: string;
+  account_holder_name: string;
+  account_number: string;
+  ifsc_code: string;
+  bank_name: string;
+  status: PayoutStatus;
+  admin_notes: string | null;
+  payout_reference: string | null;
+  decided_at: string | null;
+  paid_at: string | null;
+  created_at: string;
 }
 
 /**

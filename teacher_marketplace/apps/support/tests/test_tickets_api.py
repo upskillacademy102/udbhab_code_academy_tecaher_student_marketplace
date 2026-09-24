@@ -13,7 +13,7 @@ from PIL import Image
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import UserRole
-from apps.accounts.tests.helpers import login, make_user
+from apps.accounts.tests.helpers import login, make_named_admin, make_user
 from apps.support.models import SupportTicket
 from apps.trust.models import ManualReviewItem, ManualReviewKind
 
@@ -173,8 +173,20 @@ class QueueAndAssignmentTests(APITestCase):
         self.assertEqual(r.status_code, 400, r.content)
 
     def test_assigned_admin_can_resolve_but_others_cannot(self):
-        assignee = make_user(role=UserRole.ADMIN, email="assignee@x.test")
-        other = make_user(role=UserRole.ADMIN, email="other@x.test")
+        # admin_support:resolve is Support-department only (apps.accounts.
+        # api_permissions.DEPARTMENT_ROUTE_SCOPE) on top of the assignment
+        # check below - both admins need the department so `other`'s 403
+        # is actually testing "not assigned", not "wrong department".
+        assignee = make_named_admin(department="Support", email="assignee@x.test")
+        # Distinct name: make_named_admin defaults to "Raju Das" for every
+        # call, and two admins in the same department would otherwise both
+        # generate account_name "RajuDas@Support" and collide.
+        other = make_named_admin(
+            department="Support",
+            first_name="Other",
+            last_name="Admin",
+            email="other@x.test",
+        )
         sa = self.client_class()
         login(sa, make_user(role=UserRole.SUPERADMIN))
         sa.post(self.assign_url, {"assigned_admin_ids": [str(assignee.id)]}, format="json")

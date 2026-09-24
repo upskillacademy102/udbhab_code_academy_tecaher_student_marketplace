@@ -1,0 +1,99 @@
+{% extends "web/base_app.html" %}
+{% load web_extras %}
+
+{% block content %}
+<div x-data="lpPayouts()">
+  <div class="mb-4 flex flex-wrap items-center gap-3">
+    <select class="select w-auto" @change="setParam('status', $event.target.value)" aria-label="Status">
+      <option value="">All statuses</option>
+      <option value="pending">Pending</option>
+      <option value="approved">Approved</option>
+      <option value="paid">Paid</option>
+      <option value="rejected">Rejected</option>
+    </select>
+  </div>
+
+  {% include "web/partials/_row_skeleton.html" %}
+  {% include "web/partials/_error.html" %}
+
+  <div x-show="state === 'empty'" x-cloak class="empty">
+    <div class="empty-icon">{% icon "coin" "h-6 w-6" %}</div>
+    <p class="empty-title">No payout requests</p>
+    <p class="empty-desc">Learning Partners haven't requested a withdrawal yet.</p>
+  </div>
+
+  <div x-show="state === 'ready'" x-cloak class="space-y-3">
+    <template x-for="p in items" :key="p.id">
+      <div class="card card-pad">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-sm font-medium text-slate-900" x-text="p.learning_partner_name"></span>
+          <span class="text-xs text-slate-400" x-text="p.learning_partner_email"></span>
+          <span class="badge"
+                :class="p.status === 'paid' ? 'badge-green' : (p.status === 'rejected' ? 'badge-red' : (p.status === 'approved' ? 'badge-sky' : 'badge-amber'))"
+                x-text="fmt.titleCase(p.status)"></span>
+          <span class="ml-auto text-sm font-semibold text-slate-900" x-text="fmt.money(p.amount)"></span>
+        </div>
+        <p class="mt-1 text-xs text-slate-500">
+          <span x-text="p.bank_name"></span> · <span x-text="p.account_holder_name"></span> ·
+          A/C <span x-text="p.account_number"></span> · IFSC <span x-text="p.ifsc_code"></span>
+        </p>
+        <p class="mt-1 text-xs text-slate-400">
+          Requested <span x-text="fmt.dateTime(p.created_at)"></span>
+          <template x-if="p.payout_reference">
+            <span> · Ref <span class="font-mono" x-text="p.payout_reference"></span></span>
+          </template>
+        </p>
+        <template x-if="p.admin_notes">
+          <p class="mt-2 rounded-lg bg-slate-50 p-2.5 text-sm text-slate-600">
+            <span class="font-medium text-slate-800">Note: </span><span x-text="p.admin_notes"></span>
+          </p>
+        </template>
+
+        <template x-if="p.status === 'pending'">
+          <div class="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+            <input class="input flex-1 text-xs" x-model="p._note" placeholder="Note (optional)">
+            <button class="btn-primary text-xs" :data-loading="p._busy" @click="decide(p, true)">Approve</button>
+            <button class="btn-ghost text-xs" :data-loading="p._busy" @click="decide(p, false)">Reject</button>
+          </div>
+        </template>
+
+        <template x-if="p.status === 'approved'">
+          <div class="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+            <input class="input flex-1 text-xs" x-model="p._ref" placeholder="Bank transfer reference (UTR)">
+            <button class="btn-primary text-xs" :disabled="!p._ref" :data-loading="p._busy" @click="markPaid(p)">Mark paid</button>
+          </div>
+        </template>
+      </div>
+    </template>
+  </div>
+
+  {% include "web/partials/_pagination.html" %}
+</div>
+
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("lpPayouts", () => ({
+      ...mk.collection({ endpoint: "/admin/payouts/" }),
+      async decide(p, approve) {
+        p._busy = true;
+        try {
+          await api.post(`/admin/payouts/${p.id}/decide/`, { approve, notes: p._note || "" });
+          window.toast("success", approve ? "Approved." : "Rejected.");
+          this.reload();
+        } catch (e) { window.toast("error", e.message || "Couldn't update."); }
+        finally { p._busy = false; }
+      },
+      async markPaid(p) {
+        if (!p._ref) return;
+        p._busy = true;
+        try {
+          await api.post(`/admin/payouts/${p.id}/mark-paid/`, { payout_reference: p._ref });
+          window.toast("success", "Marked paid.");
+          this.reload();
+        } catch (e) { window.toast("error", e.message || "Couldn't update."); }
+        finally { p._busy = false; }
+      },
+    }));
+  });
+</script>
+{% endblock %}

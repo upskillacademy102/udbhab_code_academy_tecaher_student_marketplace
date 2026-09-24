@@ -1,12 +1,14 @@
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import type { AccountSanction, AdminUser } from "@/lib/types";
+import type { AccountSanction, AdminDepartment, AdminUser } from "@/lib/types";
 import { confirmAction, sanctionLabel, toast } from "@/lib/ui";
 
 export function UserDetail() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
+  const [reassigning, setReassigning] = useState(false);
 
   const user = useQuery({
     queryKey: ["admin-user", id],
@@ -17,6 +19,13 @@ export function UserDetail() {
     queryKey: ["ops-sanctions", "user", id],
     queryFn: () => api.list<AccountSanction>("/ops/sanctions/", { params: { user: id } }),
     enabled: !!id,
+  });
+  // Only an Admin has a department to reassign - fetched lazily so a
+  // Student/Teacher/SuperAdmin detail page never makes this call.
+  const departments = useQuery({
+    queryKey: ["staff-departments"],
+    queryFn: () => api.list<AdminDepartment>("/auth/staff/departments/"),
+    enabled: user.data?.role === "admin",
   });
 
   const activeSanction = sanctions.data?.items.find((s) => s.active);
@@ -55,6 +64,20 @@ export function UserDetail() {
       invalidate();
     } catch (e) {
       toast("error", (e as { message?: string })?.message ?? "Couldn't unban this account.");
+    }
+  }
+
+  async function reassignDepartment(departmentId: string) {
+    if (!user.data || !departmentId || departmentId === user.data.admin_department_id) return;
+    setReassigning(true);
+    try {
+      await api.patch(`/admin/users/${user.data.id}/`, { admin_department_id: departmentId });
+      toast("success", "Department updated.");
+      invalidate();
+    } catch (e) {
+      toast("error", (e as { message?: string })?.message ?? "Couldn't reassign this admin's department.");
+    } finally {
+      setReassigning(false);
     }
   }
 
@@ -111,12 +134,41 @@ export function UserDetail() {
         <Field label="Email" value={u.email} />
         <Field label="Mobile" value={u.mobile} />
         <Field label="Role" value={u.role} className="capitalize" />
+        {u.role === "admin" && <Field label="Department" value={u.admin_department_name ?? "(none)"} />}
         <Field label="Status" value={u.is_active ? "Active" : "Inactive"} />
         <Field label="Email verified" value={u.is_email_verified ? "Yes" : "No"} />
         <Field label="Mobile verified" value={u.is_mobile_verified ? "Yes" : "No"} />
         <Field label="Has an active session" value={u.has_active_session ? "Yes" : "No"} />
         <Field label="Joined" value={new Date(u.created_at).toLocaleDateString()} />
       </div>
+
+      {u.role === "admin" && (
+        <div className="u-card p-4">
+          <h2 className="u-h3 mb-1">Reassign department</h2>
+          <p className="mb-3 text-[0.8125rem] text-ink-500">
+            Determines which admin-only actions this account can take (apps.accounts.api_permissions.DEPARTMENT_ROUTE_SCOPE).
+          </p>
+          {departments.isLoading ? (
+            <div className="h-9 w-56 animate-pulse rounded-lg bg-ink-100" />
+          ) : departments.isError ? (
+            <p className="text-danger text-[0.875rem]">Couldn't load departments.</p>
+          ) : (
+            <select
+              className="u-input w-auto"
+              value={u.admin_department_id ?? ""}
+              disabled={reassigning}
+              onChange={(e) => reassignDepartment(e.target.value)}
+            >
+              <option value="" disabled>Select a department…</option>
+              {(departments.data?.items ?? [])
+                .filter((d) => d.is_active || d.id === u.admin_department_id)
+                .map((d) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+            </select>
+          )}
+        </div>
+      )}
 
       <div className="u-card p-4">
         <h2 className="u-h3 mb-3">Sanction history</h2>

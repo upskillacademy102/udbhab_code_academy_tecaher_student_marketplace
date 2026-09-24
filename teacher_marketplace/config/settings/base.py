@@ -71,6 +71,7 @@ LOCAL_APPS = [
     "apps.search",
     "apps.wallet",
     "apps.payments",
+    "apps.commissions",
     "apps.subscriptions",
     "apps.notifications",
     "apps.analytics",

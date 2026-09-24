@@ -23,40 +23,18 @@ from django.core.cache import cache
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.accounts.models import AdminDepartment, User, UserRole
-from apps.accounts.services.admin_account_naming import build_admin_account_name
+from apps.accounts.models import User, UserRole
 from apps.accounts.tests.helpers import (
     TEST_PASSWORD,
     login,
     make_learning_partner_admin,
+    make_named_admin as _make_named_admin,
     make_user,
 )
 
 SUPERADMIN_LOGIN = "/api/v1/auth/staff/login-superadmin/"
 ADMIN_LOGIN = "/api/v1/auth/staff/login-admin/"
 LEARNING_PARTNER_LOGIN = "/api/v1/auth/staff/login-learning-partner/"
-
-
-def _make_named_admin(**over):
-    department, _ = AdminDepartment.objects.get_or_create(name="Finance")
-    defaults = dict(
-        first_name="Raju",
-        last_name="Das",
-        email="raju-named@example.com",
-        mobile="919000000200",
-    )
-    defaults.update(over)
-    account_name = build_admin_account_name(
-        defaults["first_name"], defaults["last_name"], department
-    )
-    user = User.objects.create_user(
-        password=TEST_PASSWORD,
-        role=UserRole.ADMIN,
-        admin_account_name=account_name,
-        admin_department=department,
-        **defaults,
-    )
-    return user
 
 
 class StaffSuperAdminLoginTests(APITestCase):

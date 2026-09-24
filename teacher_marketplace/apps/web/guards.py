@@ -86,10 +86,29 @@ def login_required_web(view):
     return wrapped
 
 
-def role_required(*roles):
+def _forbidden(request, user):
+    return render(
+        request,
+        "web/errors/403.html",
+        {"home_url": home_url_for(user)},
+        status=403,
+    )
+
+
+def role_required(*roles, department_slugs=None):
     """
     Allow only the given roles. superadmin is implicitly allowed everywhere
     (mirrors the API's Super Admin rule), unless roles == ("superadmin",).
+
+    ``department_slugs``, if given, further restricts a ``role="admin"``
+    caller to one whose ``admin_department.slug`` is in the set - for a
+    mount that's open to admin but only for one department (e.g. the
+    Content Moderation / Marketing screens under apps.web.urls). Ignored
+    for every other role, including superadmin, which bypasses it exactly
+    like it bypasses the role check above. Mirrors the API-side
+    ``DEPARTMENT_ROUTE_SCOPE`` (apps.accounts.api_permissions) so a
+    mismatched admin gets a clean 403 here rather than a page that renders
+    fine and then fails on every data call underneath it.
     """
     allowed = set(roles)
     if allowed != {"superadmin"}:
@@ -103,12 +122,11 @@ def role_required(*roles):
                 return _login_redirect(request)
             request.web_user = user
             if user.role not in allowed:
-                return render(
-                    request,
-                    "web/errors/403.html",
-                    {"home_url": home_url_for(user)},
-                    status=403,
-                )
+                return _forbidden(request, user)
+            if department_slugs is not None and user.role == "admin":
+                dept = getattr(user, "admin_department", None)
+                if getattr(dept, "slug", None) not in department_slugs:
+                    return _forbidden(request, user)
             if not request.path.startswith(
                 "/suspended"
             ) and suspended_needs_appeal_page(user):
@@ -122,10 +140,11 @@ def role_required(*roles):
 
 def learning_partner_required(view):
     """
-    Like role_required("admin"), but ALSO requires the admin's department
-    to be the Learning Partner one - a plain admin (or superadmin, who
-    bypasses role_required everywhere else) gets a clean 403 here rather
-    than a broken-looking SPA shell whose data calls all 403 underneath it.
+    Like role_required("admin"), but ALSO requires the account to actually
+    be a Learning Partner (role=learning_partner) - a plain admin (or
+    superadmin, who bypasses role_required everywhere else) gets a clean
+    403 here rather than a broken-looking SPA shell whose data calls all
+    403 underneath it.
     """
 
     @wraps(view)
@@ -135,12 +154,7 @@ def learning_partner_required(view):
             return _login_redirect(request)
         request.web_user = user
         if not user.is_learning_partner_admin:
-            return render(
-                request,
-                "web/errors/403.html",
-                {"home_url": home_url_for(user)},
-                status=403,
-            )
+            return _forbidden(request, user)
         return view(request, *args, **kwargs)
 
     return wrapped

@@ -15,11 +15,11 @@ from django.core.cache import cache
 from django.test import TestCase, override_settings
 from rest_framework.test import APITestCase
 
-from apps.accounts.models import AdminDepartment, User, UserRole
-from apps.accounts.services.admin_account_naming import build_admin_account_name
+from apps.accounts.models import UserRole
 from apps.accounts.tests.helpers import (
     TEST_PASSWORD,
     make_learning_partner_admin,
+    make_named_admin,
     make_user,
 )
 from apps.trust.models import AccountSanction, AccountSanctionSource
@@ -33,24 +33,9 @@ LEARNING_PARTNER_LOGIN = "/api/v1/auth/staff/login-learning-partner/"
 
 
 def _make_named_admin(**over):
-    department, _ = AdminDepartment.objects.get_or_create(name="Finance")
-    defaults = dict(
-        first_name="Guard",
-        last_name="Test",
-        email="guardtest@example.com",
-        mobile="919000000300",
-    )
+    defaults = dict(first_name="Guard", last_name="Test", email="guardtest@example.com", mobile="919000000300")
     defaults.update(over)
-    account_name = build_admin_account_name(
-        defaults["first_name"], defaults["last_name"], department
-    )
-    return User.objects.create_user(
-        password=TEST_PASSWORD,
-        role=UserRole.ADMIN,
-        admin_account_name=account_name,
-        admin_department=department,
-        **defaults,
-    )
+    return make_named_admin(**defaults)
 
 
 @override_settings(**_SMALL)

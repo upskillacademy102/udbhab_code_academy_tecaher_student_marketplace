@@ -9,7 +9,7 @@ from decimal import Decimal
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import UserRole
-from apps.accounts.tests.helpers import login, make_user
+from apps.accounts.tests.helpers import login, make_named_admin, make_user
 from apps.subjects.models import Subject
 from apps.teacher_profile.models import TeacherProfile, TeachingMode, VerificationStatus
 from apps.teachers.models import Teacher
@@ -50,7 +50,9 @@ class TeacherVerificationTests(APITestCase):
     def test_admin_verify_makes_teacher_appear_in_search(self):
         profile = self._make_teacher_profile("tv@k.test")
         student = make_user(role=UserRole.STUDENT)
-        admin = make_user(role=UserRole.ADMIN, email="adm@k.test")
+        # POST .../verification/ is Verification-department only (apps.
+        # accounts.api_permissions.DEPARTMENT_ROUTE_SCOPE).
+        admin = make_named_admin(department="Verification", email="adm@k.test")
 
         c = self.client_class()
         self.assertEqual(login(c, admin).status_code, 200)
@@ -68,7 +70,7 @@ class TeacherVerificationTests(APITestCase):
 
     def test_reject_removes_teacher_from_search(self):
         profile = self._make_teacher_profile("rej@k.test", verified=True)
-        admin = make_user(role=UserRole.ADMIN, email="adm2@k.test")
+        admin = make_named_admin(department="Verification", email="adm2@k.test")
         student = make_user(role=UserRole.STUDENT)
 
         c = self.client_class()
@@ -105,7 +107,7 @@ class TeacherVerificationTests(APITestCase):
 
     def test_invalid_status_is_rejected(self):
         profile = self._make_teacher_profile("bad@k.test")
-        admin = make_user(role=UserRole.ADMIN, email="adm3@k.test")
+        admin = make_named_admin(department="Verification", email="adm3@k.test")
         c = self.client_class()
         login(c, admin)
         r = c.post(
@@ -147,7 +149,7 @@ class TeacherVerificationTests(APITestCase):
     def test_verification_for_teacher_without_profile_404s(self):
         user = make_user(role=UserRole.TEACHER, email="np@k.test")
         teacher = Teacher.objects.create(user=user)
-        admin = make_user(role=UserRole.ADMIN, email="adm5@k.test")
+        admin = make_named_admin(department="Verification", email="adm5@k.test")
         c = self.client_class()
         login(c, admin)
         r = c.post(

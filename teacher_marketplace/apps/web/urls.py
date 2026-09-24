@@ -8,7 +8,7 @@ every role_required() route (mirrors the API), and additionally gets the
 from django.urls import path
 
 from apps.web import views
-from apps.web.guards import learning_partner_required
+from apps.web.guards import learning_partner_required, role_required
 from apps.web.views import page, spa
 
 S = ("student",)
@@ -325,6 +325,20 @@ def _admin_routes(prefix, roles, name_prefix):
             ),
             name=f"{name_prefix}-support-tickets",
         ),
+        # Finance-department only (apps.accounts.api_permissions
+        # DEPARTMENT_ROUTE_SCOPE) - a non-Finance admin who reaches this URL
+        # directly gets a clean 403 from the API underneath; the nav link
+        # itself is only shown to Finance admins / Super Admin (nav.py).
+        path(
+            f"{prefix}/payouts/",
+            R(
+                "web/admin/payouts.html",
+                title="Learning Partner Payouts",
+                desc="Review, approve, and pay out Learning Partner commission withdrawal requests.",
+                **common,
+            ),
+            name=f"{name_prefix}-payouts",
+        ),
         path(
             f"{prefix}/subjects/",
             R(
@@ -610,17 +624,34 @@ urlpatterns += [
 ]
 
 # ============ NEW STAFF SPA (React) - Fake-lead reports + Leads browser, Phase 6 ============
-# Both Super Admin only - genuinely new visibility, neither the SPA nor the
-# old templates had a screen for either before this phase.
+# Originally both Super Admin only. Now also open to one admin department
+# each (apps.accounts.api_permissions.DEPARTMENT_ROUTE_SCOPE mirrors the
+# same two departments on the API side) - reusing these existing screens
+# rather than building new ones for Content Moderation / Marketing, who
+# previously had no functionality of their own anywhere in the app.
 urlpatterns += [
     path(
         "staff/superadmin/fake-lead-reports/",
-        spa(roles=SA, title="Fake-lead reports", desc="Students with open fake-lead review items."),
+        spa(
+            roles=SA,
+            title="Fake-lead reports",
+            desc="Students with open fake-lead review items.",
+            guard=role_required(
+                "admin", "superadmin", department_slugs={"content-moderation"}
+            ),
+        ),
         name="staff-superadmin-fake-lead-reports",
     ),
     path(
         "staff/superadmin/leads/",
-        spa(roles=SA, title="Leads & requirements", desc="Lead quality ratings, by student or by teacher."),
+        spa(
+            roles=SA,
+            title="Leads & requirements",
+            desc="Lead quality ratings, by student or by teacher.",
+            guard=role_required(
+                "admin", "superadmin", department_slugs={"marketing"}
+            ),
+        ),
         name="staff-superadmin-leads",
     ),
 ]
@@ -726,5 +757,16 @@ urlpatterns += [
             guard=learning_partner_required,
         ),
         name="staff-learning-partner-audit",
+    ),
+    # ---- Commissions: wallet, earnings, bank account, payout requests ----
+    path(
+        "staff/learning-partner/wallet/",
+        spa(
+            roles=LP,
+            title="Wallet & Payouts",
+            desc="Your commission balance, earnings history, and withdrawal requests.",
+            guard=learning_partner_required,
+        ),
+        name="staff-learning-partner-wallet",
     ),
 ]

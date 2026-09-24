@@ -716,6 +716,9 @@ class AccountSanctionKind(models.TextChoices):
 
 class AccountSanctionSource(models.TextChoices):
     MANUAL = "manual", _("Super Admin action")
+    MANUAL_CONTENT_MODERATION = "manual_content_moderation", _(
+        "Content Moderation admin action"
+    )
     AUTO_FAKE_LEADS_WEEKLY = "auto_fake_leads_weekly", _(
         "Automatic - fake-lead reports (weekly threshold)"
     )

@@ -79,6 +79,20 @@ class DisputeService:
 
         AnomalyService.note_refund(payment.teacher.user)
 
+        # Learning Partner commission clawback (apps.commissions). A REFUND
+        # never gets a separate "resolve" step in this codebase - the
+        # refund.created/processed webhook calls open() directly and
+        # nothing else ever touches it - so this is the one point in time
+        # a refund's commission can be reversed. A CHARGEBACK is NOT
+        # reversed here: it's still an open dispute, not yet a loss - see
+        # resolve() below for that case.
+        if kind == DisputeKind.REFUND:
+            from apps.commissions.services import CommissionService
+
+            CommissionService.reverse_for_payment(
+                payment, reason=f"Refund {external_ref}"
+            )
+
         if tokens and _freeze_enabled():
             try:
                 hold = WalletService.place_hold(
@@ -166,6 +180,17 @@ class DisputeService:
                     description=f"Chargeback upheld - {dispute.external_ref}",
                     reference_id=str(dispute.payment_id),
                 )
+
+        if not won:
+            # Chargeback lost - the money is now actually gone, so (unlike
+            # open()'s CHARGEBACK branch, which deliberately does nothing)
+            # this is where a Learning Partner's commission on it gets
+            # clawed back.
+            from apps.commissions.services import CommissionService
+
+            CommissionService.reverse_for_payment(
+                dispute.payment, reason=f"Chargeback lost {dispute.external_ref}"
+            )
 
         if dispute.review_item_id:
             try:

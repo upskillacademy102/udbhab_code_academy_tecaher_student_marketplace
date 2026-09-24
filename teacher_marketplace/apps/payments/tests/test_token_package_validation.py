@@ -14,16 +14,17 @@ from decimal import Decimal
 from django.db import IntegrityError, transaction
 from rest_framework.test import APITestCase
 
-from apps.accounts.models import UserRole
-from apps.accounts.tests.helpers import login, make_user
 from apps.payments.models import TokenPackage
+from apps.accounts.tests.helpers import login, make_named_admin
 
 EP = "/api/v1/token-packages/"
 
 
 class TokenPackageValidationTests(APITestCase):
     def setUp(self):
-        login(self.client, make_user(role=UserRole.ADMIN))
+        # Writing token packages is Finance-department only (apps.accounts.
+        # api_permissions.DEPARTMENT_ROUTE_SCOPE).
+        login(self.client, make_named_admin(department="Finance"))
 
     def _post(self, expect=201, **fields):
         body = {"name": "Base Pack", "token_count": 100, "price": "499.00", **fields}

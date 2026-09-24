@@ -41,6 +41,7 @@ import { Languages as LPLanguages } from "@/routes/learning-partner/Languages";
 import { FakeLeadReports as LPFakeLeadReports } from "@/routes/learning-partner/FakeLeadReports";
 import { LeadsBrowser as LPLeadsBrowser } from "@/routes/learning-partner/LeadsBrowser";
 import { AuditLog as LPAuditLog } from "@/routes/learning-partner/AuditLog";
+import { Wallet as LPWallet } from "@/routes/learning-partner/Wallet";
 
 /**
  * Routes the SPA owns.
@@ -81,7 +82,8 @@ export function App() {
       <Route path="/staff/admin/subjects/" element={<AdminSubjects />} />
       <Route path="/staff/admin/languages/" element={<AdminLanguages />} />
 
-      {/* Super Admin only - see apps/web/urls.py's "NEW STAFF SPA" section */}
+      {/* Super Admin only, except fake-lead-reports/ and leads/ below - see
+          apps/web/urls.py's "NEW STAFF SPA" section */}
       <Route path="/staff/superadmin/" element={<SuperAdminDashboard />} />
       <Route path="/staff/superadmin/users/" element={<SuperAdminUsers />} />
       <Route path="/staff/superadmin/users/:id/" element={<SuperAdminUserDetail />} />
@@ -92,13 +94,19 @@ export function App() {
       <Route path="/staff/superadmin/taxonomy-requests/" element={<TaxonomyRequests />} />
       <Route path="/staff/superadmin/subjects/" element={<SuperAdminSubjects />} />
       <Route path="/staff/superadmin/languages/" element={<SuperAdminLanguages />} />
+      {/* Also reachable by a Content Moderation admin - the guard
+          (role_required with department_slugs, apps/web/urls.py) is what
+          actually restricts it; this route alone doesn't. */}
       <Route path="/staff/superadmin/fake-lead-reports/" element={<FakeLeadReports />} />
+      {/* Also reachable by a Marketing admin - same story as above. */}
       <Route path="/staff/superadmin/leads/" element={<LeadsBrowser />} />
       <Route path="/staff/superadmin/audit/" element={<AuditLog />} />
 
-      {/* Learning Partner only - role=admin whose department is the
-          Learning Partner one (apps.accounts.models.User.is_learning_partner_admin).
-          See apps/web/urls.py's "LEARNING PARTNER SPA" section. */}
+      {/* Learning Partner only - role=learning_partner
+          (apps.accounts.models.User.is_learning_partner_admin). Not a
+          department: see apps/accounts/models.py's UserRole docstring.
+          Route guard is learning_partner_required, apps/web/urls.py's
+          "LEARNING PARTNER SPA" section. */}
       <Route path="/staff/learning-partner/" element={<LPDashboard />} />
       <Route path="/staff/learning-partner/students/" element={<LPStudents />} />
       <Route path="/staff/learning-partner/students/:id/" element={<LPStudentDetail />} />
@@ -109,6 +117,7 @@ export function App() {
       <Route path="/staff/learning-partner/fake-lead-reports/" element={<LPFakeLeadReports />} />
       <Route path="/staff/learning-partner/leads/" element={<LPLeadsBrowser />} />
       <Route path="/staff/learning-partner/audit/" element={<LPAuditLog />} />
+      <Route path="/staff/learning-partner/wallet/" element={<LPWallet />} />
 
       <Route path="*" element={<Fallback />} />
     </Routes>

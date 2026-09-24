@@ -126,7 +126,20 @@ export function Departments() {
             <tbody className="divide-y divide-ink-100">
               {items.map((d) => (
                 <tr key={d.id}>
-                  <td className="px-4 py-3 font-medium text-ink-900">{d.name}</td>
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-ink-900">{d.name}</div>
+                    {d.capabilities.length > 0 ? (
+                      <ul className="mt-1 list-disc pl-4 text-[0.75rem] text-ink-500">
+                        {d.capabilities.map((c, i) => (
+                          <li key={i}>{c}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-1 text-[0.75rem] text-ink-400">
+                        No capabilities beyond the shared admin baseline yet.
+                      </p>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-ink-600">{d.admin_count}</td>
                   <td className="px-4 py-3">
                     <span className={d.is_active ? "u-badge u-badge-pine" : "u-badge u-badge-ink"}>

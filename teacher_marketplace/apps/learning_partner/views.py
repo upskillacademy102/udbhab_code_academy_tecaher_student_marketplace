@@ -66,11 +66,26 @@ class LPDashboardView(LearningPartnerAPIView):
     def get(self, request):
         me = request.user
         referred = User.objects.filter(learning_partner=me)
+
+        from django.db.models import Sum
+
+        from apps.commissions.models import Commission, CommissionStatus
+        from apps.commissions.services import LearningPartnerWalletService
+
+        total_commission_earned = Commission.objects.filter(
+            learning_partner=me, status=CommissionStatus.ACTIVE
+        ).aggregate(total=Sum("partner_share"))["total"] or 0
+
         return APIResponse.success(
             data={
                 "organization_name": me.first_name,
                 "students_count": referred.filter(role=UserRole.STUDENT).count(),
                 "teachers_count": referred.filter(role=UserRole.TEACHER).count(),
+                "wallet_balance": str(LearningPartnerWalletService.get_balance(me)),
+                "available_balance": str(
+                    LearningPartnerWalletService.available_balance(me)
+                ),
+                "total_commission_earned": str(total_commission_earned),
             }
         )
 

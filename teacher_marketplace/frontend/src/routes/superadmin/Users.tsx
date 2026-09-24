@@ -133,6 +133,9 @@ export function Users() {
                     </td>
                     <td className="px-4 py-3">
                       <span className="u-badge u-badge-ink capitalize">{u.role}</span>
+                      {u.role === "admin" && (
+                        <p className="mt-1 text-ink-500">{u.admin_department_name ?? "(no department)"}</p>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       {sanction ? (

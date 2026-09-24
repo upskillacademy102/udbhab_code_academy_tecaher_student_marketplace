@@ -63,7 +63,17 @@ class RoleBasedAPIPermission(BasePermission):
             # 401; returning False here is just belt-and-braces.
             return False
 
-        return is_allowed(getattr(user, "role", None), request.method, route_name)
+        role = getattr(user, "role", None)
+        # Department only matters (and is only fetched) for role=admin -
+        # avoids an extra query on every request from every other role.
+        department_slug = None
+        if role == "admin":
+            department_slug = getattr(
+                getattr(user, "admin_department", None), "slug", None
+            )
+        return is_allowed(
+            role, request.method, route_name, department_slug=department_slug
+        )
 
 
 class IsStudent(BasePermission):

@@ -50,6 +50,12 @@ class UserSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(source="get_full_name", read_only=True)
     has_student_profile = serializers.BooleanField(read_only=True)
     has_teacher_profile = serializers.BooleanField(read_only=True)
+    # Null for every role except admin - lets the frontend explain *why* a
+    # department-scoped action is unavailable instead of a bare 403.
+    admin_department_id = serializers.UUIDField(read_only=True)
+    admin_department_name = serializers.CharField(
+        source="admin_department.name", read_only=True, default=None
+    )
 
     class Meta:
         model = User
@@ -67,6 +73,8 @@ class UserSerializer(serializers.ModelSerializer):
             "is_email_verified",
             "is_mobile_verified",
             "created_at",
+            "admin_department_id",
+            "admin_department_name",
         )
         read_only_fields = fields
 

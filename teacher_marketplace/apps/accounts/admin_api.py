@@ -96,9 +96,6 @@ from apps.utils.validators import (
     validate_taxonomy_name,
 )
 
-_CREATABLE_BY_ADMIN = {UserRole.STUDENT, UserRole.TEACHER}
-
-
 def _normalise_name(value):
     """Trim + collapse internal whitespace on a name field."""
     if not isinstance(value, str):
@@ -114,6 +111,10 @@ class AdminUserSerializer(serializers.ModelSerializer):
     has_active_session = serializers.SerializerMethodField()
     profile_type = serializers.SerializerMethodField()
     is_learning_partner_admin = serializers.BooleanField(read_only=True)
+    admin_department_id = serializers.UUIDField(read_only=True)
+    admin_department_name = serializers.CharField(
+        source="admin_department.name", read_only=True, default=None
+    )
 
     class Meta:
         model = User
@@ -132,6 +133,8 @@ class AdminUserSerializer(serializers.ModelSerializer):
             "has_active_session",
             "profile_type",
             "is_learning_partner_admin",
+            "admin_department_id",
+            "admin_department_name",
             "last_login",
             "created_at",
         )
@@ -190,15 +193,6 @@ class AdminUserCreateSerializer(serializers.Serializer):
                 "Admin dashboard -> Admin account requests / Learning "
                 "Partners), not created directly here."
             )
-        actor = (
-            self.context["request"].web_user
-            if hasattr(self.context["request"], "web_user")
-            else self.context["request"].user
-        )
-        if actor.role == UserRole.ADMIN and value not in _CREATABLE_BY_ADMIN:
-            raise serializers.ValidationError(
-                "Admins can only create Student or Teacher accounts."
-            )
         return value
 
 
@@ -216,6 +210,25 @@ class AdminUserUpdateSerializer(serializers.Serializer):
     is_email_verified = serializers.BooleanField(required=False)
     is_mobile_verified = serializers.BooleanField(required=False)
     role = serializers.ChoiceField(choices=UserRole.choices, required=False)
+    # Reassigns an existing Admin between departments. There was previously
+    # no way to do this at all - department was set once, at approval, and
+    # never touched again (apps.accounts.services.admin_account_naming).
+    # Now that department gates real authority (apps.accounts.
+    # api_permissions.DEPARTMENT_ROUTE_SCOPE), a Super Admin needs a way to
+    # move someone without deleting and recreating their account.
+    admin_department_id = serializers.PrimaryKeyRelatedField(
+        source="admin_department",
+        queryset=AdminDepartment.objects.filter(is_active=True),
+        required=False,
+    )
+
+    def validate_admin_department_id(self, value):
+        target = self.context.get("target")
+        if target is not None and target.role != UserRole.ADMIN:
+            raise serializers.ValidationError(
+                "Only an Admin account has a department to reassign."
+            )
+        return value
 
     def validate_role(self, value):
         if value in (UserRole.ADMIN, UserRole.LEARNING_PARTNER):
@@ -445,6 +458,7 @@ class AdminAccountRequestSerializer(serializers.ModelSerializer):
 
 class AdminDepartmentSerializer(serializers.ModelSerializer):
     admin_count = serializers.SerializerMethodField()
+    capabilities = serializers.SerializerMethodField()
 
     class Meta:
         model = AdminDepartment
@@ -454,6 +468,7 @@ class AdminDepartmentSerializer(serializers.ModelSerializer):
             "slug",
             "is_active",
             "admin_count",
+            "capabilities",
             "created_at",
             "updated_at",
         )
@@ -461,12 +476,18 @@ class AdminDepartmentSerializer(serializers.ModelSerializer):
             "id",
             "slug",
             "admin_count",
+            "capabilities",
             "created_at",
             "updated_at",
         )
 
     def get_admin_count(self, obj) -> int:
         return obj.admins.filter(is_active=True).count()
+
+    def get_capabilities(self, obj) -> list:
+        from apps.accounts.api_permissions import DEPARTMENT_CAPABILITY_LABELS
+
+        return list(DEPARTMENT_CAPABILITY_LABELS.get(obj.slug, ()))
 
     def validate_name(self, value):
         value = value.strip() if isinstance(value, str) else value
@@ -644,6 +665,27 @@ class AdminUserDetailView(APIView):
                 action="user.activated" if target.is_active else "user.deactivated",
                 target=target,
                 message=f"{'Activated' if target.is_active else 'Deactivated'} {target.email}",
+            )
+
+        if (
+            "admin_department" in changes
+            and changes["admin_department"] != target.admin_department
+        ):
+            _guard_target(actor, target)
+            old_department = target.admin_department
+            target.admin_department = changes["admin_department"]
+            AuditService.record(
+                request=request,
+                category=AuditCategory.USER,
+                action="user.department_reassigned",
+                target=target,
+                message=(
+                    f"{target.email}: "
+                    f"{old_department.name if old_department else '(none)'} -> "
+                    f"{target.admin_department.name}"
+                ),
+                old_department=old_department.slug if old_department else None,
+                new_department=target.admin_department.slug,
             )
 
         for field in (

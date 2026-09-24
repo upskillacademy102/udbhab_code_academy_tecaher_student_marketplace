@@ -13,7 +13,7 @@ from PIL import Image
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import UserRole
-from apps.accounts.tests.helpers import login, make_user
+from apps.accounts.tests.helpers import login, make_named_admin, make_user
 from apps.teacher_profile.models import TeacherProfile
 from apps.teachers.models import Teacher
 from apps.trust.models import ManualReviewItem, ManualReviewKind, TeacherVerificationEvidence
@@ -179,7 +179,10 @@ class AdminVerdictTests(APITestCase):
         VerificationService.submit_reviewed_item(
             self.teacher, "gov_id", payload={"full_name": "X", "document_ref": "d"}
         )
-        self.admin = make_user(role=UserRole.ADMIN)
+        # admin_teacher_profiles:verification-item is Verification-department
+        # only (apps.accounts.api_permissions.DEPARTMENT_ROUTE_SCOPE) - a
+        # departmentless admin now correctly 403s here.
+        self.admin = make_named_admin(department="Verification")
         login(self.client, self.admin)
         self.url = f"/api/v1/admin/teacher-profiles/{self.teacher.id}/verification-items/gov_id/"
 
@@ -223,7 +226,7 @@ class IdentityCheckEitherOrTests(APITestCase):
         self.tuser = make_user(role=UserRole.TEACHER)
         self.teacher = Teacher.objects.create(user=self.tuser, experience_years=3)
         TeacherProfile.objects.create(teacher=self.teacher)
-        self.admin = make_user(role=UserRole.ADMIN)
+        self.admin = make_named_admin(department="Verification")
 
     def _verify(self, key):
         return self.client.post(

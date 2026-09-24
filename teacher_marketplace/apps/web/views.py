@@ -326,9 +326,10 @@ def spa(*, roles, title, desc="", guard=None):
     than rendered here, so pages can move across one at a time.
 
     `guard` overrides the default role_required(*roles) decorator for a
-    mount that needs a narrower check than role alone (e.g. the Learning
-    Partner dashboard, which also needs admin_department.is_learning_partner
-    - see apps.web.guards.learning_partner_required).
+    mount that needs a narrower check than role alone - e.g. the Learning
+    Partner dashboard, which needs role == "learning_partner" specifically
+    (see apps.web.guards.learning_partner_required), or a department-scoped
+    admin screen, which needs role_required(..., department_slugs={...}).
     """
     from apps.web.vite import spa_assets
 

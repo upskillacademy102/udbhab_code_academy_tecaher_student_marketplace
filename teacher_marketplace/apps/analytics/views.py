@@ -177,6 +177,28 @@ class DashboardView(APIView):
             or 0
         )
 
+        # Learning Partner commission split (apps.commissions) - how much
+        # of total_revenue the business actually kept vs. what's owed/paid
+        # to partners. business_revenue + partner_commission_total should
+        # equal total_revenue for every payment that has a Commission row
+        # (older rows created before this app existed won't).
+        from apps.commissions.models import (
+            Commission,
+            CommissionStatus,
+            LearningPartnerWallet,
+        )
+
+        active_commissions = Commission.objects.filter(status=CommissionStatus.ACTIVE)
+        business_revenue = (
+            active_commissions.aggregate(total=Sum("business_share"))["total"] or 0
+        )
+        partner_commission_total = (
+            active_commissions.aggregate(total=Sum("partner_share"))["total"] or 0
+        )
+        partner_commission_pending_payout = (
+            LearningPartnerWallet.objects.aggregate(total=Sum("balance"))["total"] or 0
+        )
+
         todays_payments = Payment.objects.filter(
             status=PaymentStatus.SUCCESS, created_at__gte=today_start
         ).count()
@@ -196,6 +218,9 @@ class DashboardView(APIView):
             "revenue": str(total_revenue),
             "subscription_revenue": str(subscription_revenue),
             "topup_revenue": str(topup_revenue),
+            "business_revenue": str(business_revenue),
+            "partner_commission_total": str(partner_commission_total),
+            "partner_commission_pending_payout": str(partner_commission_pending_payout),
             "todays_payments": todays_payments,
             "todays_leads": todays_leads,
             "unlocked_leads": unlocked_leads,

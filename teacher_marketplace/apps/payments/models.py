@@ -237,6 +237,21 @@ class Payment(BaseModel):
             "The exact amount charged (TokenPackage.final_price at time of purchase)."
         ),
     )
+    base_amount = models.DecimalField(
+        _("base amount"),
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text=_(
+            "The pre-GST amount this purchase is based on (TokenPackage."
+            "discounted_price, or SubscriptionPlan.monthly_price which has no "
+            "GST concept) - what apps.commissions splits 2/3-1/3 with a "
+            "referring Learning Partner. Null only for Payment rows created "
+            "before apps.commissions existed."
+        ),
+    )
     token_count = models.PositiveIntegerField(
         _("token count"),
         null=True,

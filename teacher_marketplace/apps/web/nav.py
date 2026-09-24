@@ -3,8 +3,11 @@ Single source of truth for role-aware navigation.
 
 `nav_for(role, user=None)` returns a list of sections; each section is
 {"label": str|None, "items": [NavItem, ...]}. `user` is only consulted for
-role == "admin", to tell a Learning Partner admin (a much narrower nav)
-apart from a plain admin - every other role ignores it.
+role == "admin", to append the one or two nav items a Content Moderation or
+Marketing admin's department unlocks (apps.accounts.api_permissions.
+DEPARTMENT_ROUTE_SCOPE) - every other role ignores it. Learning Partner is
+its own role (role == "learning_partner"), not a department, and gets its
+own dedicated nav below regardless of `user`.
 
 NavItem keys:
     label   visible text
@@ -295,6 +298,16 @@ _LEARNING_PARTNER = [
             {"label": "Audit log", "url": "/staff/learning-partner/audit/", "icon": "list"},
         ],
     },
+    {
+        "label": "Finance",
+        "items": [
+            {
+                "label": "Wallet & Payouts",
+                "url": "/staff/learning-partner/wallet/",
+                "icon": "coin",
+            },
+        ],
+    },
 ]
 
 
@@ -403,7 +416,7 @@ def nav_for(role, user=None):
     if role == "learning_partner":
         return _LEARNING_PARTNER
     if role == "admin":
-        return _repoint(
+        sections = _repoint(
             _ADMIN_SECTIONS,
             {
                 "Dashboard": ("/staff/admin/", True),
@@ -412,6 +425,51 @@ def nav_for(role, user=None):
                 "Languages": ("/staff/admin/languages/", False),
             },
         )
+        # Content Moderation / Marketing are the only two departments that
+        # unlock a screen of their own today (DEPARTMENT_ROUTE_SCOPE in
+        # apps.accounts.api_permissions) - reusing the existing SuperAdmin
+        # screens rather than building new ones. Every other department
+        # (Finance, Support, Verification) only narrows write actions on
+        # pages already in _ADMIN_SECTIONS above, so needs no extra link.
+        dept_slug = getattr(getattr(user, "admin_department", None), "slug", None)
+        dept_items = []
+        if dept_slug == "content-moderation":
+            dept_items.append(
+                {
+                    "label": "Fake-lead reports",
+                    "url": "/staff/superadmin/fake-lead-reports/",
+                    "icon": "alert-triangle",
+                }
+            )
+        if dept_slug == "marketing":
+            dept_items.append(
+                {
+                    "label": "Leads & requirements",
+                    "url": "/staff/superadmin/leads/",
+                    "icon": "clipboard",
+                }
+            )
+        if dept_items:
+            sections = sections + [{"label": "Trust & Leads", "items": dept_items}]
+        # Finance is a third department that DOES unlock a screen of its own
+        # (unlike the "only narrows write actions" departments noted above) -
+        # payout data (amounts, bank details) is read-restricted at the API
+        # to Finance/Super Admin, not just write-restricted, so a non-Finance
+        # admin must not even see the link (it would just 403 underneath).
+        if dept_slug == "finance":
+            sections = sections + [
+                {
+                    "label": "Finance",
+                    "items": [
+                        {
+                            "label": "Learning Partner Payouts",
+                            "url": "/admin-portal/payouts/",
+                            "icon": "coin",
+                        },
+                    ],
+                }
+            ]
+        return sections
     if role == "superadmin":
         base = _rehome(_ADMIN_SECTIONS, "/admin-portal/", "/super-admin/")
         base = _repoint(
@@ -441,6 +499,19 @@ def nav_for(role, user=None):
                 "url": "/staff/superadmin/learning-partners/",
                 "icon": "globe",
             },
+        )
+        # Super Admin always sees the payout queue regardless of department
+        # (the plain-Admin path above only shows it to Finance) - added to
+        # Commerce, alongside the other money-related admin screens.
+        commerce_idx = next(
+            i for i, section in enumerate(base) if section["label"] == "Commerce"
+        )
+        base[commerce_idx]["items"].append(
+            {
+                "label": "Learning Partner Payouts",
+                "url": "/super-admin/payouts/",
+                "icon": "coin",
+            }
         )
         return base[:-1] + [_SUPERADMIN_OVERSIGHT, _SUPERADMIN_PROVISIONING] + base[-1:]
     return []

@@ -113,6 +113,7 @@ class PaymentService:
                     detail="This token package is no longer available."
                 )
             amount = token_package.final_price
+            base_amount = token_package.discounted_price
             payment_type = PaymentType.TOKEN_PURCHASE
             token_count = token_package.token_count
             notes = {
@@ -126,6 +127,8 @@ class PaymentService:
                     detail="This subscription plan is not currently available."
                 )
             amount = subscription_plan.monthly_price
+            # SubscriptionPlan has no GST field - the base IS the full price.
+            base_amount = subscription_plan.monthly_price
             payment_type = PaymentType.SUBSCRIPTION
             token_count = None
             notes = {
@@ -187,6 +190,7 @@ class PaymentService:
             subscription_plan=subscription_plan,
             razorpay_order_id=razorpay_order["id"],
             amount=amount,
+            base_amount=base_amount,
             token_count=token_count,
             status=PaymentStatus.PENDING,
         )
@@ -474,6 +478,14 @@ class PaymentService:
 
         payment.status = PaymentStatus.SUCCESS
         payment.save(update_fields=["status"])
+
+        # Learning Partner commission split (apps.commissions) - runs for
+        # BOTH payment types, before the token/subscription branch below,
+        # since the money has already been captured/verified for either
+        # kind by this point. Idempotent - see CommissionService.credit_for_payment.
+        from apps.commissions.services import CommissionService
+
+        CommissionService.credit_for_payment(payment)
 
         if payment.payment_type == PaymentType.TOKEN_PURCHASE:
             from apps.notifications.services import NotificationService

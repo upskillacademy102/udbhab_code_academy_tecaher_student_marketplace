@@ -93,9 +93,20 @@ class RegistryUnitTests(APITestCase):
         self.assertTrue(is_public("accounts:login"))
 
     def test_every_role_has_a_policy_table(self):
+        # Learning Partner became its own role (not a magic admin
+        # department) after this test was first written - it belongs here
+        # too, and always has (apps.accounts.api_permissions._compile()
+        # seeds a table for every role in ALL_ROLES, so this was stale
+        # rather than reflecting an actual gap).
         self.assertEqual(
             set(ROLE_API_PERMISSIONS),
-            {UserRole.STUDENT, UserRole.TEACHER, UserRole.ADMIN, UserRole.SUPERADMIN},
+            {
+                UserRole.STUDENT,
+                UserRole.TEACHER,
+                UserRole.ADMIN,
+                UserRole.SUPERADMIN,
+                UserRole.LEARNING_PARTNER,
+            },
         )
 
 

@@ -39,6 +39,22 @@ Design rules (all mandatory, per the approved permission matrix):
 Approved matrix: 2026-08-29. To change the policy, edit ``_RULES`` (and
 ``PUBLIC_ROUTE_NAMES`` if a route's public status changes). Nothing else
 in the codebase needs to change.
+
+DEPARTMENT SCOPE (added 2026-09-24)
+    ``_RULES`` above decides *role* -> route access; it does not know
+    departments exist. A second, narrower table, ``DEPARTMENT_ROUTE_SCOPE``
+    (built from ``_DEPT_RULES``), restricts a subset of routes further when
+    the caller's role is ``admin``: only an admin whose
+    ``AdminDepartment.slug`` appears in that route's allowed set may call
+    it. A route absent from this table carries no extra restriction - every
+    admin, any department, keeps exactly the access ``_RULES`` already
+    grants (today's behaviour, unchanged). Super Admin never consults this
+    table (already short-circuited to True in ``is_allowed()``).
+
+    This can only *narrow* what ``_RULES`` already allows an admin to call -
+    it never grants a route the role table doesn't already list for
+    ``admin``. To open a brand-new route to a department, add it to
+    ``_RULES`` under ``_ADMIN`` first, then scope it here.
 """
 
 from __future__ import annotations
@@ -139,20 +155,37 @@ _RULES: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
     # ===== Teacher verification - Admin + Super Admin ======================
     ("admin_teacher_profiles:list", ("GET",), _ADMIN),
     ("admin_teacher_profiles:detail", ("GET",), _ADMIN),
-    ("admin_teacher_profiles:verification", ("POST",), _ADMIN),
-    ("admin_teacher_profiles:verification-item", ("POST",), _ADMIN),
+    ("admin_teacher_profiles:verification", ("POST",), _ADMIN),  # further scoped to the Verification department below
+    ("admin_teacher_profiles:verification-item", ("POST",), _ADMIN),  # further scoped to the Verification department below
     ("admin_onboarding_calls:list", ("GET",), _ADMIN),
     # ===== "Connect to Admin" support tickets ==============================
     # Filing a ticket is Student/Teacher only - Admin/Super Admin are the
     # people tickets get reported TO, not reporters themselves.
     ("support:ticket-list-create", ("GET", "POST"), _STUDENT_TEACHER),
     ("admin_support:list", ("GET",), _ADMIN),
-    ("admin_support:resolve", ("POST",), _ADMIN),  # view itself 403s a non-assigned admin
+    ("admin_support:resolve", ("POST",), _ADMIN),  # further scoped to the Support department below; view itself also 403s a non-assigned admin
+    # ===== Ops - a deliberately narrow slice open to two departments =======
+    # Everything else under ops:* stays Super Admin only (see the comment
+    # below). These four are opened to role=admin here and then scoped to
+    # a single department each in DEPARTMENT_ROUTE_SCOPE - Content
+    # Moderation gets the fake-lead feed, resolving a fake-lead review item,
+    # and issuing/lifting a sanction from that flow (never the general,
+    # unfiltered sanctions list - see the object-level checks in
+    # apps.ops.views for the parts a route-name grant alone can't express).
+    ("ops:fake-lead-reports", ("GET",), _ADMIN),
+    ("ops:review-queue-resolve", ("POST",), _ADMIN),
+    ("ops:sanctions", ("POST",), _ADMIN),  # GET (list) stays unlisted -> Super Admin only
+    ("ops:sanction-lift", ("POST",), _ADMIN),
+    # Marketing gets read-only lead-quality visibility.
+    ("ops:students-lead-quality", ("GET",), _ADMIN),
+    ("ops:teacher-lead-reviews", ("GET",), _ADMIN),
     # POST admin_users:list, PATCH admin_users:detail, and admin_users:{activate,
     # deactivate,impersonate} + accounts:admin-login-{requests,approve,deny} +
-    # admin_onboarding_calls:schedule + admin_support:assign + ops:* +
-    # subjects:subject-{list-create,detail} write methods +
-    # languages:language-{list-create,detail} write methods +
+    # admin_onboarding_calls:schedule + admin_support:assign +
+    # ops:{events,overview,health,errors,review-queue,review-queue-assign,
+    # sanctions-GET,students-lead-quality-write...} (i.e. every ops:* route
+    # not listed just above) + subjects:subject-{list-create,detail} write
+    # methods + languages:language-{list-create,detail} write methods +
     # accounts:staff-admin-account-requests* + accounts:staff-departments* +
     # accounts:staff-taxonomy-requests* are intentionally unlisted -> Super
     # Admin only (is_allowed short-circuit).
@@ -315,6 +348,25 @@ _RULES: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
     ("lp:students-lead-quality", ("GET",), _LEARNING_PARTNER),
     ("lp:teacher-lead-reviews", ("GET",), _LEARNING_PARTNER),
     ("lp:audit", ("GET",), _LEARNING_PARTNER),
+    # ======================================================================
+    # LEARNING PARTNER COMMISSIONS - own wallet/earnings/bank/payouts only.
+    # Same object-level scoping guarantee as the lp:* routes above (see
+    # apps.commissions.views.LearningPartnerCommissionAPIView).
+    # ======================================================================
+    ("commissions:wallet", ("GET",), _LEARNING_PARTNER),
+    ("commissions:wallet-transactions", ("GET",), _LEARNING_PARTNER),
+    ("commissions:earnings", ("GET",), _LEARNING_PARTNER),
+    ("commissions:bank-account", ("GET", "PUT"), _LEARNING_PARTNER),
+    ("commissions:payout-list-create", ("GET", "POST"), _LEARNING_PARTNER),
+    # ======================================================================
+    # ADMIN PAYOUT QUEUE - Admin gets in via _ADMIN here, then narrowed to
+    # the Finance department only in DEPARTMENT_ROUTE_SCOPE below. Super
+    # Admin reaches every route regardless (short-circuit in is_allowed()).
+    # ======================================================================
+    ("admin_payouts:list", ("GET",), _ADMIN),
+    ("admin_payouts:detail", ("GET",), _ADMIN),
+    ("admin_payouts:decide", ("POST",), _ADMIN),
+    ("admin_payouts:mark-paid", ("POST",), _ADMIN),
 ]
 
 
@@ -336,6 +388,85 @@ ROLE_API_PERMISSIONS: dict[str, dict[str, frozenset]] = _compile(_RULES)
 
 
 # ----------------------------------------------------------------------
+# Department scope - role == ADMIN only (see the module docstring).
+# Departments (AdminDepartment.slug) referenced below. Keyed by slug, not
+# display name: renaming a department in the SuperAdmin Departments screen
+# never recomputes its slug (AdminDepartment.save() only derives one when
+# blank), so a rename can't silently change what that department can do.
+# ----------------------------------------------------------------------
+DEPT_FINANCE = "finance"
+DEPT_SUPPORT = "support"
+DEPT_VERIFICATION = "verification"
+DEPT_CONTENT_MODERATION = "content-moderation"
+DEPT_MARKETING = "marketing"
+
+#: (route_name, (methods...), department_slug) - same shape as _RULES,
+#: minus the roles column (every row here is implicitly role=admin only).
+_DEPT_RULES: list[tuple[str, tuple[str, ...], str]] = [
+    # ----- Finance: commercial pricing writes (narrowed from all-admin) ---
+    ("token-packages:token-package-list-create", ("POST",), DEPT_FINANCE),
+    ("token-packages:token-package-detail", ("PUT", "PATCH", "DELETE"), DEPT_FINANCE),
+    ("subscriptions:plan-list-create", ("POST",), DEPT_FINANCE),
+    ("subscriptions:plan-detail", ("PUT", "PATCH", "DELETE"), DEPT_FINANCE),
+    ("lead-unlock-pricing:pricing-list-create", ("POST",), DEPT_FINANCE),
+    ("lead-unlock-pricing:pricing-detail", ("PUT", "PATCH", "DELETE"), DEPT_FINANCE),
+    # ----- Finance: Learning Partner payout queue -------------------------
+    ("admin_payouts:list", ("GET",), DEPT_FINANCE),
+    ("admin_payouts:detail", ("GET",), DEPT_FINANCE),
+    ("admin_payouts:decide", ("POST",), DEPT_FINANCE),
+    ("admin_payouts:mark-paid", ("POST",), DEPT_FINANCE),
+    # ----- Verification: teacher verification decisions (narrowed) --------
+    ("admin_teacher_profiles:verification", ("POST",), DEPT_VERIFICATION),
+    ("admin_teacher_profiles:verification-item", ("POST",), DEPT_VERIFICATION),
+    # ----- Support: resolving a ticket (narrowed; list stays baseline) ----
+    ("admin_support:resolve", ("POST",), DEPT_SUPPORT),
+    # ----- Content Moderation: fake-lead queue + moderation sanctions -----
+    ("ops:fake-lead-reports", ("GET",), DEPT_CONTENT_MODERATION),
+    ("ops:review-queue-resolve", ("POST",), DEPT_CONTENT_MODERATION),
+    ("ops:sanctions", ("POST",), DEPT_CONTENT_MODERATION),
+    ("ops:sanction-lift", ("POST",), DEPT_CONTENT_MODERATION),
+    # ----- Marketing: read-only lead-quality browser -----------------------
+    ("ops:students-lead-quality", ("GET",), DEPT_MARKETING),
+    ("ops:teacher-lead-reviews", ("GET",), DEPT_MARKETING),
+]
+
+
+def _compile_dept(rules) -> dict[tuple[str, str], frozenset[str]]:
+    table: dict[tuple[str, str], set] = {}
+    for route_name, methods, dept in rules:
+        for method in methods:
+            table.setdefault((route_name, method), set()).add(dept)
+    return {key: frozenset(depts) for key, depts in table.items()}
+
+
+#: ``{(route_name, HTTP_METHOD): frozenset(department_slug, ...)}``.
+DEPARTMENT_ROUTE_SCOPE: dict[tuple[str, str], frozenset[str]] = _compile_dept(
+    _DEPT_RULES
+)
+
+#: Human-readable one-liners for the SuperAdmin Departments screen (its
+#: read-only "what can this department do" panel). Route names aren't
+#: reader-friendly, so these aren't computed from _DEPT_RULES - they're
+#: kept directly beside it instead, so both get reviewed in the same diff
+#: whenever a department's scope changes.
+DEPARTMENT_CAPABILITY_LABELS: dict[str, tuple[str, ...]] = {
+    DEPT_FINANCE: (
+        "Create and edit token packages, subscription plans, and lead-unlock pricing",
+        "Review, approve/reject, and mark paid Learning Partner payout requests",
+    ),
+    DEPT_SUPPORT: ("Resolve support tickets assigned to them",),
+    DEPT_VERIFICATION: ("Approve or reject teacher verification submissions",),
+    DEPT_CONTENT_MODERATION: (
+        "View the fake-lead-report queue and resolve a flagged item",
+        "Ban or suspend an account from that queue, and lift a moderation-issued sanction",
+    ),
+    DEPT_MARKETING: (
+        "View lead-quality ratings by student and by teacher (read-only)",
+    ),
+}
+
+
+# ----------------------------------------------------------------------
 # Public API
 # ----------------------------------------------------------------------
 def is_public(route_name: str | None) -> bool:
@@ -343,7 +474,13 @@ def is_public(route_name: str | None) -> bool:
     return bool(route_name) and route_name in PUBLIC_ROUTE_NAMES
 
 
-def is_allowed(role: str | None, method: str | None, route_name: str | None) -> bool:
+def is_allowed(
+    role: str | None,
+    method: str | None,
+    route_name: str | None,
+    *,
+    department_slug: str | None = None,
+) -> bool:
     """
     Central authorisation decision. DEFAULT DENY.
 
@@ -351,6 +488,10 @@ def is_allowed(role: str | None, method: str | None, route_name: str | None) -> 
       authentication is enforced separately upstream.
     * Everyone else -> allowed only when the (role, method, route) triple
       is explicitly granted in ``_RULES``.
+    * Admin, additionally -> for the handful of routes listed in
+      ``DEPARTMENT_ROUTE_SCOPE``, only allowed when ``department_slug`` is
+      one of that route's allowed departments. Irrelevant for every other
+      role and every route not in that table.
     """
     if not role or not method or not route_name:
         return False
@@ -366,7 +507,15 @@ def is_allowed(role: str | None, method: str | None, route_name: str | None) -> 
     role_table = ROLE_API_PERMISSIONS.get(role)
     if not role_table:
         return False
-    return route_name in role_table.get(lookup_method, frozenset())
+    if route_name not in role_table.get(lookup_method, frozenset()):
+        return False
+
+    if role == ADMIN:
+        required_depts = DEPARTMENT_ROUTE_SCOPE.get((route_name, lookup_method))
+        if required_depts is not None and department_slug not in required_depts:
+            return False
+
+    return True
 
 
 def known_route_names() -> set[str]:

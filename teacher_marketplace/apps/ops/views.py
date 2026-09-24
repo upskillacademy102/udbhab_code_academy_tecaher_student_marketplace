@@ -1,5 +1,6 @@
 """
-Operations & audit API — Super Admin only.
+Operations & audit API — Super Admin only, with a deliberately narrow slice
+open to two admin departments (apps.accounts.api_permissions).
 
     GET /api/v1/ops/events/                  audit-log feed (filter + paginate)
     GET /api/v1/ops/overview/                platform KPIs + short time series
@@ -9,9 +10,17 @@ Operations & audit API — Super Admin only.
                                               ?student_id= returns that student's ratings instead
     GET /api/v1/ops/teacher-lead-reviews/    lead-quality ratings, tagged offer vs. pooled enquiry
 
-Access is enforced centrally: none of these route names appear in
-apps.accounts.api_permissions._RULES, so every non-superadmin role is
-default-denied; superadmin is allowed by the is_allowed() short-circuit.
+Access is enforced centrally: most of these route names don't appear in
+apps.accounts.api_permissions._RULES at all, so every non-superadmin role
+is default-denied there; superadmin is allowed by the is_allowed()
+short-circuit. The exceptions - fake-lead-reports (GET), review-queue-resolve
+(POST), sanctions (POST only), sanction-lift (POST), students-lead-quality
+(GET) and teacher-lead-reviews (GET) - are granted to role=admin too, then
+narrowed to one department each by DEPARTMENT_ROUTE_SCOPE. Where a route
+name alone can't express the full boundary (e.g. "only *fake-lead* review
+items", not every review item; "only sanctions *this flow* created", not
+every sanction), the object-level check lives in the view below, following
+the same idiom as apps.support.services.SupportService.can_act_on.
 """
 
 import datetime as dt
@@ -415,11 +424,28 @@ def _get_review_item(item_id):
 )
 class ReviewQueueResolveView(APIView):
     def post(self, request, id):
+        from apps.accounts.models import UserRole
+        from apps.core.exceptions.custom_exceptions import PermissionDeniedException
         from apps.ops.models import AuditCategory
         from apps.ops.services import AuditService
+        from apps.trust.models import ManualReviewKind
         from apps.trust.services.trust_service import TrustService
 
         item = _get_review_item(id)
+        # Route-level grant (DEPARTMENT_ROUTE_SCOPE) only confirms this
+        # admin is in Content Moderation; it can't know *which* review item
+        # they're resolving. Their only screen surfaces fake-lead-report
+        # items (apps.ops.views.OpsFakeLeadReportsView), so that's the only
+        # kind they may resolve here - teacher verification, payment
+        # disputes, etc. stay Super Admin only even though the route itself
+        # is now reachable.
+        if (
+            request.user.role == UserRole.ADMIN
+            and item.kind != ManualReviewKind.FAKE_LEAD_REPORT
+        ):
+            raise PermissionDeniedException(
+                detail="You can only resolve fake-lead-report items."
+            )
         dismiss = bool(request.data.get("dismiss"))
         resolution = (request.data.get("resolution") or "").strip()[:2000]
         TrustService.resolve_review_item(
@@ -598,10 +624,14 @@ class OpsSanctionListCreateView(generics.ListAPIView):
         responses={201: AccountSanctionSerializer},
     )
     def post(self, request):
-        from apps.accounts.models import User
+        from apps.accounts.models import User, UserRole
         from apps.ops.models import AuditCategory
         from apps.ops.services import AuditService
-        from apps.trust.models import AccountSanctionKind, ManualReviewItem
+        from apps.trust.models import (
+            AccountSanctionKind,
+            AccountSanctionSource,
+            ManualReviewItem,
+        )
         from apps.trust.services.sanction_service import SanctionService
 
         user_id = request.data.get("user_id")
@@ -622,10 +652,20 @@ class OpsSanctionListCreateView(generics.ListAPIView):
                 id=request.data["review_item_id"]
             ).first()
 
+        # This route is only reachable by Super Admin or a Content
+        # Moderation admin (DEPARTMENT_ROUTE_SCOPE) - tag which, so
+        # OpsSanctionLiftView can later tell a moderation-issued sanction
+        # apart from every other kind of Super Admin ban.
+        source = (
+            AccountSanctionSource.MANUAL_CONTENT_MODERATION
+            if request.user.role == UserRole.ADMIN
+            else AccountSanctionSource.MANUAL
+        )
         sanction = SanctionService.apply(
             target,
             kind=kind,
             reason=reason,
+            source=source,
             by=request.user,
             review_item=review_item,
             audit_request=request,
@@ -652,7 +692,17 @@ class OpsSanctionListCreateView(generics.ListAPIView):
     responses={200: AccountSanctionSerializer},
 )
 class OpsSanctionLiftView(APIView):
+    #: Sources a Content Moderation admin may lift - their own moderation
+    #: bans plus the automatic fake-lead bans that feed the same queue.
+    #: Anything else (a Super Admin's manual ban, a brute-force IP block,
+    #: ...) stays out of their reach even though the route itself is open.
+    _CONTENT_MODERATION_SOURCES = frozenset(
+        {"manual_content_moderation", "auto_fake_leads_weekly", "auto_fake_leads_monthly"}
+    )
+
     def post(self, request, id):
+        from apps.accounts.models import UserRole
+        from apps.core.exceptions.custom_exceptions import PermissionDeniedException
         from apps.trust.models import AccountSanction
         from apps.trust.services.sanction_service import SanctionService
 
@@ -661,6 +711,13 @@ class OpsSanctionLiftView(APIView):
             raise ResourceNotFoundException(detail="Sanction not found.")
         if not sanction.active:
             raise ValidationException(detail="This sanction has already been lifted.")
+        if (
+            request.user.role == UserRole.ADMIN
+            and sanction.source not in self._CONTENT_MODERATION_SOURCES
+        ):
+            raise PermissionDeniedException(
+                detail="You can only lift sanctions issued from the moderation queue."
+            )
 
         SanctionService.lift(
             sanction,

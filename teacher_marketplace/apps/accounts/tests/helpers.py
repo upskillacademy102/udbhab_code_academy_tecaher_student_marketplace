@@ -40,10 +40,23 @@ def login(api_client, user, password: str = TEST_PASSWORD):
     the auth cookies for subsequent requests.
 
     student / teacher / superadmin -> POST /api/v1/auth/login/
-    admin                          -> the Super-Admin approval flow, auto-approved
-                                      here so tests don't need a second account.
+    admin, named (admin_account_name set, e.g. via make_named_admin())
+                                    -> POST /api/v1/auth/staff/login-admin/
+    admin, legacy (no admin_account_name)
+                                    -> the old email-based approval flow,
+                                      auto-approved here so tests don't need
+                                      a second account. AdminLoginView itself
+                                      rejects a named admin on this path (one
+                                      working login path per account), so the
+                                      branch above is not just an optimisation.
     """
     if getattr(user, "role", None) == UserRole.ADMIN:
+        if getattr(user, "admin_account_name", None):
+            return api_client.post(
+                "/api/v1/auth/staff/login-admin/",
+                {"account_name": user.admin_account_name, "password": password},
+                format="json",
+            )
         return _admin_login(api_client, user, password)
     return api_client.post(
         "/api/v1/auth/login/",
@@ -72,6 +85,46 @@ def _admin_login(api_client, user, password):
 def bearer(api_client, access_token: str):
     api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {access_token}")
     return api_client
+
+
+def make_named_admin(department=None, **extra) -> User:
+    """
+    Create a named-login admin (admin_account_name set, e.g. "RajuDas@Finance",
+    via the real apps.accounts.services.admin_account_naming.build_admin_account_name)
+    - the shape every staff-login and department-authority test needs.
+    Previously redefined near-identically as a local ``_make_named_admin()``
+    in three separate test files; consolidated here.
+
+    `department` may be an AdminDepartment instance, a department name
+    (looked up or created via get_or_create), or omitted (defaults to
+    Finance, matching this helper's pre-consolidation behaviour).
+    """
+    from apps.accounts.models import AdminDepartment
+    from apps.accounts.services.admin_account_naming import build_admin_account_name
+
+    if department is None:
+        department = "Finance"
+    if isinstance(department, str):
+        department, _ = AdminDepartment.objects.get_or_create(name=department)
+
+    n = next(_mobile_counter)
+    defaults = {
+        "first_name": extra.pop("first_name", "Raju"),
+        "last_name": extra.pop("last_name", "Das"),
+        "email": extra.pop("email", f"admin{n}@example.com"),
+        "mobile": extra.pop("mobile", str(n)),
+    }
+    account_name = build_admin_account_name(
+        defaults["first_name"], defaults["last_name"], department
+    )
+    return User.objects.create_user(
+        password=TEST_PASSWORD,
+        role=UserRole.ADMIN,
+        admin_account_name=account_name,
+        admin_department=department,
+        **defaults,
+        **extra,
+    )
 
 
 def make_learning_partner_admin(name: str = "TestPartner", *, mobile: str | None = None, **extra) -> User:
