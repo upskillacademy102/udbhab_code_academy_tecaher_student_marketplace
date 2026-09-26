@@ -42,6 +42,12 @@ TRIGGER POINTS (where each spec event actually fires from):
                                        is out of scope for Phase 3. This
                                        is flagged as a genuine gap, not
                                        silently omitted.
+    FINANCE_INCOMING_PAYMENT         -> apps.payments.services.
+                                       PaymentService._credit_successful_payment
+                                       (added 2026-09-24, apps.finance) -
+                                       fires once per successful payment,
+                                       fanned out to every Finance-department
+                                       admin, in-app only.
 """
 
 import logging
@@ -136,6 +142,38 @@ class NotificationService:
             ),
             reference_id=str(payment.id),
         )
+
+    @staticmethod
+    def finance_incoming_payment(payment):
+        """
+        Fan-out, in-app-only notification to every Finance-department
+        admin when a teacher's payment succeeds - feeds the "Notifications"
+        sidebar badge on the Finance panel (apps.finance). Email is
+        deliberately off here (send_email=False): at payment frequency it
+        would be noisy, unlike the one-off payment_success email a teacher
+        gets for their own purchase.
+        """
+        from apps.accounts.models import User
+
+        finance_admins = User.objects.filter(
+            role="admin", admin_department__slug="finance"
+        )
+        notifications = []
+        for admin in finance_admins:
+            notifications.append(
+                NotificationService.notify(
+                    user=admin,
+                    event=NotificationEvent.FINANCE_INCOMING_PAYMENT,
+                    title="Incoming payment",
+                    message=(
+                        f"{payment.teacher.user.get_full_name()} paid ₹{payment.amount} "
+                        f"({payment.get_payment_type_display()})."
+                    ),
+                    reference_id=str(payment.id),
+                    send_email=False,
+                )
+            )
+        return notifications
 
     @staticmethod
     def subscription_activated(subscription):

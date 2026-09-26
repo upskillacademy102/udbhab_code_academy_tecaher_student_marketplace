@@ -48,6 +48,11 @@ def resolve_web_user(request):
 def home_url_for(user):
     if getattr(user, "is_learning_partner_admin", False):
         return "/staff/learning-partner/"
+    if (
+        getattr(user, "role", None) == "admin"
+        and getattr(getattr(user, "admin_department", None), "slug", None) == "support"
+    ):
+        return "/staff/admin/support/"
     return ROLE_HOME.get(getattr(user, "role", None), "/")
 
 

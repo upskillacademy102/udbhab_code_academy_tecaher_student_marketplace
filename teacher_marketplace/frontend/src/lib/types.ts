@@ -244,6 +244,26 @@ export interface Plan {
   status?: string | null;
 }
 
+/** GET /token-packages/ */
+export interface TokenPackage {
+  id: string;
+  name: string;
+  token_count: number;
+  price: string;
+  discounted_price?: string;
+  gst_amount?: string;
+  final_price?: string;
+  is_active: boolean;
+}
+
+/** GET /lead-unlock-pricing/ */
+export interface LeadUnlockPricing {
+  id: string;
+  tier: string;
+  token_cost: number;
+  is_active: boolean;
+}
+
 /** GET /auth/staff/departments/ — where an approved admin is assigned. */
 export interface AdminDepartment {
   id: string;
@@ -491,6 +511,71 @@ export interface AdminUser {
   created_at: string;
 }
 
+/**
+ * What GET /admin/users/ returns to a Support-department admin instead of
+ * AdminUser above (apps.accounts.admin_api.SupportContactUserSerializer) -
+ * name, email, and phone only, and only for student/teacher/learning_partner
+ * accounts.
+ */
+export interface SupportContactUser {
+  id: string;
+  full_name: string;
+  email: string;
+  mobile: string;
+  role: "student" | "teacher" | "learning_partner";
+  created_at: string;
+}
+
+/** GET /admin/onboarding-calls/ - a teacher's request for the onboarding video call. */
+export interface OnboardingCall {
+  id: string;
+  teacher_id: string;
+  teacher_name: string;
+  teacher_email: string;
+  item_status: "pending" | "submitted" | "verified" | "rejected";
+  assigned_admin_id: string | null;
+  assigned_admin_name: string;
+  assigned_admin_email: string;
+  scheduled_at: string | null;
+  /** Set once a Support admin accepts - the call is live from then on. */
+  call_started_at: string | null;
+  /** Jitsi room; null until the call is live. */
+  room_name: string | null;
+  created_at: string;
+}
+
+/** GET /admin/support-tickets/ - a "Bugs Reported" / call-request ticket, admin view. */
+export interface AdminSupportTicket {
+  id: string;
+  subject: string;
+  description: string;
+  contact_preference: "none" | "video_call" | "phone_call";
+  status: "open" | "assigned" | "resolved" | "closed";
+  assigned_admin_names: string[];
+  resolution: string;
+  resolved_at: string | null;
+  attachments: { id: string; file: string }[];
+  created_at: string;
+  reporter_name: string;
+  reporter_email: string;
+  reporter_mobile: string;
+  reporter_role: "student" | "teacher";
+  assigned_admin_ids: string[];
+}
+
+/** GET/POST /admin/broadcast-messages/ - "circulate a message" send history. */
+export interface BroadcastMessage {
+  id: string;
+  subject: string;
+  body: string;
+  via_email: boolean;
+  via_sms: boolean;
+  recipient_count: number;
+  sent_by_name: string | null;
+  sent_by_email: string | null;
+  created_at: string;
+}
+
 /** GET /lp/dashboard/ — a Learning Partner's own overview. */
 export interface LPDashboard {
   organization_name: string;
@@ -560,6 +645,78 @@ export interface PayoutRequest {
   decided_at: string | null;
   paid_at: string | null;
   created_at: string;
+}
+
+/** GET /admin/finance/dashboard/ — Finance-department dashboard KPIs. */
+export interface FinanceDashboard {
+  incoming_this_week: { count: number; total: string };
+  incoming_this_month: { count: number; total: string };
+  outgoing_this_week: { count: number; total: string };
+  outgoing_this_month: { count: number; total: string };
+  top_learning_partners_this_month: {
+    learning_partner_id: string;
+    learning_partner_name: string;
+    learning_partner_email: string;
+    total: string;
+  }[];
+  recent_incoming_payments: {
+    id: string;
+    amount: string;
+    teacher_name: string;
+    transaction_id: string | null;
+    payment_method: string | null;
+    instrument_hint: string | null;
+    created_at: string;
+  }[];
+}
+
+/** GET /admin/finance/transactions/ — one row of the bank-style log. */
+export interface FinanceTransaction {
+  direction: "incoming" | "outgoing";
+  amount: string;
+  transaction_id: string | null;
+  date: string | null;
+  party: string;
+  payment_method: string | null;
+  instrument_hint: string | null;
+  account_number: string | null;
+  ifsc_code: string | null;
+  bank_name: string | null;
+}
+
+/** GET/POST /admin/finance/pricing-requests/, POST .../decide/ */
+export interface PricingChangeRequest {
+  id: string;
+  target_type: "token_package" | "subscription_plan" | "lead_unlock_pricing";
+  target_name: string | null;
+  field_name: string;
+  current_value: string;
+  requested_value: string;
+  status: "pending" | "approved" | "rejected";
+  requested_by_email: string;
+  note: string;
+  decided_by_email: string | null;
+  decided_at: string | null;
+  decision_note: string;
+  created_at: string;
+}
+
+/** GET /admin/finance/learning-partners/ — this month's commission total per partner. */
+export interface LearningPartnerCommissionSummary {
+  learning_partner_id: string;
+  learning_partner_name: string;
+  learning_partner_email: string;
+  total: string;
+  teacher_count: number;
+}
+
+/** GET /admin/finance/learning-partners/{id}/ — this month's breakdown by teacher. */
+export interface LearningPartnerCommissionDetail {
+  teacher_id: string;
+  teacher_name: string;
+  teacher_email: string;
+  total: string;
+  purchase_count: number;
 }
 
 /**

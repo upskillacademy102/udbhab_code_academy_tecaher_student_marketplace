@@ -320,6 +320,7 @@ class PaymentService:
                         razorpay_payment_id=entity_pay_id
                     )
                     payment.razorpay_payment_id = entity_pay_id
+                PaymentService._capture_instrument_hint(payment, payment_entity)
                 PaymentService._mark_payment_successful(
                     payment, captured_amount_paise=captured_paise
                 )
@@ -384,6 +385,49 @@ class PaymentService:
         if not isinstance(remote, dict):
             return None
         return remote.get("amount")
+
+    @staticmethod
+    def _capture_instrument_hint(payment: Payment, payment_entity: dict) -> None:
+        """
+        Best-effort: record which payment method + a masked instrument hint
+        Razorpay reported for this capture (for the Finance transaction log
+        - apps.finance). Razorpay never includes a full card/account number
+        here (PCI-tokenized), so nothing beyond what's already masked is
+        ever stored. Never raises - a missing/malformed field just leaves
+        both fields null, it must never fail the webhook.
+        """
+        try:
+            method = payment_entity.get("method")
+            if not method:
+                return
+
+            hint = None
+            if method == "upi":
+                vpa = (payment_entity.get("vpa") or "").strip()
+                if vpa:
+                    hint = f"UPI - {vpa}"
+            elif method == "card":
+                card = payment_entity.get("card") or {}
+                network = card.get("network") or ""
+                last4 = card.get("last4") or ""
+                if last4:
+                    hint = f"Card - {network} •••{last4}".strip()
+            elif method == "netbanking":
+                bank = payment_entity.get("bank")
+                if bank:
+                    hint = f"Netbanking - {bank}"
+            elif method == "wallet":
+                wallet = payment_entity.get("wallet")
+                if wallet:
+                    hint = f"Wallet - {wallet}"
+
+            Payment.objects.filter(pk=payment.pk).update(
+                payment_method=method[:20], instrument_hint=(hint or "")[:60] or None
+            )
+        except Exception:  # noqa: BLE001 - never let this break the webhook
+            logger.exception(
+                "Failed to capture instrument hint for payment %s", payment.id
+            )
 
     @staticmethod
     def _reject_amount_mismatch(
@@ -486,6 +530,19 @@ class PaymentService:
         from apps.commissions.services import CommissionService
 
         CommissionService.credit_for_payment(payment)
+
+        # Finance-admin dashboard feed (apps.finance) - best-effort, never
+        # let a notification failure roll back an already-successful,
+        # already-credited payment.
+        try:
+            from apps.notifications.services import NotificationService
+
+            NotificationService.finance_incoming_payment(payment)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "finance_incoming_payment notification failed for payment %s",
+                payment.id,
+            )
 
         if payment.payment_type == PaymentType.TOKEN_PURCHASE:
             from apps.notifications.services import NotificationService

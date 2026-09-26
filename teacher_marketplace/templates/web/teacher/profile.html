@@ -120,7 +120,14 @@
                 </span>
                 <span class="text-xs text-slate-400" x-show="it.key === 'video_interview' && it.status !== 'pending'"
                       x-text="it.status === 'verified' ? 'done' : (it.status === 'rejected' ? 'declined' : callStatusText(it))"></span>
+                {# Appears the moment a Support admin accepts - the page polls for it #}
+                <button class="btn-primary btn-sm shrink-0"
+                        x-show="it.key === 'video_interview' && it.status === 'submitted' && it.call && it.call.room_name && !callOpen"
+                        @click="joinCall(it.call.room_name)">Join video call</button>
               </div>
+              <template x-if="it.key === 'video_interview'">
+                <div id="jitsi-onboarding" x-show="callOpen" x-cloak class="mt-3 overflow-hidden rounded-xl bg-slate-900"></div>
+              </template>
               <p class="field-error mt-1.5" x-show="rowError[it.key]" x-text="rowError[it.key]"></p>
             </li>
           </template>
@@ -353,6 +360,7 @@
     Alpine.data("teacherProfile", () => ({
       loading: true, verification: "pending", moderation: "clear",
       vr: null,
+      callOpen: false, jitsiApi: null,
       photoUrl: "", photoFile: null, photoBusy: false, photoError: "",
       docFiles: { gov_id: { front: null, back: null }, address_proof: { document: null } },
       busy: {}, rowError: {},
@@ -387,9 +395,44 @@
           api.get("/teachers/me/", { silent: true }).then((b) => { this._bfExists = true; this.bf.setModel(b); this.photoUrl = b.profile_photo || ""; }).catch((e) => { if (e.status !== 404) window.toast("error", e.message); }),
           api.get("/teachers/profile/verification/", { silent: true }).then((v) => this.vr = v).catch(() => {}),
         ]).finally(() => (this.loading = false));
+
+        // A Support admin accepting the call is the only thing that flips
+        // "requested" to "live" and there's no push channel in this app, so
+        // poll the checklist - but only while a call request is open.
+        this._callPoll = setInterval(() => {
+          if (this.videoCallOpen()) this.refreshVerification();
+        }, 10000);
       },
       async refreshVerification() {
         try { this.vr = await api.get("/teachers/profile/verification/", { silent: true }); } catch (e) {}
+        // Once the admin has decided, the call is over - drop the embed.
+        if (this.callOpen && !this.videoCallOpen()) this.leaveCall();
+      },
+      videoCallItem() {
+        return (this.vr && this.vr.items || []).find((x) => x.key === "video_interview");
+      },
+      videoCallOpen() {
+        const it = this.videoCallItem();
+        return !!it && it.status === "submitted";
+      },
+      async joinCall(roomName) {
+        this.callOpen = true;
+        await this.$nextTick();
+        try {
+          if (this.jitsiApi) { this.jitsiApi.dispose(); this.jitsiApi = null; }
+          this.jitsiApi = await window.tmJitsi.embed(
+            document.getElementById("jitsi-onboarding"),
+            roomName,
+            { displayName: "Teacher", onEnd: () => this.leaveCall() },
+          );
+        } catch (e) {
+          this.callOpen = false;
+          window.toast("error", e.message || "Couldn't start the video call.");
+        }
+      },
+      leaveCall() {
+        if (this.jitsiApi) { try { this.jitsiApi.dispose(); } catch (e) {} this.jitsiApi = null; }
+        this.callOpen = false;
       },
       pickPhoto(ev) {
         this.photoFile = ev.target.files[0] || null;
@@ -439,6 +482,7 @@
         return !!it && (it.status === "submitted" || it.status === "verified");
       },
       callStatusText(it) {
+        if (it.call && it.call.room_name) return "your call is live — join now";
         const at = it.call && it.call.scheduled_at;
         if (!at) return "call requested — we'll reach out";
         return `call scheduled for ${fmt.dateTime(at)}` + (it.call.assigned_admin ? ` with ${it.call.assigned_admin}` : "");

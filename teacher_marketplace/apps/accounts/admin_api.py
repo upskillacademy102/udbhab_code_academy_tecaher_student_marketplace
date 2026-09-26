@@ -151,6 +151,22 @@ class AdminUserSerializer(serializers.ModelSerializer):
         return None
 
 
+class SupportContactUserSerializer(serializers.ModelSerializer):
+    """
+    Trimmed view of a Student/Teacher/Learning Partner for Support-department
+    admins: name, email, and phone only - no profile/verification/session
+    details. Swapped in for AdminUserSerializer by AdminUserListCreateView /
+    AdminUserDetailView when the caller's admin_department is Support.
+    """
+
+    full_name = serializers.CharField(source="get_full_name", read_only=True)
+
+    class Meta:
+        model = User
+        fields = ("id", "full_name", "email", "mobile", "role", "created_at")
+        read_only_fields = fields
+
+
 class AdminUserCreateSerializer(serializers.Serializer):
     email = serializers.EmailField()
     mobile = serializers.CharField(max_length=17, validators=[validate_mobile_number])
@@ -515,6 +531,20 @@ def _get_user_or_404(user_id):
     return user
 
 
+#: Roles a Support-department admin may look up via admin_users:*. They
+#: never browse other admin/superadmin contact info - only the three
+#: sections their panel actually shows (Students/Teachers/Learning
+#: Partners).
+_SUPPORT_VISIBLE_ROLES = (UserRole.STUDENT, UserRole.TEACHER, UserRole.LEARNING_PARTNER)
+
+
+def _is_support_admin(user) -> bool:
+    return (
+        user.role == UserRole.ADMIN
+        and getattr(user.admin_department, "slug", None) == "support"
+    )
+
+
 def _guard_target(actor, target, *, allow_self=False):
     if not allow_self and target.id == actor.id:
         raise PermissionDeniedException(
@@ -553,6 +583,9 @@ class _Pagination(PageNumberPagination):
 class AdminUserListCreateView(APIView):
     def get(self, request):
         qs = User.all_objects.all().order_by("-created_at")
+        support_view = _is_support_admin(request.user)
+        if support_view:
+            qs = qs.filter(role__in=_SUPPORT_VISIBLE_ROLES)
         p = request.query_params
         if p.get("role"):
             qs = qs.filter(role=p["role"])
@@ -569,7 +602,8 @@ class AdminUserListCreateView(APIView):
 
         paginator = _Pagination()
         page = paginator.paginate_queryset(qs, request)
-        data = AdminUserSerializer(page, many=True).data
+        serializer_cls = SupportContactUserSerializer if support_view else AdminUserSerializer
+        data = serializer_cls(page, many=True).data
         return APIResponse.paginated(
             data=data,
             pagination_meta={
@@ -617,7 +651,12 @@ class AdminUserListCreateView(APIView):
 )
 class AdminUserDetailView(APIView):
     def get(self, request, id):
-        return APIResponse.success(data=AdminUserSerializer(_get_user_or_404(id)).data)
+        target = _get_user_or_404(id)
+        if _is_support_admin(request.user):
+            if target.role not in _SUPPORT_VISIBLE_ROLES:
+                raise ResourceNotFoundException(detail="User not found.")
+            return APIResponse.success(data=SupportContactUserSerializer(target).data)
+        return APIResponse.success(data=AdminUserSerializer(target).data)
 
     def patch(self, request, id):
         actor = _actor(request)

@@ -11,7 +11,7 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import UserRole
-from apps.accounts.tests.helpers import login, make_user
+from apps.accounts.tests.helpers import login, make_named_admin, make_user
 from apps.teacher_profile.models import TeacherProfile
 from apps.teachers.models import Teacher
 from apps.trust.models import OnboardingCallRequest
@@ -31,8 +31,11 @@ class OnboardingCallQueueTests(APITestCase):
         self.call = OnboardingCallRequest.objects.get(item__teacher=self.teacher)
         self.schedule_url = f"/api/v1/admin/onboarding-calls/{self.teacher.id}/schedule/"
 
-    def test_admin_can_see_the_queue(self):
-        login(self.client, make_user(role=UserRole.ADMIN))
+    def test_support_admin_can_see_the_queue(self):
+        # The queue is Support-department-only since Support took over
+        # onboarding calls - see test_onboarding_call_accept for the
+        # other-department / departmentless denials.
+        login(self.client, make_named_admin(department="Support"))
         r = self.client.get(LIST_URL)
         self.assertEqual(r.status_code, 200, r.content)
         rows = r.json()["data"]
@@ -55,7 +58,7 @@ class OnboardingCallQueueTests(APITestCase):
     def test_decided_calls_are_excluded_by_default(self):
         self.call.item.status = "verified"
         self.call.item.save(update_fields=["status"])
-        login(self.client, make_user(role=UserRole.ADMIN))
+        login(self.client, make_named_admin(department="Support"))
         self.assertEqual(len(self.client.get(LIST_URL).json()["data"]), 0)
         self.assertEqual(
             len(self.client.get(LIST_URL, {"status": "all"}).json()["data"]), 1

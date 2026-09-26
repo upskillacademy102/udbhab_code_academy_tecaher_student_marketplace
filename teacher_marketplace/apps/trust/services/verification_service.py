@@ -262,6 +262,12 @@ class VerificationService:
                         )
                         if cr.assigned_admin
                         else None,
+                        "call_started_at": cr.call_started_at.isoformat()
+                        if cr.call_started_at
+                        else None,
+                        # Withheld until a Support admin has accepted - the
+                        # teacher's page polls this to learn the call is live.
+                        "room_name": cr.room_name if cr.is_live else None,
                     }
                     if cr
                     else None

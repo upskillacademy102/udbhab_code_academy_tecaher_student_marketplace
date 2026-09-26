@@ -22,8 +22,20 @@ Run: python manage.py test apps.web.tests.test_all_pages_render \
 from django.test import Client, TestCase
 
 from apps.accounts.models import UserRole
-from apps.accounts.tests.helpers import TEST_PASSWORD, login, make_user
+from apps.accounts.tests.helpers import TEST_PASSWORD, login, make_named_admin, make_user
 from apps.web import urls as web_urls
+
+# staff/admin/finance/ routes need a Finance-department admin, not just any
+# admin (department_slugs={"finance"} guard, apps/web/urls.py) - excluded
+# from the generic ADMIN-role sweep below and covered by their own test,
+# test_finance_pages_render_only_for_finance_department, mirroring how
+# test_learning_partner_pages_render_only_for_a_learning_partner covers
+# /staff/learning-partner/.
+_FINANCE_PREFIX = "/staff/admin/finance/"
+
+# Same story for /staff/admin/support/ (department_slugs={"support"}) - covered
+# by test_support_pages_render_only_for_support_department.
+_SUPPORT_PREFIX = "/staff/admin/support/"
 
 # A syntactically valid UUID that matches nothing. Detail pages render their
 # shell regardless; the browser fetches the real record from the API.
@@ -110,6 +122,8 @@ class AllPagesRenderTests(TestCase):
             email="lp@render.test",
             admin_account_name="RenderTest@LearningPartner",
         )
+        cls.finance_admin = make_named_admin(department="Finance")
+        cls.support_admin = make_named_admin(department="Support")
 
     def _client_for(self, role):
         client = _fresh_client()
@@ -133,6 +147,10 @@ class AllPagesRenderTests(TestCase):
     def test_every_role_page_renders_for_its_own_role(self):
         by_role = {}
         for name, path in _iter_routes():
+            if path.startswith(_FINANCE_PREFIX):
+                continue  # covered by test_finance_pages_render_only_for_finance_department
+            if path.startswith(_SUPPORT_PREFIX):
+                continue  # covered by test_support_pages_render_only_for_support_department
             role = _role_for_path(path)
             if role is not None:
                 by_role.setdefault(role, []).append((name, path))
@@ -234,3 +252,114 @@ class AllPagesRenderTests(TestCase):
             failures,
             "Learning Partner pages not refused (403) for a plain admin:\n" + "\n".join(failures),
         )
+
+    def test_finance_pages_render_only_for_finance_department(self):
+        """
+        /staff/admin/finance/* is guarded by role_required(..., department_
+        slugs={"finance"}) - a Finance-department admin must get every page,
+        and a plain admin (same role, ordinary department) must be cleanly
+        refused. Mirrors test_learning_partner_pages_render_only_for_a_
+        learning_partner above.
+        """
+        finance_routes = [
+            (name, path) for name, path in _iter_routes() if path.startswith(_FINANCE_PREFIX)
+        ]
+        self.assertTrue(finance_routes, "no /staff/admin/finance/ routes were registered")
+
+        finance_client = _fresh_client()
+        resp = login(finance_client, self.finance_admin)
+        self.assertIn(resp.status_code, (200, 202), f"login failed for finance admin: {resp.status_code}")
+        failures = [
+            f"{name or '(unnamed)'} {path} -> {r.status_code}"
+            for name, path in finance_routes
+            if (r := finance_client.get(path)).status_code != 200
+        ]
+        self.assertFalse(failures, "Finance pages not rendering 200:\n" + "\n".join(failures))
+
+        plain_admin_client = self._client_for(UserRole.ADMIN)
+        failures = [
+            f"{name or '(unnamed)'} {path} -> {r.status_code}"
+            for name, path in finance_routes
+            if (r := plain_admin_client.get(path)).status_code != 403
+        ]
+        self.assertFalse(
+            failures,
+            "Finance pages not refused (403) for a plain admin:\n" + "\n".join(failures),
+        )
+
+    def test_support_pages_render_only_for_support_department(self):
+        """
+        /staff/admin/support/* is guarded by role_required(..., department_
+        slugs={"support"}) - a Support-department admin must get every page,
+        and a plain admin or a Finance admin must be cleanly refused.
+        Mirrors test_finance_pages_render_only_for_finance_department above.
+        """
+        support_routes = [
+            (name, path) for name, path in _iter_routes() if path.startswith(_SUPPORT_PREFIX)
+        ]
+        self.assertTrue(support_routes, "no /staff/admin/support/ routes were registered")
+
+        support_client = _fresh_client()
+        resp = login(support_client, self.support_admin)
+        self.assertIn(resp.status_code, (200, 202), f"login failed for support admin: {resp.status_code}")
+        failures = [
+            f"{name or '(unnamed)'} {path} -> {r.status_code}"
+            for name, path in support_routes
+            if (r := support_client.get(path)).status_code != 200
+        ]
+        self.assertFalse(failures, "Support pages not rendering 200:\n" + "\n".join(failures))
+
+        other_clients = {"plain admin": self._client_for(UserRole.ADMIN)}
+        finance_client = _fresh_client()
+        login(finance_client, self.finance_admin)
+        other_clients["finance admin"] = finance_client
+        for who, client in other_clients.items():
+            failures = [
+                f"{name or '(unnamed)'} {path} -> {r.status_code}"
+                for name, path in support_routes
+                if (r := client.get(path)).status_code != 403
+            ]
+            self.assertFalse(
+                failures,
+                f"Support pages not refused (403) for a {who}:\n" + "\n".join(failures),
+            )
+
+    def test_support_nav_is_narrow_and_every_link_resolves(self):
+        """
+        A Support admin gets its own sidebar (not the generic admin one): it
+        must contain the Support screens, none of the removed sections, and
+        every link in it must resolve to a registered page.
+        """
+        from django.urls import Resolver404, resolve
+
+        from apps.web.nav import nav_for
+
+        sections = nav_for("admin", self.support_admin)
+        labels = {item["label"] for s in sections for item in s["items"]}
+        self.assertTrue(
+            {"Students", "Teachers", "Learning Partners", "Onboarding Calls", "Bug Calls", "Circulate a Message"}
+            <= labels,
+            labels,
+        )
+        removed = {
+            "Users", "Bugs Reported", "Subjects", "Languages", "Grade Levels", "Locations",
+            "Token Packages", "Subscription Plans", "Lead Pricing", "Config",
+            "Subject Aliases", "Language Aliases", "Pincode Locations",
+        }
+        self.assertFalse(removed & labels, removed & labels)
+
+        failures = []
+        for s in sections:
+            for item in s["items"]:
+                try:
+                    resolve(item["url"])
+                except Resolver404:
+                    failures.append(f"{item['label']!r} -> {item['url']}")
+        self.assertFalse(failures, "Support nav items pointing at unregistered URLs:\n" + "\n".join(failures))
+
+    def test_support_admin_lands_on_the_support_dashboard(self):
+        from apps.web.guards import home_url_for
+
+        self.assertEqual(home_url_for(self.support_admin), "/staff/admin/support/")
+        # a departmentless admin keeps the generic admin dashboard
+        self.assertEqual(home_url_for(self.users[UserRole.ADMIN]), "/staff/admin/")

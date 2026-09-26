@@ -14,17 +14,21 @@ from decimal import Decimal
 from django.db import IntegrityError, transaction
 from rest_framework.test import APITestCase
 
+from apps.accounts.models import UserRole
 from apps.payments.models import TokenPackage
-from apps.accounts.tests.helpers import login, make_named_admin
+from apps.accounts.tests.helpers import login, make_user
 
 EP = "/api/v1/token-packages/"
 
 
 class TokenPackageValidationTests(APITestCase):
     def setUp(self):
-        # Writing token packages is Finance-department only (apps.accounts.
-        # api_permissions.DEPARTMENT_ROUTE_SCOPE).
-        login(self.client, make_named_admin(department="Finance"))
+        # Writing token packages directly is Super Admin only (apps.finance
+        # replaced Finance's former direct write access with a request/
+        # approve flow, 2026-09-24 - see apps.finance.tests for that flow's
+        # own coverage). This suite only cares about field validation, which
+        # is identical regardless of who is allowed to write.
+        login(self.client, make_user(role=UserRole.SUPERADMIN))
 
     def _post(self, expect=201, **fields):
         body = {"name": "Base Pack", "token_count": 100, "price": "499.00", **fields}

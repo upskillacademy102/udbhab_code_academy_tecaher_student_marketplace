@@ -274,6 +274,29 @@ class Payment(BaseModel):
         null=True,
         blank=True,
     )
+    payment_method = models.CharField(
+        _("payment method"),
+        max_length=20,
+        null=True,
+        blank=True,
+        help_text=_(
+            "Razorpay's payment method for this transaction - 'card', 'upi', "
+            "'netbanking', 'wallet', etc. Populated from the payment.captured "
+            "webhook payload; null until that webhook is processed."
+        ),
+    )
+    instrument_hint = models.CharField(
+        _("instrument hint"),
+        max_length=60,
+        null=True,
+        blank=True,
+        help_text=_(
+            "A masked, human-readable hint of the instrument used, e.g. "
+            "'UPI - user@okhdfcbank' or 'Card - Visa •••4242'. Razorpay never "
+            "exposes a full card/account number in the webhook payload "
+            "(PCI-tokenized), so no further masking is needed here."
+        ),
+    )
 
     class Meta:
         verbose_name = _("Payment")

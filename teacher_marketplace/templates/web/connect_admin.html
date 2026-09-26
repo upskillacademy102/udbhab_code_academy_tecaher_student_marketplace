@@ -78,6 +78,12 @@
               <span class="font-medium text-slate-800">Response: </span><span x-text="t.resolution"></span>
             </p>
           </template>
+          <template x-if="t.status === 'assigned' && t.contact_preference === 'video_call'">
+            <div class="mt-2">
+              <button type="button" class="btn-secondary" x-show="activeCallId !== t.id" @click="joinCall(t.id)">Join video call</button>
+              <div x-show="activeCallId === t.id" :id="'jitsi-' + t.id" class="mt-2 overflow-hidden rounded-xl bg-slate-900"></div>
+            </div>
+          </template>
         </li>
       </template>
     </ul>
@@ -97,11 +103,29 @@
       tickets: [], files: [],
       model: { subject: "", description: "", contact_preference: "none" },
       CONTACT_OPTIONS,
+      activeCallId: null, jitsiApi: null,
 
-      init() { this.loadTickets(); },
+      init() {
+        this.loadTickets();
+        this.pollTimer = setInterval(() => this.loadTickets(), 15000);
+      },
       async loadTickets() {
         try { this.tickets = await api.get("/support/tickets/", { silent: true }) || []; }
         catch (e) {} finally { this.loading = false; }
+      },
+      async joinCall(ticketId) {
+        this.activeCallId = ticketId;
+        await this.$nextTick();
+        try {
+          if (this.jitsiApi) { this.jitsiApi.dispose(); this.jitsiApi = null; }
+          this.jitsiApi = await window.tmJitsi.embed(
+            document.getElementById("jitsi-" + ticketId),
+            "tm-support-ticket-" + ticketId,
+          );
+        } catch (e) {
+          this.error = e.message || "Couldn't start the video call.";
+          this.activeCallId = null;
+        }
       },
       pickFiles(ev) { this.files = Array.from(ev.target.files || []).slice(0, 5); },
       async submit() {

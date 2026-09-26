@@ -187,9 +187,14 @@
           <div class="menu-sep"></div>
           {% comment %}Profile, Settings and Report an Issue moved out of the
           sidebar here: they are places you go on purpose, not things you scan
-          for, and the sidebar was over the ~7-item ceiling.{% endcomment %}
-          <a href="{{ web_home }}profile/" class="menu-item" role="menuitem">{% icon "user" %} Profile</a>
-          <a href="{{ web_home }}settings/" class="menu-item" role="menuitem">{% icon "cog" %} Settings</a>
+          for, and the sidebar was over the ~7-item ceiling. Learning Partner
+          has neither a profile/ nor settings/ page registered (apps.web.urls
+          - only student/teacher/admin/superadmin do), so those two links are
+          hidden rather than left to 404.{% endcomment %}
+          {% if web_role != 'learning_partner' %}
+            <a href="{{ web_home }}profile/" class="menu-item" role="menuitem">{% icon "user" %} Profile</a>
+            <a href="{{ web_home }}settings/" class="menu-item" role="menuitem">{% icon "cog" %} Settings</a>
+          {% endif %}
           {% if web_role == 'student' or web_role == 'teacher' %}
             <a href="{{ web_home }}connect-admin/" class="menu-item" role="menuitem">{% icon "alert-triangle" %} Report an issue</a>
           {% endif %}

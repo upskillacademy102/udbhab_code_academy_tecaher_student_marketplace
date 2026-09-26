@@ -597,6 +597,14 @@ class OnboardingCallRequest(BaseModel):
         blank=True,
         help_text=_("The Super Admin who approved and scheduled this call."),
     )
+    call_started_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=_(
+            "Set when a Support admin accepts the request - the moment the "
+            "video call goes live for both sides. Null until then."
+        ),
+    )
 
     class Meta:
         verbose_name = _("Onboarding call request")
@@ -612,6 +620,16 @@ class OnboardingCallRequest(BaseModel):
     @property
     def is_scheduled(self) -> bool:
         return self.scheduled_at is not None
+
+    @property
+    def room_name(self) -> str:
+        """Jitsi room both sides join. Derived from the row's UUID, so it's
+        collision-safe and needs no separate column or server-side room."""
+        return f"tm-onboarding-{self.id}"
+
+    @property
+    def is_live(self) -> bool:
+        return self.call_started_at is not None
 
 
 # ======================================================================

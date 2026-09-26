@@ -23,7 +23,7 @@ from apps.core.exceptions.custom_exceptions import (
     ValidationException,
 )
 from apps.core.responses import APIResponse
-from apps.support.models import SupportTicket
+from apps.support.models import ContactPreference, SupportTicket
 from apps.support.serializers import AdminSupportTicketSerializer
 from apps.support.services import SupportService
 
@@ -70,6 +70,18 @@ class AdminSupportTicketListView(generics.ListAPIView):
         qs = SupportTicket.objects.select_related("reporter").prefetch_related(
             "attachments", "assigned_admins"
         )
+        user = self.request.user
+        dept = getattr(getattr(user, "admin_department", None), "slug", None)
+        if user.role == UserRole.ADMIN and dept == "support":
+            # Support's panel is a call-only queue (Phase 3) - the general
+            # "Bugs Reported" browse-everything list was removed for them
+            # (apps.accounts.api_permissions's Support restructuring).
+            qs = qs.filter(
+                contact_preference__in=[
+                    ContactPreference.VIDEO_CALL,
+                    ContactPreference.PHONE_CALL,
+                ]
+            )
         p = self.request.query_params
         if p.get("status") != "all":
             qs = qs.filter(status__in=["open", "assigned"])
@@ -144,6 +156,45 @@ class AdminSupportTicketAssignView(APIView):
         )
         return APIResponse.success(
             data=AdminSupportTicketSerializer(ticket).data, message="Assigned."
+        )
+
+
+@extend_schema(
+    tags=["Support"],
+    summary="Support admin: accept a call-request ticket (self-assign)",
+    responses={200: OpenApiResponse(description="`data`: the updated ticket.")},
+)
+class AdminSupportTicketAcceptView(APIView):
+    """
+    One-click self-assign for a Support-department admin picking up a
+    call-request ticket from their queue - deliberately separate from
+    AdminSupportTicketAssignView above (Super-Admin-only, assigns
+    *arbitrary* admins to *any* ticket). This one lets the caller assign
+    only themselves, to a ticket that actually requested a call - the
+    natural "Accept" action on a queue row.
+    """
+
+    def post(self, request, id):
+        ticket = _get_ticket_or_404(id)
+        if ticket.contact_preference == ContactPreference.NONE:
+            raise ValidationException(
+                detail="This ticket didn't request a call."
+            )
+
+        SupportService.assign(ticket, [request.user], by=request.user)
+
+        from apps.ops.models import AuditCategory
+        from apps.ops.services import AuditService
+
+        AuditService.record(
+            request=request,
+            category=AuditCategory.USER,
+            action="support_ticket.accepted",
+            target=ticket.reporter,
+            message=f"{request.user.email} accepted call-request ticket '{ticket.subject}'",
+        )
+        return APIResponse.success(
+            data=AdminSupportTicketSerializer(ticket).data, message="Accepted."
         )
 
 

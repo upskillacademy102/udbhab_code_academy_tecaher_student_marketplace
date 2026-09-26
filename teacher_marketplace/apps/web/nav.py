@@ -311,6 +311,150 @@ _LEARNING_PARTNER = [
 ]
 
 
+# A Finance admin's own, much narrower nav - deliberately NOT the generic
+# admin sidebar re-scoped (same reasoning as _LEARNING_PARTNER above): a
+# Finance admin never sees Users, Students, Teachers, Onboarding Calls,
+# Bugs Reported, or any reference/matching-engine data (apps.accounts.
+# api_permissions.FINANCE_DENIED_ROUTES denies all of that at the API
+# layer too, so this isn't just a hidden link - the data really isn't
+# reachable). Added 2026-09-24 alongside apps.finance.
+_FINANCE_ADMIN = [
+    {
+        "label": None,
+        "items": [
+            {
+                "label": "Dashboard",
+                "url": "/staff/admin/finance/",
+                "icon": "chart",
+                "match": "/staff/admin/finance/$",
+            },
+        ],
+    },
+    {
+        "label": "Commerce",
+        "items": [
+            {
+                "label": "Token Packages",
+                "url": "/staff/admin/finance/token-packages/",
+                "icon": "coin",
+            },
+            {
+                "label": "Subscription Plans",
+                "url": "/staff/admin/finance/plans/",
+                "icon": "star",
+            },
+            {
+                "label": "Lead Pricing",
+                "url": "/staff/admin/finance/lead-pricing/",
+                "icon": "tag",
+            },
+        ],
+    },
+    {
+        "label": "Finance",
+        "items": [
+            {
+                "label": "Transactions",
+                "url": "/staff/admin/finance/transactions/",
+                "icon": "list",
+            },
+            {
+                "label": "Learning Partner Payouts",
+                "url": "/admin-portal/payouts/",
+                "icon": "coin",
+            },
+            {
+                "label": "Learning Partners",
+                "url": "/staff/admin/finance/learning-partners/",
+                "icon": "globe",
+            },
+        ],
+    },
+    {
+        "label": "Account",
+        "items": [
+            {
+                "label": "Notifications",
+                "url": "/admin-portal/notifications/",
+                "icon": "bell",
+                "badge": "notifications",
+            },
+            {"label": "Settings", "url": "/admin-portal/settings/", "icon": "cog"},
+        ],
+    },
+]
+
+
+# A Support admin's own, much narrower nav - deliberately NOT the generic
+# admin sidebar re-scoped (same reasoning as _FINANCE_ADMIN above): a
+# Support admin never sees the full Users/Students/Teachers profile screens,
+# reference data, commerce catalog, or matching-engine config
+# (apps.accounts.api_permissions.SUPPORT_DENIED_ROUTES denies all of that
+# at the API layer too). Added 2026-09-25.
+_SUPPORT_ADMIN = [
+    {
+        "label": None,
+        "items": [
+            {
+                "label": "Dashboard",
+                "url": "/staff/admin/support/",
+                "icon": "chart",
+                "match": "/staff/admin/support/$",
+            },
+        ],
+    },
+    {
+        "label": "People",
+        "items": [
+            {"label": "Students", "url": "/staff/admin/support/students/", "icon": "user"},
+            {"label": "Teachers", "url": "/staff/admin/support/teachers/", "icon": "academic"},
+            {
+                "label": "Learning Partners",
+                "url": "/staff/admin/support/learning-partners/",
+                "icon": "globe",
+            },
+        ],
+    },
+    {
+        "label": "Calls",
+        "items": [
+            {
+                "label": "Onboarding Calls",
+                "url": "/staff/admin/support/onboarding-calls/",
+                "icon": "video",
+            },
+            {
+                "label": "Bug Calls",
+                "url": "/staff/admin/support/bug-calls/",
+                "icon": "alert-triangle",
+            },
+        ],
+    },
+    {
+        "label": "Communication",
+        "items": [
+            {
+                "label": "Circulate a Message",
+                "url": "/staff/admin/support/circulate-message/",
+                "icon": "mail",
+            },
+        ],
+    },
+    {
+        "label": "Account",
+        "items": [
+            {
+                "label": "Notifications",
+                "url": "/admin-portal/notifications/",
+                "icon": "bell",
+                "badge": "notifications",
+            },
+            {"label": "Settings", "url": "/admin-portal/settings/", "icon": "cog"},
+        ],
+    },
+]
+
+
 # New React-owned screens (Phase 3+), distinct from the "Admin access
 # requests" item above (which reviews single login attempts under the old
 # AdminLoginRequest flow) - this reviews AdminAccountRequest: self-service
@@ -332,6 +476,11 @@ _SUPERADMIN_PROVISIONING = {
             "label": "Taxonomy requests",
             "url": "/staff/superadmin/taxonomy-requests/",
             "icon": "book",
+        },
+        {
+            "label": "Pricing requests",
+            "url": "/staff/superadmin/pricing-requests/",
+            "icon": "tag",
         },
     ],
 }
@@ -416,6 +565,19 @@ def nav_for(role, user=None):
     if role == "learning_partner":
         return _LEARNING_PARTNER
     if role == "admin":
+        dept_slug = getattr(getattr(user, "admin_department", None), "slug", None)
+        # Finance gets its own, much narrower nav entirely - not the
+        # generic admin sidebar with something appended (see _FINANCE_ADMIN's
+        # docstring above). Checked first so it never falls through to the
+        # generic branch below.
+        if dept_slug == "finance":
+            return _FINANCE_ADMIN
+        # Support gets its own, much narrower nav entirely too - same
+        # reasoning, checked right after Finance so it never falls through
+        # to the generic branch below.
+        if dept_slug == "support":
+            return _SUPPORT_ADMIN
+
         sections = _repoint(
             _ADMIN_SECTIONS,
             {
@@ -425,13 +587,13 @@ def nav_for(role, user=None):
                 "Languages": ("/staff/admin/languages/", False),
             },
         )
-        # Content Moderation / Marketing are the only two departments that
-        # unlock a screen of their own today (DEPARTMENT_ROUTE_SCOPE in
-        # apps.accounts.api_permissions) - reusing the existing SuperAdmin
-        # screens rather than building new ones. Every other department
-        # (Finance, Support, Verification) only narrows write actions on
-        # pages already in _ADMIN_SECTIONS above, so needs no extra link.
-        dept_slug = getattr(getattr(user, "admin_department", None), "slug", None)
+        # Content Moderation / Marketing are the only two departments left
+        # that unlock a screen of their own within the generic admin sidebar
+        # (DEPARTMENT_ROUTE_SCOPE in apps.accounts.api_permissions) - reusing
+        # the existing SuperAdmin screens rather than building new ones.
+        # Finance and Support both branched out to their own nav entirely
+        # above; Verification only narrows a write action on a page already
+        # in _ADMIN_SECTIONS, so needs no extra link.
         dept_items = []
         if dept_slug == "content-moderation":
             dept_items.append(
@@ -451,24 +613,6 @@ def nav_for(role, user=None):
             )
         if dept_items:
             sections = sections + [{"label": "Trust & Leads", "items": dept_items}]
-        # Finance is a third department that DOES unlock a screen of its own
-        # (unlike the "only narrows write actions" departments noted above) -
-        # payout data (amounts, bank details) is read-restricted at the API
-        # to Finance/Super Admin, not just write-restricted, so a non-Finance
-        # admin must not even see the link (it would just 403 underneath).
-        if dept_slug == "finance":
-            sections = sections + [
-                {
-                    "label": "Finance",
-                    "items": [
-                        {
-                            "label": "Learning Partner Payouts",
-                            "url": "/admin-portal/payouts/",
-                            "icon": "coin",
-                        },
-                    ],
-                }
-            ]
         return sections
     if role == "superadmin":
         base = _rehome(_ADMIN_SECTIONS, "/admin-portal/", "/super-admin/")

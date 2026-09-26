@@ -87,6 +87,66 @@ class SupportTicket(BaseModel):
         return f"[{self.status}] {self.subject} ({self.reporter_id})"
 
 
+class BroadcastMessage(BaseModel):
+    """
+    "Circulate a message" - a Support-department admin's ad-hoc email
+    and/or SMS to one or more students/teachers/learning partners. This is
+    the one channel for manual (non-OTP) admin-to-user communication -
+    OTP delivery stays entirely in apps.trust and never goes through here.
+    See apps.support.broadcast_service.BroadcastService.
+    """
+
+    sent_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="broadcast_messages_sent",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    subject = models.CharField(max_length=200)
+    body = models.TextField(max_length=5000)
+    via_email = models.BooleanField(default=False)
+    via_sms = models.BooleanField(default=False)
+    recipient_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = _("Circulated message")
+        verbose_name_plural = _("Circulated messages")
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.subject} ({self.recipient_count} recipient(s))"
+
+
+class BroadcastRecipient(BaseModel):
+    """Per-recipient delivery outcome for a BroadcastMessage - mirrors the
+    per-user tracking shape of apps.notifications.models.Notification."""
+
+    message = models.ForeignKey(
+        BroadcastMessage, related_name="recipients", on_delete=models.CASCADE
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="broadcast_messages_received",
+        on_delete=models.CASCADE,
+    )
+    email_sent = models.BooleanField(default=False)
+    email_error = models.TextField(blank=True, default="")
+    sms_sent = models.BooleanField(default=False)
+    sms_error = models.TextField(blank=True, default="")
+
+    class Meta:
+        verbose_name = _("Circulated message recipient")
+        verbose_name_plural = _("Circulated message recipients")
+        ordering = ["created_at"]
+        indexes = [
+            models.Index(fields=["message"]),
+        ]
+
+    def __str__(self):
+        return f"{self.message_id} -> {self.user_id}"
+
+
 class SupportTicketAttachment(BaseModel):
     ticket = models.ForeignKey(
         SupportTicket, related_name="attachments", on_delete=models.CASCADE

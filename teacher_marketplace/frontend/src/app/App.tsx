@@ -14,6 +14,7 @@ import { TeachingProfile } from "@/routes/teacher/TeachingProfile";
 import { Availability } from "@/routes/teacher/Availability";
 import { Plan } from "@/routes/teacher/Plan";
 import { AdminAccountRequests } from "@/routes/superadmin/AdminAccountRequests";
+import { PricingRequests } from "@/routes/superadmin/PricingRequests";
 import { Departments } from "@/routes/superadmin/Departments";
 import { LearningPartners } from "@/routes/superadmin/LearningPartners";
 import { TaxonomyRequests } from "@/routes/superadmin/TaxonomyRequests";
@@ -42,6 +43,17 @@ import { FakeLeadReports as LPFakeLeadReports } from "@/routes/learning-partner/
 import { LeadsBrowser as LPLeadsBrowser } from "@/routes/learning-partner/LeadsBrowser";
 import { AuditLog as LPAuditLog } from "@/routes/learning-partner/AuditLog";
 import { Wallet as LPWallet } from "@/routes/learning-partner/Wallet";
+import { Dashboard as FinanceDashboard } from "@/routes/admin/finance/Dashboard";
+import { TransactionLog as FinanceTransactionLog } from "@/routes/admin/finance/TransactionLog";
+import { TokenPackages as FinanceTokenPackages } from "@/routes/admin/finance/TokenPackages";
+import { Plans as FinancePlans } from "@/routes/admin/finance/Plans";
+import { LeadPricing as FinanceLeadPricing } from "@/routes/admin/finance/LeadPricing";
+import { LearningPartners as FinanceLearningPartners, LearningPartnerDetail as FinanceLearningPartnerDetail } from "@/routes/admin/finance/LearningPartners";
+import { Dashboard as SupportDashboard } from "@/routes/admin/support/Dashboard";
+import { People as SupportPeople } from "@/routes/admin/support/People";
+import { OnboardingCalls as SupportOnboardingCalls } from "@/routes/admin/support/OnboardingCalls";
+import { BugCalls as SupportBugCalls } from "@/routes/admin/support/BugCalls";
+import { CirculateMessage as SupportCirculateMessage } from "@/routes/admin/support/CirculateMessage";
 
 /**
  * Routes the SPA owns.
@@ -82,6 +94,28 @@ export function App() {
       <Route path="/staff/admin/subjects/" element={<AdminSubjects />} />
       <Route path="/staff/admin/languages/" element={<AdminLanguages />} />
 
+      {/* Finance-department admin only (added 2026-09-24) - guard is
+          role_required(..., department_slugs={"finance"}), apps/web/urls.py.
+          Super Admin also reaches these (role_required's implicit bypass). */}
+      <Route path="/staff/admin/finance/" element={<FinanceDashboard />} />
+      <Route path="/staff/admin/finance/transactions/" element={<FinanceTransactionLog />} />
+      <Route path="/staff/admin/finance/token-packages/" element={<FinanceTokenPackages />} />
+      <Route path="/staff/admin/finance/plans/" element={<FinancePlans />} />
+      <Route path="/staff/admin/finance/lead-pricing/" element={<FinanceLeadPricing />} />
+      <Route path="/staff/admin/finance/learning-partners/" element={<FinanceLearningPartners />} />
+      <Route path="/staff/admin/finance/learning-partners/:id/" element={<FinanceLearningPartnerDetail />} />
+
+      {/* Support-department admin only (added 2026-09-25) - guard is
+          role_required(..., department_slugs={"support"}), apps/web/urls.py.
+          Super Admin also reaches these (role_required's implicit bypass). */}
+      <Route path="/staff/admin/support/" element={<SupportDashboard />} />
+      <Route path="/staff/admin/support/students/" element={<SupportPeople role="student" />} />
+      <Route path="/staff/admin/support/teachers/" element={<SupportPeople role="teacher" />} />
+      <Route path="/staff/admin/support/learning-partners/" element={<SupportPeople role="learning_partner" />} />
+      <Route path="/staff/admin/support/onboarding-calls/" element={<SupportOnboardingCalls />} />
+      <Route path="/staff/admin/support/bug-calls/" element={<SupportBugCalls />} />
+      <Route path="/staff/admin/support/circulate-message/" element={<SupportCirculateMessage />} />
+
       {/* Super Admin only, except fake-lead-reports/ and leads/ below - see
           apps/web/urls.py's "NEW STAFF SPA" section */}
       <Route path="/staff/superadmin/" element={<SuperAdminDashboard />} />
@@ -92,6 +126,7 @@ export function App() {
       <Route path="/staff/superadmin/departments/" element={<Departments />} />
       <Route path="/staff/superadmin/learning-partners/" element={<LearningPartners />} />
       <Route path="/staff/superadmin/taxonomy-requests/" element={<TaxonomyRequests />} />
+      <Route path="/staff/superadmin/pricing-requests/" element={<PricingRequests />} />
       <Route path="/staff/superadmin/subjects/" element={<SuperAdminSubjects />} />
       <Route path="/staff/superadmin/languages/" element={<SuperAdminLanguages />} />
       {/* Also reachable by a Content Moderation admin - the guard
@@ -138,6 +173,12 @@ function Fallback() {
     // path lands them on their own dashboard, not the generic admin one.
     if (document.body.dataset.isLearningPartner === "true") {
       return <Navigate to="/staff/learning-partner/" replace />;
+    }
+    // Same story for a Support-department admin (data-department, also
+    // stamped in templates/web/base.html) - they land on their own
+    // restricted dashboard, not the generic admin one.
+    if (document.body.dataset.department === "support") {
+      return <Navigate to="/staff/admin/support/" replace />;
     }
     return <Navigate to="/staff/admin/" replace />;
   }

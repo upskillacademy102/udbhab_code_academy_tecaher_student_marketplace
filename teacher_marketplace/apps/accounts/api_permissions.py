@@ -55,6 +55,30 @@ DEPARTMENT SCOPE (added 2026-09-24)
     it never grants a route the role table doesn't already list for
     ``admin``. To open a brand-new route to a department, add it to
     ``_RULES`` under ``_ADMIN`` first, then scope it here.
+
+FINANCE DENYLIST (added 2026-09-24)
+    A separate, one-off mechanism from DEPARTMENT_ROUTE_SCOPE above -
+    ``FINANCE_DENIED_ROUTES`` is a genuine DENY-list, consulted only for
+    ``role=admin, department=finance``. It exists because Finance needed
+    to lose a large chunk of the generic admin surface (Users, Students,
+    Teachers, reference data, matching-engine config) while every OTHER
+    department - including an admin with no department assigned at all -
+    keeps exactly today's access. That can't be expressed as more
+    DEPARTMENT_ROUTE_SCOPE rows: an allow-list naming "every department
+    except Finance" would also deny a departmentless admin, which is
+    wrong. See FINANCE_DENIED_ROUTES's own docstring below for the full
+    reasoning.
+
+SUPPORT DENYLIST (added 2026-09-25)
+    Same mechanism and same reasoning as the Finance denylist above,
+    applied to ``role=admin, department=support``: ``SUPPORT_DENIED_ROUTES``
+    strips Support down to its own panel (People contact info, support
+    tickets, onboarding calls, circulate-a-message) by denying the rest of
+    the generic admin surface (reference data, commerce catalog,
+    matching-engine config, and the *full* Student/Teacher profile views -
+    Support uses the trimmed ``admin_users`` endpoint for contact info
+    instead, see ``apps.accounts.admin_api.SupportContactUserSerializer``).
+    Every other department, and a departmentless admin, is unaffected.
 """
 
 from __future__ import annotations
@@ -157,13 +181,17 @@ _RULES: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
     ("admin_teacher_profiles:detail", ("GET",), _ADMIN),
     ("admin_teacher_profiles:verification", ("POST",), _ADMIN),  # further scoped to the Verification department below
     ("admin_teacher_profiles:verification-item", ("POST",), _ADMIN),  # further scoped to the Verification department below
-    ("admin_onboarding_calls:list", ("GET",), _ADMIN),
+    ("admin_onboarding_calls:list", ("GET",), _ADMIN),  # further scoped to the Support department below
+    ("admin_onboarding_calls:accept", ("POST",), _ADMIN),  # further scoped to the Support department below
     # ===== "Connect to Admin" support tickets ==============================
     # Filing a ticket is Student/Teacher only - Admin/Super Admin are the
     # people tickets get reported TO, not reporters themselves.
     ("support:ticket-list-create", ("GET", "POST"), _STUDENT_TEACHER),
     ("admin_support:list", ("GET",), _ADMIN),
     ("admin_support:resolve", ("POST",), _ADMIN),  # further scoped to the Support department below; view itself also 403s a non-assigned admin
+    ("admin_support:accept", ("POST",), _ADMIN),  # further scoped to the Support department below
+    # "Circulate a message" - Support-department-only capability, scoped below.
+    ("admin_broadcast:list-create", ("GET", "POST"), _ADMIN),
     # ===== Ops - a deliberately narrow slice open to two departments =======
     # Everything else under ops:* stays Super Admin only (see the comment
     # below). These four are opened to role=admin here and then scoped to
@@ -307,21 +335,22 @@ _RULES: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
     ("location:city-detail", ("GET",), _ANY_AUTHED),
     ("location:city-detail", ("PUT", "PATCH", "DELETE"), _ADMIN),
     # ======================================================================
-    # COMMERCIAL CATALOG - read = teacher + admin, write = admin
-    # (students never buy tokens / subscribe / unlock leads)
+    # COMMERCIAL CATALOG - read = teacher + admin (every department,
+    # including Finance - they need to see current prices to request a
+    # change). Write is Super Admin only (short-circuit) as of
+    # 2026-09-24: no role=admin grant exists for POST/PUT/PATCH/DELETE on
+    # any of these three routes any more - Finance (the only department
+    # that used to reach these via DEPARTMENT_ROUTE_SCOPE) now goes
+    # through apps.finance's request/approve flow instead of writing
+    # these directly. Students never buy tokens / subscribe / unlock
+    # leads, so they get no grant here at all.
     # ======================================================================
     ("token-packages:token-package-list-create", ("GET",), _TEACHER_ADMIN),
-    ("token-packages:token-package-list-create", ("POST",), _ADMIN),
     ("token-packages:token-package-detail", ("GET",), _TEACHER_ADMIN),
-    ("token-packages:token-package-detail", ("PUT", "PATCH", "DELETE"), _ADMIN),
     ("subscriptions:plan-list-create", ("GET",), _TEACHER_ADMIN),
-    ("subscriptions:plan-list-create", ("POST",), _ADMIN),
     ("subscriptions:plan-detail", ("GET",), _TEACHER_ADMIN),
-    ("subscriptions:plan-detail", ("PUT", "PATCH", "DELETE"), _ADMIN),
     ("lead-unlock-pricing:pricing-list-create", ("GET",), _TEACHER_ADMIN),
-    ("lead-unlock-pricing:pricing-list-create", ("POST",), _ADMIN),
     ("lead-unlock-pricing:pricing-detail", ("GET",), _TEACHER_ADMIN),
-    ("lead-unlock-pricing:pricing-detail", ("PUT", "PATCH", "DELETE"), _ADMIN),
     # ======================================================================
     # ADMIN CONFIGURATION - matching-engine internals, admin only
     # ======================================================================
@@ -367,6 +396,20 @@ _RULES: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
     ("admin_payouts:detail", ("GET",), _ADMIN),
     ("admin_payouts:decide", ("POST",), _ADMIN),
     ("admin_payouts:mark-paid", ("POST",), _ADMIN),
+    # ======================================================================
+    # FINANCE ADMIN PANEL (apps.finance) - dashboard, transaction log,
+    # pricing-change requests, Learning Partner commission summary. Admin
+    # gets in via _ADMIN here, then narrowed to Finance only in
+    # DEPARTMENT_ROUTE_SCOPE below - same pattern as admin_payouts above.
+    # admin_finance:pricing-request-decide is intentionally NOT listed here
+    # (Super-Admin-only, via the short-circuit - Finance requests a price
+    # change, only Super Admin approves it).
+    # ======================================================================
+    ("admin_finance:dashboard", ("GET",), _ADMIN),
+    ("admin_finance:transactions", ("GET",), _ADMIN),
+    ("admin_finance:pricing-requests", ("GET", "POST"), _ADMIN),
+    ("admin_finance:learning-partners", ("GET",), _ADMIN),
+    ("admin_finance:learning-partner-detail", ("GET",), _ADMIN),
 ]
 
 
@@ -403,23 +446,42 @@ DEPT_MARKETING = "marketing"
 #: (route_name, (methods...), department_slug) - same shape as _RULES,
 #: minus the roles column (every row here is implicitly role=admin only).
 _DEPT_RULES: list[tuple[str, tuple[str, ...], str]] = [
-    # ----- Finance: commercial pricing writes (narrowed from all-admin) ---
-    ("token-packages:token-package-list-create", ("POST",), DEPT_FINANCE),
-    ("token-packages:token-package-detail", ("PUT", "PATCH", "DELETE"), DEPT_FINANCE),
-    ("subscriptions:plan-list-create", ("POST",), DEPT_FINANCE),
-    ("subscriptions:plan-detail", ("PUT", "PATCH", "DELETE"), DEPT_FINANCE),
-    ("lead-unlock-pricing:pricing-list-create", ("POST",), DEPT_FINANCE),
-    ("lead-unlock-pricing:pricing-detail", ("PUT", "PATCH", "DELETE"), DEPT_FINANCE),
     # ----- Finance: Learning Partner payout queue -------------------------
     ("admin_payouts:list", ("GET",), DEPT_FINANCE),
     ("admin_payouts:detail", ("GET",), DEPT_FINANCE),
     ("admin_payouts:decide", ("POST",), DEPT_FINANCE),
     ("admin_payouts:mark-paid", ("POST",), DEPT_FINANCE),
+    # ----- Finance: dashboard, transaction log, pricing requests, LP
+    # commission summary (apps.finance). Direct commercial-pricing writes
+    # (token packages / plans / lead pricing) were narrowed away from
+    # Finance on 2026-09-24 in favour of the request-based flow below -
+    # Finance now only reaches pricing-requests (create/list own), never
+    # the catalog's own write methods.
+    ("admin_finance:dashboard", ("GET",), DEPT_FINANCE),
+    ("admin_finance:transactions", ("GET",), DEPT_FINANCE),
+    ("admin_finance:pricing-requests", ("GET", "POST"), DEPT_FINANCE),
+    ("admin_finance:learning-partners", ("GET",), DEPT_FINANCE),
+    ("admin_finance:learning-partner-detail", ("GET",), DEPT_FINANCE),
     # ----- Verification: teacher verification decisions (narrowed) --------
     ("admin_teacher_profiles:verification", ("POST",), DEPT_VERIFICATION),
     ("admin_teacher_profiles:verification-item", ("POST",), DEPT_VERIFICATION),
-    # ----- Support: resolving a ticket (narrowed; list stays baseline) ----
+    # Support also reaches the per-item route, but ONLY for the
+    # video_interview checklist item and ONLY for a call it accepted -
+    # a route-name grant can't express either, so
+    # AdminTeacherVerificationItemView enforces both at the object level.
+    ("admin_teacher_profiles:verification-item", ("POST",), DEPT_SUPPORT),
+    # ----- Support: onboarding-call queue + accept (Support-only; every
+    # other department, and a departmentless admin, lost the queue when
+    # Support took over onboarding calls) -----------------------------------
+    ("admin_onboarding_calls:list", ("GET",), DEPT_SUPPORT),
+    ("admin_onboarding_calls:accept", ("POST",), DEPT_SUPPORT),
+    # ----- Support: accepting/resolving a ticket (narrowed; list stays
+    # baseline but its queryset is narrowed to call-request tickets only
+    # for Support, in AdminSupportTicketListView.get_queryset()) ----------
+    ("admin_support:accept", ("POST",), DEPT_SUPPORT),
     ("admin_support:resolve", ("POST",), DEPT_SUPPORT),
+    # ----- Support: circulate a message (Support-only capability) ---------
+    ("admin_broadcast:list-create", ("GET", "POST"), DEPT_SUPPORT),
     # ----- Content Moderation: fake-lead queue + moderation sanctions -----
     ("ops:fake-lead-reports", ("GET",), DEPT_CONTENT_MODERATION),
     ("ops:review-queue-resolve", ("POST",), DEPT_CONTENT_MODERATION),
@@ -429,6 +491,154 @@ _DEPT_RULES: list[tuple[str, tuple[str, ...], str]] = [
     ("ops:students-lead-quality", ("GET",), DEPT_MARKETING),
     ("ops:teacher-lead-reviews", ("GET",), DEPT_MARKETING),
 ]
+
+
+#: Routes hidden from Finance-department admins ONLY (added 2026-09-24).
+#: Finance gets its own dashboard/panel instead (apps.finance) - a plain
+#: general-admin surface (Users, Students, Teachers, Onboarding Calls, Bugs
+#: Reported, reference data, matching engine config) is deliberately not
+#: part of it.
+#:
+#: This is a genuine DENY-list, kept separate from DEPARTMENT_ROUTE_SCOPE
+#: (an ALLOW-list) on purpose. An earlier version of this tried to express
+#: "every department except Finance" as allow-list rows for the other four
+#: named departments - that silently also denied any admin with NO
+#: department at all (every legacy pre-department-system admin, and every
+#: test/seed admin that never got one assigned), which is wrong: only
+#: Finance should lose this access, everyone else - including a
+#: departmentless admin - keeps exactly what they have today. Checked in
+#: is_allowed() as an extra condition for role=admin, department=finance
+#: specifically; every other role/department combination is unaffected.
+FINANCE_DENIED_ROUTES: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("admin_users:list", "GET"),
+        ("admin_users:detail", "GET"),
+        ("students:student-list", "GET"),
+        ("students:student-detail", "GET"),
+        ("teachers:teacher-list", "GET"),
+        ("teachers:teacher-detail", "GET"),
+        ("admin_teacher_profiles:list", "GET"),
+        ("admin_teacher_profiles:detail", "GET"),
+        # admin_onboarding_calls:list used to be listed here; it's now
+        # Support-only via DEPARTMENT_ROUTE_SCOPE, which already excludes
+        # Finance, so a deny-list row would be redundant.
+        ("admin_support:list", "GET"),
+        ("subjects:subject-list-create", "GET"),
+        ("subjects:subject-detail", "GET"),
+        ("languages:language-list-create", "GET"),
+        ("languages:language-detail", "GET"),
+        ("grade_levels:grade-level-list-create", "GET"),
+        ("grade_levels:grade-level-list-create", "POST"),
+        ("grade_levels:grade-level-detail", "GET"),
+        ("grade_levels:grade-level-detail", "PUT"),
+        ("grade_levels:grade-level-detail", "PATCH"),
+        ("grade_levels:grade-level-detail", "DELETE"),
+        ("location:country-list-create", "GET"),
+        ("location:country-list-create", "POST"),
+        ("location:country-detail", "GET"),
+        ("location:country-detail", "PUT"),
+        ("location:country-detail", "PATCH"),
+        ("location:country-detail", "DELETE"),
+        ("location:state-list-create", "GET"),
+        ("location:state-list-create", "POST"),
+        ("location:state-detail", "GET"),
+        ("location:state-detail", "PUT"),
+        ("location:state-detail", "PATCH"),
+        ("location:state-detail", "DELETE"),
+        ("location:city-list-create", "GET"),
+        ("location:city-list-create", "POST"),
+        ("location:city-detail", "GET"),
+        ("location:city-detail", "PUT"),
+        ("location:city-detail", "PATCH"),
+        ("location:city-detail", "DELETE"),
+        ("matching:pincode-list-create", "GET"),
+        ("matching:pincode-list-create", "POST"),
+        ("matching:subject-alias-list-create", "GET"),
+        ("matching:subject-alias-list-create", "POST"),
+        ("matching:language-alias-list-create", "GET"),
+        ("matching:language-alias-list-create", "POST"),
+        ("matching:config-list-create", "GET"),
+        ("matching:config-list-create", "POST"),
+    }
+)
+
+
+#: Routes hidden from Support-department admins ONLY (added 2026-09-25).
+#: Support gets its own panel instead (People contact-info screens, support
+#: tickets/onboarding-call queues, circulate-a-message) - the reference
+#: data, commerce catalog, matching-engine config, and full Student/Teacher
+#: profile screens are deliberately not part of it.
+#:
+#: Genuine DENY-list, same reasoning as FINANCE_DENIED_ROUTES above: an
+#: allow-list naming "every department except Support" would also deny a
+#: departmentless admin, which is wrong. Only Support loses this access;
+#: everyone else keeps exactly what they have today. Checked in
+#: is_allowed() as an extra condition for role=admin, department=support
+#: specifically.
+#:
+#: admin_teacher_profiles:verification / verification-item aren't listed
+#: here - they're already narrowed to DEPT_VERIFICATION only via
+#: DEPARTMENT_ROUTE_SCOPE, so Support is denied those by construction
+#: without needing a deny-list entry (verification-item is opened back up
+#: to Support in a later change, scoped object-level to the
+#: video_interview checklist item only - see AdminTeacherVerificationItemView).
+SUPPORT_DENIED_ROUTES: frozenset[tuple[str, str]] = frozenset(
+    {
+        # Full profile views - Support uses admin_users:list/detail
+        # (trimmed to name+email+phone) instead.
+        ("students:student-list", "GET"),
+        ("students:student-detail", "GET"),
+        ("teachers:teacher-list", "GET"),
+        ("teachers:teacher-detail", "GET"),
+        ("admin_teacher_profiles:list", "GET"),
+        ("admin_teacher_profiles:detail", "GET"),
+        # Reference data
+        ("subjects:subject-list-create", "GET"),
+        ("subjects:subject-detail", "GET"),
+        ("languages:language-list-create", "GET"),
+        ("languages:language-detail", "GET"),
+        ("grade_levels:grade-level-list-create", "GET"),
+        ("grade_levels:grade-level-list-create", "POST"),
+        ("grade_levels:grade-level-detail", "GET"),
+        ("grade_levels:grade-level-detail", "PUT"),
+        ("grade_levels:grade-level-detail", "PATCH"),
+        ("grade_levels:grade-level-detail", "DELETE"),
+        ("location:country-list-create", "GET"),
+        ("location:country-list-create", "POST"),
+        ("location:country-detail", "GET"),
+        ("location:country-detail", "PUT"),
+        ("location:country-detail", "PATCH"),
+        ("location:country-detail", "DELETE"),
+        ("location:state-list-create", "GET"),
+        ("location:state-list-create", "POST"),
+        ("location:state-detail", "GET"),
+        ("location:state-detail", "PUT"),
+        ("location:state-detail", "PATCH"),
+        ("location:state-detail", "DELETE"),
+        ("location:city-list-create", "GET"),
+        ("location:city-list-create", "POST"),
+        ("location:city-detail", "GET"),
+        ("location:city-detail", "PUT"),
+        ("location:city-detail", "PATCH"),
+        ("location:city-detail", "DELETE"),
+        # Commerce catalog
+        ("token-packages:token-package-list-create", "GET"),
+        ("token-packages:token-package-detail", "GET"),
+        ("subscriptions:plan-list-create", "GET"),
+        ("subscriptions:plan-detail", "GET"),
+        ("lead-unlock-pricing:pricing-list-create", "GET"),
+        ("lead-unlock-pricing:pricing-detail", "GET"),
+        # Matching-engine config
+        ("matching:pincode-list-create", "GET"),
+        ("matching:pincode-list-create", "POST"),
+        ("matching:subject-alias-list-create", "GET"),
+        ("matching:subject-alias-list-create", "POST"),
+        ("matching:language-alias-list-create", "GET"),
+        ("matching:language-alias-list-create", "POST"),
+        ("matching:config-list-create", "GET"),
+        ("matching:config-list-create", "POST"),
+    }
+)
 
 
 def _compile_dept(rules) -> dict[tuple[str, str], frozenset[str]]:
@@ -451,10 +661,17 @@ DEPARTMENT_ROUTE_SCOPE: dict[tuple[str, str], frozenset[str]] = _compile_dept(
 #: whenever a department's scope changes.
 DEPARTMENT_CAPABILITY_LABELS: dict[str, tuple[str, ...]] = {
     DEPT_FINANCE: (
-        "Create and edit token packages, subscription plans, and lead-unlock pricing",
+        "View the finance dashboard, incoming/outgoing transaction log, and Learning Partner commission summary",
+        "Request a price change on a token package, subscription plan, or lead-unlock pricing (Super Admin approves)",
         "Review, approve/reject, and mark paid Learning Partner payout requests",
+        "No access to Users, Students, Teachers, Onboarding Calls, Bugs Reported, or reference/matching-engine data",
     ),
-    DEPT_SUPPORT: ("Resolve support tickets assigned to them",),
+    DEPT_SUPPORT: (
+        "View Students/Teachers/Learning Partners by name, email, and phone only",
+        "Accept and resolve support tickets and onboarding calls that requested a call",
+        "Circulate a message (email and/or SMS) to students, teachers, or learning partners",
+        "No access to reference data, commerce catalog, matching-engine config, or full profile details",
+    ),
     DEPT_VERIFICATION: ("Approve or reject teacher verification submissions",),
     DEPT_CONTENT_MODERATION: (
         "View the fake-lead-report queue and resolve a flagged item",
@@ -492,6 +709,14 @@ def is_allowed(
       ``DEPARTMENT_ROUTE_SCOPE``, only allowed when ``department_slug`` is
       one of that route's allowed departments. Irrelevant for every other
       role and every route not in that table.
+    * Admin whose department is Finance, additionally -> denied on any
+      route listed in ``FINANCE_DENIED_ROUTES``, regardless of what
+      ``DEPARTMENT_ROUTE_SCOPE``/the role table above would otherwise
+      allow. Every other department (including no department at all)
+      is unaffected by this check.
+    * Admin whose department is Support, additionally -> denied on any
+      route listed in ``SUPPORT_DENIED_ROUTES``, same mechanism as
+      Finance above. Every other department is unaffected.
     """
     if not role or not method or not route_name:
         return False
@@ -508,6 +733,20 @@ def is_allowed(
     if not role_table:
         return False
     if route_name not in role_table.get(lookup_method, frozenset()):
+        return False
+
+    if (
+        role == ADMIN
+        and department_slug == DEPT_FINANCE
+        and (route_name, lookup_method) in FINANCE_DENIED_ROUTES
+    ):
+        return False
+
+    if (
+        role == ADMIN
+        and department_slug == DEPT_SUPPORT
+        and (route_name, lookup_method) in SUPPORT_DENIED_ROUTES
+    ):
         return False
 
     if role == ADMIN:

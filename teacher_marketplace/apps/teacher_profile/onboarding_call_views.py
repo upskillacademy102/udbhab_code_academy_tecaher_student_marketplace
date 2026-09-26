@@ -1,8 +1,10 @@
 """
-Onboarding video call queue - who's asked for one, and Super Admin's
-"assign an Admin + auto-schedule" action.
+Onboarding video call queue - who's asked for one, a Support admin's
+"accept and go live" action, and Super Admin's "assign an Admin +
+auto-schedule" action.
 
-    GET  /api/v1/admin/onboarding-calls/                       queue (admin, superadmin)
+    GET  /api/v1/admin/onboarding-calls/                       queue (Support-department admin, superadmin)
+    POST /api/v1/admin/onboarding-calls/{id}/accept/            accept + go live now (Support-department admin, superadmin)
     POST /api/v1/admin/onboarding-calls/{id}/schedule/          assign + schedule (superadmin only)
 
 A teacher requesting the call (``VerificationService._request_video_interview``)
@@ -15,6 +17,7 @@ running it and when. ``{id}`` is the Teacher id, matching
 
 from datetime import timedelta
 
+from django.db import transaction
 from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, inline_serializer
 from rest_framework import generics, serializers
@@ -22,6 +25,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.views import APIView
 
 from apps.core.exceptions.custom_exceptions import (
+    ConflictException,
     ResourceNotFoundException,
     ValidationException,
 )
@@ -43,6 +47,7 @@ class OnboardingCallRequestSerializer(serializers.ModelSerializer):
     assigned_admin_email = serializers.CharField(
         source="assigned_admin.email", read_only=True, default=""
     )
+    room_name = serializers.SerializerMethodField()
 
     class Meta:
         model = OnboardingCallRequest
@@ -56,6 +61,8 @@ class OnboardingCallRequestSerializer(serializers.ModelSerializer):
             "assigned_admin_name",
             "assigned_admin_email",
             "scheduled_at",
+            "call_started_at",
+            "room_name",
             "created_at",
         )
         read_only_fields = fields
@@ -64,6 +71,11 @@ class OnboardingCallRequestSerializer(serializers.ModelSerializer):
         if obj.assigned_admin:
             return obj.assigned_admin.get_full_name() or obj.assigned_admin.email
         return ""
+
+    def get_room_name(self, obj) -> str | None:
+        # Withheld until a Support admin has actually accepted - there's
+        # no room to join before that.
+        return obj.room_name if obj.is_live else None
 
 
 class _Pagination(PageNumberPagination):
@@ -122,6 +134,88 @@ class AdminOnboardingCallListView(generics.ListAPIView):
                 },
             )
         return APIResponse.success(data=serializer.data)
+
+
+@extend_schema(
+    tags=["Teacher Verification"],
+    summary="Support admin: accept a teacher's onboarding call request and go live now",
+    responses={200: OpenApiResponse(description="`data`: the updated call request.")},
+)
+class AdminOnboardingCallAcceptView(APIView):
+    """
+    Additive to (not a replacement for) AdminOnboardingCallScheduleView
+    below, which stays Super-Admin-only and schedules 24h out. This is the
+    Support admin's one-click "take this call now": it assigns the caller,
+    stamps ``scheduled_at``/``call_started_at`` to now, and from that
+    moment the Jitsi room (``OnboardingCallRequest.room_name``) is exposed
+    to both sides. Idempotent for the same admin; a second admin trying to
+    take an already-live call gets a 409.
+    """
+
+    def post(self, request, id):
+        from apps.ops.models import AuditCategory
+        from apps.ops.services import AuditService
+
+        with transaction.atomic():
+            call = (
+                OnboardingCallRequest.objects.select_related(
+                    "item", "item__teacher__user", "assigned_admin"
+                )
+                .select_for_update(of=("self",))
+                .filter(item__teacher_id=id, item__key="video_interview")
+                .first()
+            )
+            if call is None:
+                raise ResourceNotFoundException(
+                    detail="This teacher hasn't requested an onboarding call."
+                )
+            if call.item.status != "submitted":
+                raise ConflictException(
+                    detail="This call has already been decided."
+                )
+            if call.is_live:
+                if call.assigned_admin_id != request.user.id:
+                    holder = (
+                        call.assigned_admin.get_full_name() or call.assigned_admin.email
+                        if call.assigned_admin
+                        else "another admin"
+                    )
+                    raise ConflictException(
+                        detail=f"This call was already accepted by {holder}."
+                    )
+                return APIResponse.success(
+                    data=OnboardingCallRequestSerializer(call).data,
+                    message="Call is already live.",
+                )
+
+            now = timezone.now()
+            call.assigned_admin = request.user
+            call.scheduled_by = request.user
+            call.scheduled_at = now
+            call.call_started_at = now
+            call.save(
+                update_fields=[
+                    "assigned_admin",
+                    "scheduled_by",
+                    "scheduled_at",
+                    "call_started_at",
+                    "updated_at",
+                ]
+            )
+
+        AuditService.record(
+            request=request,
+            category=AuditCategory.USER,
+            action="teacher.onboarding_call.accepted",
+            target=call.item.teacher.user,
+            message=(
+                f"{request.user.email} accepted the onboarding call for "
+                f"{call.item.teacher.user.email} and started it"
+            ),
+        )
+        return APIResponse.success(
+            data=OnboardingCallRequestSerializer(call).data, message="Call started."
+        )
 
 
 @extend_schema(

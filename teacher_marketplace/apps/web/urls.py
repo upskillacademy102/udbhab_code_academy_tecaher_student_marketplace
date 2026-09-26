@@ -551,6 +551,15 @@ urlpatterns += [
         ),
         name="staff-superadmin-taxonomy-requests",
     ),
+    path(
+        "staff/superadmin/pricing-requests/",
+        spa(
+            roles=SA,
+            title="Pricing requests",
+            desc="Review Finance's requests to change token package, subscription plan, or lead-unlock pricing.",
+        ),
+        name="staff-superadmin-pricing-requests",
+    ),
 ]
 
 # ============ NEW STAFF SPA (React) - Dashboards + Users, Phase 4 ============
@@ -664,6 +673,160 @@ urlpatterns += [
         "staff/superadmin/audit/",
         spa(roles=SA, title="Audit log", desc="Privileged and security-relevant actions across the platform."),
         name="staff-superadmin-audit",
+    ),
+]
+
+# ============ FINANCE ADMIN SPA (React), added 2026-09-24 ============
+# Finance's own, restricted dashboard (apps.finance) - guarded exactly like
+# the Content Moderation/Marketing department-scoped mounts above. Super
+# Admin reaches these too (role_required's implicit superadmin bypass).
+urlpatterns += [
+    path(
+        "staff/admin/finance/",
+        spa(
+            roles=A,
+            title="Finance Dashboard",
+            desc="Incoming/outgoing totals, recent payments, and Learning Partner commissions.",
+            guard=role_required("admin", "superadmin", department_slugs={"finance"}),
+        ),
+        name="staff-admin-finance-home",
+    ),
+    path(
+        "staff/admin/finance/transactions/",
+        spa(
+            roles=A,
+            title="Transactions",
+            desc="Every incoming payment and outgoing payout, searchable and filterable.",
+            guard=role_required("admin", "superadmin", department_slugs={"finance"}),
+        ),
+        name="staff-admin-finance-transactions",
+    ),
+    path(
+        "staff/admin/finance/token-packages/",
+        spa(
+            roles=A,
+            title="Token Packages",
+            desc="Current pricing. Request a change for Super Admin to approve.",
+            guard=role_required("admin", "superadmin", department_slugs={"finance"}),
+        ),
+        name="staff-admin-finance-token-packages",
+    ),
+    path(
+        "staff/admin/finance/plans/",
+        spa(
+            roles=A,
+            title="Subscription Plans",
+            desc="Current pricing. Request a change for Super Admin to approve.",
+            guard=role_required("admin", "superadmin", department_slugs={"finance"}),
+        ),
+        name="staff-admin-finance-plans",
+    ),
+    path(
+        "staff/admin/finance/lead-pricing/",
+        spa(
+            roles=A,
+            title="Lead Unlock Pricing",
+            desc="Current pricing. Request a change for Super Admin to approve.",
+            guard=role_required("admin", "superadmin", department_slugs={"finance"}),
+        ),
+        name="staff-admin-finance-lead-pricing",
+    ),
+    path(
+        "staff/admin/finance/learning-partners/",
+        spa(
+            roles=A,
+            title="Learning Partners",
+            desc="This month's commission total per partner.",
+            guard=role_required("admin", "superadmin", department_slugs={"finance"}),
+        ),
+        name="staff-admin-finance-learning-partners",
+    ),
+    path(
+        "staff/admin/finance/learning-partners/<uuid:id>/",
+        spa(
+            roles=A,
+            title="Learning Partner",
+            guard=role_required("admin", "superadmin", department_slugs={"finance"}),
+        ),
+        name="staff-admin-finance-learning-partner-detail",
+    ),
+]
+
+# ============ SUPPORT ADMIN SPA (React), added 2026-09-25 ============
+# Support's own, restricted panel - guarded exactly like the Finance mount
+# above. Super Admin reaches these too (role_required's implicit superadmin
+# bypass).
+_SUPPORT_GUARD = role_required("admin", "superadmin", department_slugs={"support"})
+urlpatterns += [
+    path(
+        "staff/admin/support/",
+        spa(
+            roles=A,
+            title="Support Dashboard",
+            desc="Your queues: onboarding calls and bug-report calls.",
+            guard=_SUPPORT_GUARD,
+        ),
+        name="staff-admin-support-home",
+    ),
+    path(
+        "staff/admin/support/students/",
+        spa(
+            roles=A,
+            title="Students",
+            desc="Name, email, and phone only.",
+            guard=_SUPPORT_GUARD,
+        ),
+        name="staff-admin-support-students",
+    ),
+    path(
+        "staff/admin/support/teachers/",
+        spa(
+            roles=A,
+            title="Teachers",
+            desc="Name, email, and phone only.",
+            guard=_SUPPORT_GUARD,
+        ),
+        name="staff-admin-support-teachers",
+    ),
+    path(
+        "staff/admin/support/learning-partners/",
+        spa(
+            roles=A,
+            title="Learning Partners",
+            desc="Name, email, and phone only.",
+            guard=_SUPPORT_GUARD,
+        ),
+        name="staff-admin-support-learning-partners",
+    ),
+    path(
+        "staff/admin/support/onboarding-calls/",
+        spa(
+            roles=A,
+            title="Onboarding Calls",
+            desc="Teacher video-interview requests, awaiting acceptance.",
+            guard=_SUPPORT_GUARD,
+        ),
+        name="staff-admin-support-onboarding-calls",
+    ),
+    path(
+        "staff/admin/support/bug-calls/",
+        spa(
+            roles=A,
+            title="Bug Calls",
+            desc="Bug reports where the reporter asked for a call.",
+            guard=_SUPPORT_GUARD,
+        ),
+        name="staff-admin-support-bug-calls",
+    ),
+    path(
+        "staff/admin/support/circulate-message/",
+        spa(
+            roles=A,
+            title="Circulate a Message",
+            desc="Send an email and/or SMS to students, teachers, or learning partners.",
+            guard=_SUPPORT_GUARD,
+        ),
+        name="staff-admin-support-circulate-message",
     ),
 ]
 

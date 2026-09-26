@@ -60,6 +60,11 @@ class NotificationEvent(models.TextChoices):
     # fills the previous gap where nothing notified a teacher they'd been
     # offered/cascaded a lead at all.
     LEAD_OFFERED = "lead_offered", _("Lead Offered")
+    # Finance-department-admin-facing (added 2026-09-24, apps.finance): a
+    # teacher's payment just succeeded. In-app only (see
+    # NotificationService.finance_incoming_payment) - email would be noisy
+    # at payment frequency.
+    FINANCE_INCOMING_PAYMENT = "finance_incoming_payment", _("Incoming Payment")
 
 
 class Notification(BaseModel):

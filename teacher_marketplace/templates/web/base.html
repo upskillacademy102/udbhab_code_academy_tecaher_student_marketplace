@@ -17,13 +17,14 @@
   <script defer src="{% static 'js/api.js' %}"></script>
   <script defer src="{% static 'js/app.js' %}"></script>
   <script defer src="{% static 'js/pages.js' %}"></script>
+  <script defer src="{% static 'js/jitsi.js' %}"></script>
   {% if web_role == 'admin' or web_role == 'superadmin' %}<script defer src="{% static 'js/admin.js' %}"></script>{% endif %}
   {% block head_extra %}{% endblock %}
   <script defer src="{% static 'js/vendor/alpine-collapse.min.js' %}"></script>
   <script defer src="{% static 'js/vendor/alpine-focus.min.js' %}"></script>
   <script defer src="{% static 'js/vendor/alpine.min.js' %}"></script>
 </head>
-<body class="h-full"{% if web_role %} data-role="{{ web_role }}"{% endif %}{% if web_user.is_learning_partner_admin %} data-is-learning-partner="true"{% endif %}>
+<body class="h-full"{% if web_role %} data-role="{{ web_role }}"{% endif %}{% if web_user.is_learning_partner_admin %} data-is-learning-partner="true"{% endif %}{% if web_department_slug %} data-department="{{ web_department_slug }}"{% endif %}>
   {% include "web/_icons.html" %}
 
   <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow-pop">Skip to content</a>

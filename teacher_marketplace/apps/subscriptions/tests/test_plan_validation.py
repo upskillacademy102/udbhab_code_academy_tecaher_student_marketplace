@@ -17,16 +17,18 @@ from django.db import IntegrityError, transaction
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import UserRole
-from apps.accounts.tests.helpers import login, make_named_admin, make_user
+from apps.accounts.tests.helpers import login, make_user
 from apps.lead_engine.models import LeadUnlockPricing, PricingTier
 from apps.subscriptions.models import SubscriptionPlan
 
 
 class SubscriptionPlanValidationTests(APITestCase):
     def setUp(self):
-        # Writing subscription plans is Finance-department only (apps.
-        # accounts.api_permissions.DEPARTMENT_ROUTE_SCOPE).
-        login(self.client, make_named_admin(department="Finance"))
+        # Writing subscription plans directly is Super Admin only (apps.
+        # finance replaced Finance's former direct write access with a
+        # request/approve flow, 2026-09-24). This suite only cares about
+        # field validation, which is identical regardless of who may write.
+        login(self.client, make_user(role=UserRole.SUPERADMIN))
 
     def _post(self, expect=201, **fields):
         body = {"name": "Base Plan", "monthly_price": "0.00", "free_leads": 5, **fields}
@@ -143,9 +145,11 @@ class LaunchPricingTests(APITestCase):
 
 class LeadUnlockPricingValidationTests(APITestCase):
     def setUp(self):
-        # Writing lead-unlock pricing is Finance-department only (apps.
-        # accounts.api_permissions.DEPARTMENT_ROUTE_SCOPE).
-        login(self.client, make_named_admin(department="Finance"))
+        # Writing lead-unlock pricing directly is Super Admin only (apps.
+        # finance replaced Finance's former direct write access with a
+        # request/approve flow, 2026-09-24). This suite only cares about
+        # field validation, which is identical regardless of who may write.
+        login(self.client, make_user(role=UserRole.SUPERADMIN))
         # every tier is seeded - work by editing an existing row
         self.row = LeadUnlockPricing.objects.get(tier=PricingTier.SCHOOL_TUITION)
 

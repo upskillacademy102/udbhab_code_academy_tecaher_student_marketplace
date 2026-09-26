@@ -31,6 +31,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.views import APIView
 
 from apps.core.exceptions.custom_exceptions import (
+    PermissionDeniedException,
     ResourceNotFoundException,
     ValidationException,
 )
@@ -280,6 +281,39 @@ class AdminTeacherVerificationView(APIView):
 class AdminTeacherVerificationItemView(APIView):
     """POST /api/v1/admin/teacher-profiles/{teacher_id}/verification-items/{key}/"""
 
+    @staticmethod
+    def _guard_support_admin(user, profile, key):
+        """
+        A Support-department admin reaches this route only to record the
+        outcome of an onboarding call, so it's limited to the
+        ``video_interview`` item, and only for a call that admin accepted
+        (they're its ``assigned_admin``). The department scope in
+        apps.accounts.api_permissions works per route, not per URL ``key``
+        or per object, so it can't express either restriction.
+        Verification-department admins and Super Admin are unaffected.
+        """
+        from apps.accounts.models import UserRole
+
+        dept = getattr(getattr(user, "admin_department", None), "slug", None)
+        if user.role != UserRole.ADMIN or dept != "support":
+            return
+        if key != "video_interview":
+            raise PermissionDeniedException(
+                detail="Support can only decide the onboarding video call."
+            )
+        from apps.trust.models import OnboardingCallRequest
+
+        accepted_by_me = OnboardingCallRequest.objects.filter(
+            item__teacher=profile.teacher,
+            item__key="video_interview",
+            assigned_admin=user,
+            call_started_at__isnull=False,
+        ).exists()
+        if not accepted_by_me:
+            raise PermissionDeniedException(
+                detail="You can only decide a call you accepted."
+            )
+
     def post(self, request, id, key):
         from apps.trust.services.verification_service import VerificationService
 
@@ -289,6 +323,8 @@ class AdminTeacherVerificationItemView(APIView):
             raise ValidationException(
                 detail="status must be verified, rejected, or submitted."
             )
+
+        self._guard_support_admin(request.user, profile, key)
 
         VerificationService.set_reviewed_item(
             profile.teacher,
